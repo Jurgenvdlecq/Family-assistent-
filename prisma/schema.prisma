@@ -364,6 +364,7 @@ enum FeedbackSubjectType {
   RECIPE_VARIANT
   PRODUCT
   INGREDIENT
+  RECIPE_CATEGORY
 
   @@map("feedback_subject_type")
 }
