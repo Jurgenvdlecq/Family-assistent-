@@ -84,13 +84,14 @@ enum PersonRole {
 // ── Recipe & RecipeVariant ──────────────────────────────────────────────
 
 model Recipe {
-  id         String   @id @default(uuid())
-  title      String
-  category   RecipeCategory
-  source     String?
-  properties String[] @default([])
-  status     RecipeStatus @default(FOUND)
-  createdAt  DateTime @default(now()) @map("created_at")
+  id           String   @id @default(uuid())
+  title        String   @unique
+  category     RecipeCategory
+  source       String?
+  properties   String[] @default([])
+  instructions String[] @default([])
+  status       RecipeStatus @default(FOUND)
+  createdAt    DateTime @default(now()) @map("created_at")
 
   ingredients RecipeIngredient[]
   variants    RecipeVariant[]
@@ -263,10 +264,12 @@ enum Unit {
 
 enum IngredientCategory {
   MEAT
+  FISH
   DAIRY
   VEGETABLE
   FRUIT
   GRAIN
+  LEGUME
   PANTRY
   OTHER
 
