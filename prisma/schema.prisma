@@ -1,0 +1,417 @@
+// Datamodel voor Family Assistant v1.1
+// Elf kernentiteiten conform sectie 3 van het technisch ontwerpdocument.
+// Polymorfe referenties (owner_type/owner_id, subject_type/subject_id) zijn
+// bewust gewone velden zonder Prisma @relation — Prisma ondersteunt geen
+// echte polymorfe foreign keys; integriteit wordt op applicatieniveau bewaakt.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── Household ────────────────────────────────────────────────────────────
+
+model Household {
+  id                 String   @id @default(uuid())
+  name               String
+  weeklyRhythm       Json     @default("{}") @map("weekly_rhythm")
+  deliveryPreference Json     @default("{}") @map("delivery_preference")
+  onboardingStatus   OnboardingStatus @default(NOT_STARTED) @map("onboarding_status")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  persons          Person[]
+  mealPlans        MealPlan[]
+  mealSuggestions  MealSuggestion[]
+  feedbackEvents   FeedbackEvent[]
+  fixedGroceries   FixedGrocery[]
+
+  @@map("households")
+}
+
+enum OnboardingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+
+  @@map("onboarding_status")
+}
+
+// Vaste, terugkerende boodschappen van een huishouden (melk, koffie, kaas…)
+model FixedGrocery {
+  id           String    @id @default(uuid())
+  householdId  String    @map("household_id")
+  ingredientId String    @map("ingredient_id")
+  quantity     Float
+  unit         Unit
+
+  household  Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+
+  @@map("fixed_groceries")
+}
+
+// ── Person ───────────────────────────────────────────────────────────────
+
+model Person {
+  id                String   @id @default(uuid())
+  householdId       String   @map("household_id")
+  name              String
+  role              PersonRole @default(OTHER)
+  hardRestrictions  Json     @default("[]") @map("hard_restrictions")
+  defaultPresent    Boolean  @default(true) @map("default_present")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  household      Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  feedbackEvents FeedbackEvent[]
+
+  @@index([householdId])
+  @@map("persons")
+}
+
+enum PersonRole {
+  PARENT
+  CHILD
+  OTHER
+
+  @@map("person_role")
+}
+
+// ── Recipe & RecipeVariant ──────────────────────────────────────────────
+
+model Recipe {
+  id         String   @id @default(uuid())
+  title      String
+  category   RecipeCategory
+  source     String?
+  properties String[] @default([])
+  status     RecipeStatus @default(FOUND)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  ingredients RecipeIngredient[]
+  variants    RecipeVariant[]
+
+  @@map("recipes")
+}
+
+enum RecipeCategory {
+  PASTA
+  WRAPS
+  RICE_DISH
+  ALL_VEGGIE_DAY
+  QUICK_AND_EASY
+  COMFORT_FOOD
+  AIRFRYER
+  OTHER
+
+  @@map("recipe_category")
+}
+
+enum RecipeStatus {
+  FOUND
+  ADAPTED
+  PROVEN
+  SAFE_CHOICE
+
+  @@map("recipe_status")
+}
+
+// Join-tabel: ingrediënt + hoeveelheid per recept (basisrecept, vóór variant-overrides)
+model RecipeIngredient {
+  id           String @id @default(uuid())
+  recipeId     String @map("recipe_id")
+  ingredientId String @map("ingredient_id")
+  quantity     Float
+  unit         Unit
+
+  recipe     Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+
+  @@unique([recipeId, ingredientId])
+  @@map("recipe_ingredients")
+}
+
+model RecipeVariant {
+  id                  String   @id @default(uuid())
+  recipeId            String   @map("recipe_id")
+  variantType         VariantType @map("variant_type")
+  ingredientOverrides Json     @default("{}") @map("ingredient_overrides")
+  contextFit          String[] @default([]) @map("context_fit")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  recipe          Recipe            @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  mealSuggestions MealSuggestion[]
+  mealPlanEntries MealPlanEntry[]
+
+  @@index([recipeId])
+  @@map("recipe_variants")
+}
+
+enum VariantType {
+  FAST
+  FRESH
+  REHEATABLE
+  KID_FRIENDLY
+
+  @@map("variant_type")
+}
+
+// ── MealPlan ─────────────────────────────────────────────────────────────
+
+model MealPlan {
+  id          String   @id @default(uuid())
+  householdId String   @map("household_id")
+  weekStart   DateTime @map("week_start") @db.Date
+  status      MealPlanStatus @default(CONCEPT)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  household    Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  entries      MealPlanEntry[]
+  shoppingList ShoppingList?
+
+  @@unique([householdId, weekStart])
+  @@map("meal_plans")
+}
+
+enum MealPlanStatus {
+  CONCEPT
+  CONFIRMED
+  GROCERIES_READY
+
+  @@map("meal_plan_status")
+}
+
+// De 7 dagregels van een weekplanning
+model MealPlanEntry {
+  id              String   @id @default(uuid())
+  mealPlanId      String   @map("meal_plan_id")
+  dayOfWeek       DayOfWeek @map("day_of_week")
+  recipeVariantId String   @map("recipe_variant_id")
+
+  mealPlan      MealPlan      @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
+  recipeVariant RecipeVariant @relation(fields: [recipeVariantId], references: [id])
+
+  @@unique([mealPlanId, dayOfWeek])
+  @@map("meal_plan_entries")
+}
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+
+  @@map("day_of_week")
+}
+
+// ── MealSuggestion ───────────────────────────────────────────────────────
+
+model MealSuggestion {
+  id              String   @id @default(uuid())
+  householdId     String   @map("household_id")
+  recipeVariantId String   @map("recipe_variant_id")
+  reason          String
+  confidenceLevel ConfidenceLevel @map("confidence_level")
+  targetSlot      DateTime @map("target_slot") @db.Date
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  household     Household     @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  recipeVariant RecipeVariant @relation(fields: [recipeVariantId], references: [id])
+
+  @@index([householdId, targetSlot])
+  @@map("meal_suggestions")
+}
+
+enum ConfidenceLevel {
+  CERTAIN
+  SLIGHT_DOUBT
+  HIGH_IMPACT
+
+  @@map("confidence_level")
+}
+
+// ── Ingredient & Product ─────────────────────────────────────────────────
+
+model Ingredient {
+  id       String @id @default(uuid())
+  name     String @unique
+  unit     Unit
+  category IngredientCategory
+
+  recipeIngredients RecipeIngredient[]
+  fixedGroceries    FixedGrocery[]
+  products          Product[]
+  shoppingListLines ShoppingListLine[]
+
+  @@map("ingredients")
+}
+
+enum Unit {
+  GRAM
+  PIECE
+  ML
+
+  @@map("unit")
+}
+
+enum IngredientCategory {
+  MEAT
+  DAIRY
+  VEGETABLE
+  FRUIT
+  GRAIN
+  PANTRY
+  OTHER
+
+  @@map("ingredient_category")
+}
+
+model Product {
+  id                 String    @id @default(uuid())
+  ingredientId       String?   @map("ingredient_id")
+  externalRef        String?   @map("external_ref")
+  name               String
+  brand              String?
+  packageSize        String?   @map("package_size")
+  price              Decimal?  @db.Decimal(10, 2)
+  lastSeenAvailable  DateTime? @map("last_seen_available")
+
+  ingredient        Ingredient?        @relation(fields: [ingredientId], references: [id])
+  shoppingListLines ShoppingListLine[]
+
+  @@index([ingredientId])
+  @@map("products")
+}
+
+// ── ShoppingList ─────────────────────────────────────────────────────────
+
+model ShoppingList {
+  id         String   @id @default(uuid())
+  mealPlanId String   @unique @map("meal_plan_id")
+  status     ShoppingListStatus @default(PREPARED)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  mealPlan MealPlan           @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
+  lines    ShoppingListLine[]
+
+  @@map("shopping_lists")
+}
+
+enum ShoppingListStatus {
+  PREPARED
+  REVIEWED
+  TRANSFERRED
+
+  @@map("shopping_list_status")
+}
+
+model ShoppingListLine {
+  id             String   @id @default(uuid())
+  shoppingListId String   @map("shopping_list_id")
+  ingredientId   String   @map("ingredient_id")
+  productId      String?  @map("product_id")
+  quantity       Float
+  unit           Unit
+  source         LineSource
+  needsReview    Boolean  @default(false) @map("needs_review")
+
+  shoppingList ShoppingList @relation(fields: [shoppingListId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient   @relation(fields: [ingredientId], references: [id])
+  product      Product?     @relation(fields: [productId], references: [id])
+
+  @@index([shoppingListId])
+  @@map("shopping_list_lines")
+}
+
+enum LineSource {
+  MEAL
+  FIXED
+
+  @@map("line_source")
+}
+
+// ── FeedbackEvent ────────────────────────────────────────────────────────
+
+model FeedbackEvent {
+  id          String   @id @default(uuid())
+  householdId String   @map("household_id")
+  personId    String?  @map("person_id")
+  subjectType FeedbackSubjectType @map("subject_type")
+  subjectId   String   @map("subject_id")
+  eventType   FeedbackEventType @map("event_type")
+  explicit    Boolean  @default(false)
+  context     Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  person    Person?   @relation(fields: [personId], references: [id])
+
+  @@index([householdId, subjectType, subjectId])
+  @@map("feedback_events")
+}
+
+enum FeedbackSubjectType {
+  RECIPE_VARIANT
+  PRODUCT
+  INGREDIENT
+
+  @@map("feedback_subject_type")
+}
+
+enum FeedbackEventType {
+  CHOSEN
+  REPLACED
+  IGNORED
+  EXPLICIT_FEEDBACK
+
+  @@map("feedback_event_type")
+}
+
+// ── Preference ───────────────────────────────────────────────────────────
+
+model Preference {
+  id          String   @id @default(uuid())
+  ownerType   PreferenceOwnerType @map("owner_type")
+  ownerId     String   @map("owner_id")
+  subjectType FeedbackSubjectType @map("subject_type")
+  subjectId   String   @map("subject_id")
+  stance      Stance   @default(UNKNOWN)
+  source      PreferenceSource
+  confidence  Float    @default(0)
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([ownerType, ownerId, subjectType, subjectId])
+  @@index([subjectType, subjectId])
+  @@map("preferences")
+}
+
+enum PreferenceOwnerType {
+  HOUSEHOLD
+  PERSON
+
+  @@map("preference_owner_type")
+}
+
+enum Stance {
+  LIKED
+  SOMETIMES
+  RATHER_NOT
+  NEVER
+  UNKNOWN
+
+  @@map("stance")
+}
+
+enum PreferenceSource {
+  EXPLICIT
+  INFERRED
+
+  @@map("preference_source")
+}
