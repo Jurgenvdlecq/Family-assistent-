@@ -3,7 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { getCurrentWeekStart } from "@/lib/week";
 import { ensureShoppingList } from "@/lib/shoppingList";
+import { preparePicnicTransfer } from "@/lib/picnicAdapter";
 import NavBar from "@/components/NavBar";
+import PicnicTransfer from "./PicnicTransfer";
 
 function formatQuantity(quantity: number, unit: string) {
   if (unit === "GRAM") return `${quantity} g`;
@@ -24,6 +26,7 @@ export default async function BoodschappenPage() {
     a.ingredient.name.localeCompare(b.ingredient.name)
   );
   const reviewCount = sortedLines.filter((l) => l.needsReview).length;
+  const picnicTransfer = await preparePicnicTransfer(shoppingList.id);
 
   return (
     <div className="mx-auto flex min-h-screen max-w-2xl flex-col px-6 py-10 pb-24">
@@ -83,6 +86,13 @@ export default async function BoodschappenPage() {
           ))}
         </div>
       </details>
+
+      <PicnicTransfer
+        shoppingListId={shoppingList.id}
+        text={picnicTransfer.text}
+        itemCount={picnicTransfer.itemCount}
+        transferred={picnicTransfer.status === "TRANSFERRED"}
+      />
 
       <NavBar />
     </div>
