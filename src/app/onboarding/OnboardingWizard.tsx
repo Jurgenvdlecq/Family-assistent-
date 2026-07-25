@@ -105,14 +105,14 @@ export default function OnboardingWizard() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6 py-12">
+    <div className="mx-auto flex min-h-screen w-full min-w-0 max-w-xl flex-col justify-center px-6 py-12">
       <div className="mb-8">
-        <p className="mb-2 font-mono text-xs uppercase tracking-wide text-orange-600">
+        <p className="mb-2 font-mono text-xs uppercase tracking-wide text-accent">
           Stap {step} van {TOTAL_STEPS}
         </p>
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-line">
           <div
-            className="h-full rounded-full bg-orange-500 transition-all"
+            className="h-full rounded-full bg-accent transition-all"
             style={{ width: `${(step / TOTAL_STEPS) * 100}%` }}
           />
         </div>
@@ -120,8 +120,8 @@ export default function OnboardingWizard() {
 
       {step === 1 && (
         <div>
-          <h1 className="mb-2 text-3xl font-semibold">Welkom bij Family Assistant</h1>
-          <p className="mb-8 text-neutral-600 dark:text-neutral-400">
+          <h1 className="mb-2 text-3xl font-semibold text-ink">Welkom bij Family Assistant</h1>
+          <p className="mb-8 text-ink-muted">
             Een assistent die jullie helpt met maaltijden en boodschappen.
           </p>
           <div className="grid grid-cols-2 gap-3">
@@ -133,7 +133,7 @@ export default function OnboardingWizard() {
             ].map((label) => (
               <div
                 key={label}
-                className="rounded-xl border border-neutral-200 p-4 text-sm font-medium dark:border-neutral-800"
+                className="rounded-xl border border-line bg-surface p-4 text-sm font-medium text-ink"
               >
                 {label}
               </div>
@@ -144,8 +144,8 @@ export default function OnboardingWizard() {
 
       {step === 2 && (
         <div>
-          <h2 className="mb-2 text-2xl font-semibold">Hoe heet jullie gezin?</h2>
-          <p className="mb-6 text-neutral-600 dark:text-neutral-400">
+          <h2 className="mb-2 text-2xl font-semibold text-ink">Hoe heet jullie gezin?</h2>
+          <p className="mb-6 text-ink-muted">
             Dit gebruiken we om jullie planning te herkennen.
           </p>
           <input
@@ -154,37 +154,34 @@ export default function OnboardingWizard() {
             value={householdName}
             onChange={(e) => setHouseholdName(e.target.value)}
             placeholder="Bijvoorbeeld: Familie Van der Lecq"
-            className="w-full rounded-lg border border-neutral-300 px-4 py-3 text-base outline-none focus:border-orange-500 dark:border-neutral-700 dark:bg-neutral-900"
+            className="w-full min-w-0 rounded-lg border border-line bg-surface px-4 py-3 text-base text-ink outline-none focus:border-accent"
           />
         </div>
       )}
 
       {step === 3 && (
         <div>
-          <h2 className="mb-2 text-2xl font-semibold">Wie horen er bij het gezin?</h2>
-          <p className="mb-6 text-neutral-600 dark:text-neutral-400">
+          <h2 className="mb-2 text-2xl font-semibold text-ink">Wie horen er bij het gezin?</h2>
+          <p className="mb-6 text-ink-muted">
             Voeg gezinsleden toe. Allergieën of dingen die iemand nooit eet zijn optioneel.
           </p>
           <div className="flex flex-col gap-4">
             {persons.map((person, i) => (
-              <div
-                key={i}
-                className="rounded-xl border border-neutral-200 p-4 dark:border-neutral-800"
-              >
-                <div className="mb-3 flex gap-2">
+              <div key={i} className="min-w-0 rounded-xl border border-line bg-surface p-4">
+                <div className="mb-3 flex min-w-0 gap-2">
                   <input
                     type="text"
                     value={person.name}
                     onChange={(e) => updatePerson(i, { name: e.target.value })}
                     placeholder="Naam"
-                    className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 outline-none focus:border-orange-500 dark:border-neutral-700 dark:bg-neutral-900"
+                    className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-ink outline-none focus:border-accent"
                   />
                   <select
                     value={person.role}
                     onChange={(e) =>
                       updatePerson(i, { role: e.target.value as OnboardingPersonInput["role"] })
                     }
-                    className="rounded-lg border border-neutral-300 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-900"
+                    className="shrink-0 rounded-lg border border-line bg-surface px-3 py-2 text-ink"
                   >
                     {Object.entries(ROLE_LABELS).map(([value, label]) => (
                       <option key={value} value={value}>
@@ -196,7 +193,7 @@ export default function OnboardingWizard() {
                     <button
                       type="button"
                       onClick={() => removePerson(i)}
-                      className="px-2 text-neutral-400 hover:text-red-500"
+                      className="shrink-0 px-2 text-ink-faint hover:text-red-500"
                       aria-label="Verwijder gezinslid"
                     >
                       ✕
@@ -215,7 +212,7 @@ export default function OnboardingWizard() {
                     })
                   }
                   placeholder="Allergieën of uitsluitingen (optioneel, gescheiden door komma)"
-                  className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-orange-500 dark:border-neutral-700 dark:bg-neutral-900"
+                  className="w-full min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
                 />
               </div>
             ))}
@@ -223,7 +220,7 @@ export default function OnboardingWizard() {
           <button
             type="button"
             onClick={addPerson}
-            className="mt-4 text-sm font-medium text-orange-600 hover:text-orange-700"
+            className="mt-4 text-sm font-medium text-accent hover:opacity-80"
           >
             + Nog een gezinslid toevoegen
           </button>
@@ -232,15 +229,15 @@ export default function OnboardingWizard() {
 
       {step === 4 && (
         <div>
-          <h2 className="mb-2 text-2xl font-semibold">Hoe ziet jullie week eruit?</h2>
-          <p className="mb-6 text-neutral-600 dark:text-neutral-400">
+          <h2 className="mb-2 text-2xl font-semibold text-ink">Hoe ziet jullie week eruit?</h2>
+          <p className="mb-6 text-ink-muted">
             Geef aan welke dagen druk zijn — daar houden we rekening mee bij de planning.
           </p>
           <div className="flex flex-col gap-2">
             {DAYS.map((day) => (
-              <div key={day.key} className="flex items-center justify-between">
-                <span className="text-sm font-medium">{day.label}</span>
-                <div className="flex gap-1 rounded-lg bg-neutral-100 p-1 dark:bg-neutral-900">
+              <div key={day.key} className="flex min-w-0 items-center justify-between">
+                <span className="text-sm font-medium text-ink">{day.label}</span>
+                <div className="flex shrink-0 gap-1 rounded-lg bg-surface-2 p-1">
                   {(["quiet", "busy"] as const).map((value) => (
                     <button
                       key={value}
@@ -248,8 +245,8 @@ export default function OnboardingWizard() {
                       onClick={() => setRhythm((prev) => ({ ...prev, [day.key]: value }))}
                       className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                         rhythm[day.key] === value
-                          ? "bg-orange-500 text-white"
-                          : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
+                          ? "bg-accent text-accent-ink"
+                          : "text-ink-muted hover:text-ink"
                       }`}
                     >
                       {value === "busy" ? "Druk" : "Rustig"}
@@ -264,10 +261,8 @@ export default function OnboardingWizard() {
 
       {step === 5 && (
         <div>
-          <h2 className="mb-2 text-2xl font-semibold">Waar houden jullie van?</h2>
-          <p className="mb-6 text-neutral-600 dark:text-neutral-400">
-            Kies wat vaak bij jullie op tafel komt.
-          </p>
+          <h2 className="mb-2 text-2xl font-semibold text-ink">Waar houden jullie van?</h2>
+          <p className="mb-6 text-ink-muted">Kies wat vaak bij jullie op tafel komt.</p>
           <div className="grid grid-cols-2 gap-3">
             {CATEGORIES.map((cat) => {
               const selected = categories.includes(cat.value);
@@ -278,8 +273,8 @@ export default function OnboardingWizard() {
                   onClick={() => toggleCategory(cat.value)}
                   className={`rounded-xl border p-4 text-left text-sm font-medium transition-colors ${
                     selected
-                      ? "border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400"
-                      : "border-neutral-200 hover:border-neutral-300 dark:border-neutral-800"
+                      ? "border-accent bg-accent-soft text-accent"
+                      : "border-line text-ink hover:border-ink-faint"
                   }`}
                 >
                   {cat.label}
@@ -292,20 +287,20 @@ export default function OnboardingWizard() {
 
       {step === 6 && (
         <div>
-          <h2 className="mb-2 text-2xl font-semibold">Klaar om te beginnen</h2>
-          <p className="mb-6 text-neutral-600 dark:text-neutral-400">
+          <h2 className="mb-2 text-2xl font-semibold text-ink">Klaar om te beginnen</h2>
+          <p className="mb-6 text-ink-muted">
             We hebben genoeg om een eerste voorstel te maken. Je kunt dit later altijd aanpassen
             bij &ldquo;Ons gezin&rdquo;.
           </p>
-          <div className="mb-6 rounded-xl border border-neutral-200 p-4 text-sm dark:border-neutral-800">
-            <p className="mb-1">
+          <div className="mb-6 min-w-0 rounded-xl border border-line bg-surface p-4 text-sm">
+            <p className="mb-1 text-ink">
               <span className="font-medium">Gezin:</span> {householdName || "—"}
             </p>
-            <p className="mb-1">
+            <p className="mb-1 text-ink">
               <span className="font-medium">Gezinsleden:</span>{" "}
               {persons.filter((p) => p.name.trim()).map((p) => p.name).join(", ") || "—"}
             </p>
-            <p>
+            <p className="text-ink">
               <span className="font-medium">Voorkeuren:</span>{" "}
               {categories.length > 0
                 ? categories
@@ -314,15 +309,15 @@ export default function OnboardingWizard() {
                 : "geen gekozen"}
             </p>
           </div>
-          <div className="rounded-xl border border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950/30">
-            <p className="mb-3 text-sm font-medium text-green-800 dark:text-green-400">
+          <div className="min-w-0 rounded-xl border border-tag-green-ink/25 bg-tag-green-bg p-4">
+            <p className="mb-3 text-sm font-medium text-tag-green-ink">
               Ik denk dat ik genoeg weet voor een eerste voorstel
             </p>
             <button
               type="button"
               onClick={handleSubmit}
               disabled={isPending}
-              className="w-full rounded-lg bg-orange-500 px-4 py-3 font-medium text-white transition-colors hover:bg-orange-600 disabled:opacity-50"
+              className="w-full rounded-lg bg-accent px-4 py-3 font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {isPending ? "Bezig..." : "Maak mijn eerste week"}
             </button>
@@ -338,14 +333,14 @@ export default function OnboardingWizard() {
             type="button"
             onClick={goBack}
             disabled={step === 1}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-neutral-500 hover:text-neutral-900 disabled:opacity-0 dark:hover:text-neutral-100"
+            className="rounded-lg px-4 py-2 text-sm font-medium text-ink-muted hover:text-ink disabled:opacity-0"
           >
             Terug
           </button>
           <button
             type="button"
             onClick={goNext}
-            className="rounded-lg bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-white"
+            className="rounded-lg bg-ink px-5 py-2.5 text-sm font-medium text-bg hover:opacity-90"
           >
             Volgende
           </button>
