@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { logFeedbackEvent } from "@/lib/feedback";
 import { invalidateShoppingList } from "@/lib/shoppingList";
+import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "@/lib/scoring";
 import { DAY_ENUM, type DayKey } from "@/lib/week";
 
 export async function replaceMealPlanEntry(formData: FormData) {
@@ -33,6 +34,7 @@ export async function replaceMealPlanEntry(formData: FormData) {
       explicit: true,
       context: { dayOfWeek: dayEnum },
     });
+    await recalculateVariantConfidence(householdId, currentEntry.recipeVariantId);
     await prisma.mealPlanEntry.update({
       where: { id: currentEntry.id },
       data: { recipeVariantId },
@@ -51,6 +53,8 @@ export async function replaceMealPlanEntry(formData: FormData) {
     explicit: true,
     context: { dayOfWeek: dayEnum, source: "manual_replace" },
   });
+  await recalculateVariantConfidence(householdId, recipeVariantId);
+  await maybePromoteRecipeStatus(recipeVariantId, householdId);
 
   // De boodschappenlijst hoort mee te veranderen zodra een gerecht wijzigt.
   await invalidateShoppingList(mealPlan.id);

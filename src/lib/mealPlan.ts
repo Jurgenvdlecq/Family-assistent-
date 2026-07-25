@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { logFeedbackEvent } from "./feedback";
+import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "./scoring";
 import { DAY_KEYS, DAY_ENUM, dateForDay, type DayKey } from "./week";
 import type { ConfidenceLevel } from "@/generated/prisma/enums";
 
@@ -139,6 +140,8 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
         source: "auto_generated",
       },
     });
+    await recalculateVariantConfidence(householdId, picks[dayKey].variant.id);
+    await maybePromoteRecipeStatus(picks[dayKey].variant.id, householdId);
   }
 
   return getMealPlanForWeek(householdId, weekStart);
