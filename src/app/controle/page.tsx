@@ -9,6 +9,10 @@ import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
 import { confirmProductChoice, skipReview, confirmShoppingList } from "./actions";
 
+// ensureShoppingList schrijft (idempotent) naar de database — nooit
+// statisch prerenderen tijdens de build.
+export const dynamic = "force-dynamic";
+
 function formatPrice(price: unknown) {
   if (price === null || price === undefined) return null;
   return `€ ${Number(price).toFixed(2)}`;

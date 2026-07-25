@@ -8,6 +8,9 @@ import NavBar from "@/components/NavBar";
 import AddPersonForm from "./AddPersonForm";
 import WeeklyRhythmEditor from "./WeeklyRhythmEditor";
 
+// Leest live gezinsdata — nooit statisch prerenderen.
+export const dynamic = "force-dynamic";
+
 const ROLE_LABELS: Record<string, string> = {
   PARENT: "Ouder",
   CHILD: "Kind",

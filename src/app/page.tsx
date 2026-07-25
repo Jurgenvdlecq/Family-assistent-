@@ -17,6 +17,12 @@ import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
 import { submitMealFeedback } from "./actions";
 
+// Deze pagina schrijft (idempotent) naar de database bij elk bezoek
+// (ensureMealPlan) — nooit statisch prerenderen tijdens de build, dat
+// voert dezelfde databasecode uit met build-time state en botst met
+// bestaande data.
+export const dynamic = "force-dynamic";
+
 export default async function Home() {
   const household = await prisma.household.findFirst({
     orderBy: { createdAt: "asc" },

@@ -10,6 +10,10 @@ import NavBar from "@/components/NavBar";
 import PicnicTransfer from "./PicnicTransfer";
 import AddToPicnicCart from "./AddToPicnicCart";
 
+// ensureShoppingList schrijft (idempotent) naar de database — nooit
+// statisch prerenderen tijdens de build.
+export const dynamic = "force-dynamic";
+
 function formatQuantity(quantity: number, unit: string) {
   if (unit === "GRAM") return `${quantity} g`;
   if (unit === "ML") return `${quantity} ml`;

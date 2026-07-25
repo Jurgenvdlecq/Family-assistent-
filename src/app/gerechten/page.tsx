@@ -9,6 +9,9 @@ import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
 import { replaceMealPlanEntry } from "./actions";
 
+// Leest live weekplanning + voorkeuren — nooit statisch prerenderen.
+export const dynamic = "force-dynamic";
+
 const DIRECTIONS = [
   { key: "all", label: "Alle suggesties" },
   { key: "favorites", label: "Favorieten" },
