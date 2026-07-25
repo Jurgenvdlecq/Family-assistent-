@@ -9,6 +9,7 @@ const ITEMS = [
   { href: "/gerechten", label: "Gerechten", icon: UtensilsCrossed },
   { href: "/boodschappen", label: "Boodschappen", icon: ShoppingCart },
   { href: "/controle", label: "Controle", icon: ClipboardCheck },
+  { href: "/ons-gezin", label: "Ons gezin", icon: Users },
 ];
 
 export default function NavBar() {
@@ -35,10 +36,6 @@ export default function NavBar() {
             </Link>
           );
         })}
-        <div className="flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium opacity-40">
-          <Users size={22} strokeWidth={1.75} className="text-ink-faint" />
-          <span className="text-ink-muted">Ons gezin</span>
-        </div>
       </div>
     </nav>
   );

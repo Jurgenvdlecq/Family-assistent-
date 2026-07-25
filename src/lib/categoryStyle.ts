@@ -12,6 +12,17 @@ export const CATEGORY_GRADIENT: Record<string, string> = {
   OTHER: "from-teal-200 to-cyan-300",
 };
 
+export const CATEGORY_LABELS: Record<string, string> = {
+  PASTA: "Pasta",
+  WRAPS: "Wraps",
+  RICE_DISH: "Rijstgerechten",
+  ALL_VEGGIE_DAY: "Vegetarisch (AVG)",
+  QUICK_AND_EASY: "Snel & makkelijk",
+  COMFORT_FOOD: "Comfortfood",
+  AIRFRYER: "Airfryer",
+  OTHER: "Overig",
+};
+
 export const VARIANT_LABELS: Record<string, string> = {
   FAST: "Snel & makkelijk",
   FRESH: "Vers",
