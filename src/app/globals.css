@@ -80,4 +80,7 @@
 body {
   background: var(--bg);
   color: var(--ink);
+  /* Veiligheidsnet: de pagina zelf mag nooit horizontaal scrollen — breed
+     content hoort in zijn eigen overflow-x:auto container. */
+  overflow-x: hidden;
 }

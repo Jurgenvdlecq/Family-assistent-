@@ -53,7 +53,7 @@ export default async function Home() {
   const alreadyAsked = new Set(priorFeedback.map((f) => f.subjectId));
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-2xl flex-col pb-24">
+    <div className="mx-auto flex min-h-screen w-full min-w-0 max-w-2xl flex-col pb-24">
       <header className="flex items-center justify-between px-6 pt-6 pb-2">
         <Menu size={20} className="text-ink-muted" />
         <span className="text-sm font-semibold">Jouw week</span>
@@ -89,7 +89,7 @@ export default async function Home() {
         </div>
       </div>
 
-      <div className="flex flex-col divide-y divide-line border-y border-line bg-surface">
+      <div className="flex min-w-0 flex-col divide-y divide-line border-y border-line bg-surface">
         {DAY_KEYS.map((dayKey) => {
           const entry = entryByDay.get(DAY_ENUM[dayKey]);
           const recipe = entry?.recipeVariant.recipe;
@@ -102,8 +102,8 @@ export default async function Home() {
           const gradient = recipe ? CATEGORY_GRADIENT[recipe.category] : "from-neutral-200 to-neutral-300";
 
           return (
-            <div key={dayKey} className="flex flex-col gap-3 px-6 py-4">
-              <div className="flex items-center gap-3">
+            <div key={dayKey} className="flex min-w-0 flex-col gap-3 px-6 py-4">
+              <div className="flex min-w-0 items-center gap-3">
                 <div className="w-11 shrink-0 text-center">
                   <p className="text-[10px] font-semibold tracking-wide text-ink-faint">
                     {DAY_SHORT_LABELS[dayKey]}

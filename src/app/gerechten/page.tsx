@@ -1,8 +1,12 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
+import { ChevronLeft, ChevronRight, SlidersHorizontal, Heart, Sparkles } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { DAY_KEYS, DAY_ENUM, DAY_LABELS, getCurrentWeekStart, type DayKey } from "@/lib/week";
+import { CATEGORY_GRADIENT, STATUS_LABELS, statusTone } from "@/lib/categoryStyle";
 import NavBar from "@/components/NavBar";
+import Tag from "@/components/Tag";
 import { replaceMealPlanEntry } from "./actions";
 
 const DIRECTIONS = [
@@ -11,9 +15,8 @@ const DIRECTIONS = [
   { key: "quick", label: "Snel & makkelijk" },
 ] as const;
 
-const STATUS_LABELS: Record<string, string> = {
-  PROVEN: "Beproefd",
-  SAFE_CHOICE: "Veilige keuze",
+type VariantWithRecipe = Awaited<ReturnType<typeof prisma.recipeVariant.findMany>>[number] & {
+  recipe: Awaited<ReturnType<typeof prisma.recipe.findFirstOrThrow>>;
 };
 
 export default async function GerechtenPage({
@@ -65,71 +68,147 @@ export default async function GerechtenPage({
     .sort((a, b) => (confidenceByVariantId.get(b.id) ?? 0.5) - (confidenceByVariantId.get(a.id) ?? 0.5))
     .slice(0, 12);
 
-  return (
-    <div className="mx-auto flex min-h-screen max-w-2xl flex-col px-6 py-10 pb-24">
-      <p className="mb-1 font-mono text-xs uppercase tracking-wide text-orange-600">
-        Vervangen voor {DAY_LABELS[dayKey]}
-      </p>
-      <h1 className="mb-6 text-2xl font-semibold">Waar hebben jullie zin in?</h1>
+  const newSuggestions = filtered.filter(
+    (v) => v.recipe.status === "FOUND" || v.recipe.status === "ADAPTED"
+  );
+  const favorites = filtered.filter((v) => v.recipe.status === "SAFE_CHOICE");
+  const rest = filtered.filter((v) => !newSuggestions.includes(v) && !favorites.includes(v));
 
-      <div className="mb-6 flex gap-2">
-        {DIRECTIONS.map((d) => (
-          <a
-            key={d.key}
-            href={`/gerechten?day=${dayKey}&direction=${d.key}`}
-            className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
-              direction === d.key
-                ? "border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400"
-                : "border-neutral-300 text-neutral-600 hover:border-neutral-400 dark:border-neutral-700 dark:text-neutral-400"
-            }`}
-          >
-            {d.label}
-          </a>
-        ))}
+  return (
+    <div className="mx-auto flex min-h-screen w-full min-w-0 max-w-2xl flex-col pb-24">
+      <header className="flex items-center justify-between px-6 pt-6 pb-2">
+        <Link href="/" aria-label="Terug naar Jouw week" className="text-ink-muted">
+          <ChevronLeft size={22} />
+        </Link>
+        <span className="text-sm font-semibold">Gerechten</span>
+        <SlidersHorizontal size={18} className="text-ink-muted" />
+      </header>
+
+      <div className="px-6 pt-4">
+        <p className="mb-1 text-xs font-medium uppercase tracking-wide text-accent">
+          Vervangen voor {DAY_LABELS[dayKey]}
+        </p>
+        <h1 className="mb-1 text-[1.6rem] font-semibold leading-tight text-ink">
+          Waar hebben jullie zin in?
+        </h1>
+        <p className="mb-5 text-[15px] text-ink-muted">
+          Ik heb deze gerechten voor jullie uitgekozen.
+        </p>
+
+        <div className="mb-6 flex flex-wrap gap-2">
+          {DIRECTIONS.map((d) => (
+            <a
+              key={d.key}
+              href={`/gerechten?day=${dayKey}&direction=${d.key}`}
+              className={`rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors ${
+                direction === d.key
+                  ? "border-accent bg-accent-soft text-accent"
+                  : "border-line text-ink-muted hover:border-ink-faint"
+              }`}
+            >
+              {d.label}
+            </a>
+          ))}
+        </div>
       </div>
 
-      <div className="flex flex-col gap-3">
+      <div className="flex min-w-0 flex-col gap-8 px-6">
         {filtered.length === 0 && (
-          <p className="text-sm text-neutral-500">Geen andere gerechten gevonden in deze richting.</p>
+          <p className="text-sm text-ink-muted">Geen andere gerechten gevonden in deze richting.</p>
         )}
-        {filtered.map((variant) => {
+
+        {direction === "all" && newSuggestions.length > 0 && (
+          <RecipeSection
+            title="Nieuwe suggesties voor jullie"
+            icon={<Sparkles size={16} className="text-tag-purple-ink" />}
+            variants={newSuggestions}
+            household={household.id}
+            dayKey={dayKey}
+            weekStart={weekStart}
+          />
+        )}
+
+        {direction === "all" && favorites.length > 0 && (
+          <RecipeSection
+            title="Jullie favorieten"
+            icon={<Heart size={16} className="text-tag-green-ink" fill="currentColor" />}
+            variants={favorites}
+            household={household.id}
+            dayKey={dayKey}
+            weekStart={weekStart}
+          />
+        )}
+
+        {(direction !== "all" || rest.length > 0) && (
+          <RecipeSection
+            title={direction === "all" ? "Meer opties" : DIRECTIONS.find((d) => d.key === direction)!.label}
+            variants={direction === "all" ? rest : filtered}
+            household={household.id}
+            dayKey={dayKey}
+            weekStart={weekStart}
+          />
+        )}
+      </div>
+
+      <NavBar />
+    </div>
+  );
+}
+
+function RecipeSection({
+  title,
+  icon,
+  variants,
+  household,
+  dayKey,
+  weekStart,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  variants: VariantWithRecipe[];
+  household: string;
+  dayKey: DayKey;
+  weekStart: Date;
+}) {
+  if (variants.length === 0) return null;
+  return (
+    <section className="min-w-0">
+      <div className="mb-3 flex items-center gap-1.5">
+        {icon}
+        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+      </div>
+      <div className="flex min-w-0 flex-col gap-3">
+        {variants.map((variant) => {
           const statusLabel = STATUS_LABELS[variant.recipe.status];
+          const gradient = CATEGORY_GRADIENT[variant.recipe.category];
           return (
             <form key={variant.id} action={replaceMealPlanEntry}>
-              <input type="hidden" name="householdId" value={household.id} />
+              <input type="hidden" name="householdId" value={household} />
               <input type="hidden" name="dayKey" value={dayKey} />
               <input type="hidden" name="recipeVariantId" value={variant.id} />
               <input type="hidden" name="weekStart" value={weekStart.toISOString()} />
               <button
                 type="submit"
-                className="flex w-full items-center justify-between rounded-xl border border-neutral-200 p-4 text-left transition-colors hover:border-orange-300 dark:border-neutral-800"
+                className="flex w-full min-w-0 items-center gap-3 rounded-xl border border-line bg-surface p-3 text-left transition-colors hover:border-accent/50"
               >
-                <div>
-                  <p className="font-medium">{variant.recipe.title}</p>
-                  <p className="mt-0.5 text-xs text-neutral-500">
-                    {statusLabel && (
-                      <span
-                        className={
-                          statusLabel === "Veilige keuze"
-                            ? "font-medium text-green-600"
-                            : "font-medium text-neutral-600 dark:text-neutral-300"
-                        }
-                      >
-                        {statusLabel}
-                        {" · "}
+                <div className={`h-14 w-14 shrink-0 rounded-lg bg-gradient-to-br ${gradient}`} aria-hidden />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium text-ink">{variant.recipe.title}</p>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {statusLabel && <Tag tone={statusTone(variant.recipe.status)}>{statusLabel}</Tag>}
+                    {variant.recipe.properties.slice(0, 2).map((p) => (
+                      <span key={p} className="text-[11px] whitespace-nowrap text-ink-faint">
+                        {p.replace(/_/g, " ")}
                       </span>
-                    )}
-                    {variant.recipe.properties.slice(0, 3).join(" · ")}
-                  </p>
+                    ))}
+                  </div>
                 </div>
-                <span className="shrink-0 text-sm font-medium text-orange-600">Kies dit</span>
+                <ChevronRight size={18} className="shrink-0 text-ink-faint" />
               </button>
             </form>
           );
         })}
       </div>
-
-      <NavBar />
-    </div>
+    </section>
   );
 }
