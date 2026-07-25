@@ -2,36 +2,43 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Home, UtensilsCrossed, ShoppingCart, ClipboardCheck, Users } from "lucide-react";
 
 const ITEMS = [
-  { href: "/", label: "Jouw week" },
-  { href: "/gerechten", label: "Gerechten" },
-  { href: "/boodschappen", label: "Boodschappen" },
-  { href: "/controle", label: "Controle" },
+  { href: "/", label: "Jouw week", icon: Home },
+  { href: "/gerechten", label: "Gerechten", icon: UtensilsCrossed },
+  { href: "/boodschappen", label: "Boodschappen", icon: ShoppingCart },
+  { href: "/controle", label: "Controle", icon: ClipboardCheck },
 ];
 
 export default function NavBar() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-neutral-200 bg-white/95 backdrop-blur dark:border-neutral-800 dark:bg-black/95">
-      <div className="mx-auto flex max-w-2xl justify-around px-6 py-3 text-sm">
+    <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface/95 backdrop-blur">
+      <div className="mx-auto flex max-w-2xl items-stretch justify-around px-2">
         {ITEMS.map((item) => {
           const active = pathname === item.href;
+          const Icon = item.icon;
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={
-                active
-                  ? "font-semibold text-orange-600"
-                  : "text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100"
-              }
+              className="flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium"
             >
-              {item.label}
+              <Icon
+                size={22}
+                strokeWidth={active ? 2.25 : 1.75}
+                className={active ? "text-accent" : "text-ink-faint"}
+              />
+              <span className={active ? "text-accent" : "text-ink-muted"}>{item.label}</span>
             </Link>
           );
         })}
+        <div className="flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium opacity-40">
+          <Users size={22} strokeWidth={1.75} className="text-ink-faint" />
+          <span className="text-ink-muted">Ons gezin</span>
+        </div>
       </div>
     </nav>
   );
