@@ -2,6 +2,7 @@ import "dotenv/config";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { INGREDIENTS, RECIPES } from "./seed-data";
+import { PRODUCTS } from "./product-seed-data";
 
 async function main() {
   const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
@@ -47,11 +48,13 @@ async function main() {
       });
     }
 
-    // Varianten opnieuw opbouwen (idempotent)
-    await prisma.recipeVariant.deleteMany({ where: { recipeId: savedRecipe.id } });
+    // Varianten upserten — niet verwijderen: bestaande weekplanningen
+    // verwijzen naar recipeVariant.id en mogen niet breken.
     for (const v of variants) {
-      await prisma.recipeVariant.create({
-        data: {
+      await prisma.recipeVariant.upsert({
+        where: { recipeId_variantType: { recipeId: savedRecipe.id, variantType: v.variantType } },
+        update: { contextFit: v.contextFit },
+        create: {
           recipeId: savedRecipe.id,
           variantType: v.variantType,
           contextFit: v.contextFit,
@@ -60,11 +63,39 @@ async function main() {
     }
   }
 
+  console.log(`Producten koppelen (${PRODUCTS.length} ingrediënten)...`);
+  for (const mapping of PRODUCTS) {
+    const ingredientId = ingredientIdByName.get(mapping.ingredient);
+    if (!ingredientId) {
+      throw new Error(
+        `Onbekend ingrediënt "${mapping.ingredient}" in PRODUCTS — voeg het toe aan INGREDIENTS.`
+      );
+    }
+    // Niet opnieuw aanmaken als dit ingrediënt al producten heeft (idempotent,
+    // en voorkomt FK-problemen met bestaande ShoppingListLine-verwijzingen).
+    const alreadySeeded = await prisma.product.findFirst({ where: { ingredientId } });
+    if (alreadySeeded) continue;
+
+    for (const candidate of mapping.candidates) {
+      await prisma.product.create({
+        data: {
+          ingredientId,
+          name: candidate.name,
+          brand: candidate.brand,
+          packageSize: candidate.packageSize,
+          price: candidate.price,
+          lastSeenAvailable: new Date(),
+        },
+      });
+    }
+  }
+
   const recipeCount = await prisma.recipe.count();
   const variantCount = await prisma.recipeVariant.count();
   const ingredientCount = await prisma.ingredient.count();
+  const productCount = await prisma.product.count();
   console.log(
-    `Klaar: ${recipeCount} recepten, ${variantCount} varianten, ${ingredientCount} ingrediënten.`
+    `Klaar: ${recipeCount} recepten, ${variantCount} varianten, ${ingredientCount} ingrediënten, ${productCount} producten.`
   );
 
   await prisma.$disconnect();

@@ -7,6 +7,7 @@ const ITEMS = [
   { href: "/", label: "Jouw week" },
   { href: "/gerechten", label: "Gerechten" },
   { href: "/boodschappen", label: "Boodschappen" },
+  { href: "/controle", label: "Controle" },
 ];
 
 export default function NavBar() {

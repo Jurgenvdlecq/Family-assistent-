@@ -148,7 +148,7 @@ model RecipeVariant {
   mealSuggestions MealSuggestion[]
   mealPlanEntries MealPlanEntry[]
 
-  @@index([recipeId])
+  @@unique([recipeId, variantType])
   @@map("recipe_variants")
 }
 
