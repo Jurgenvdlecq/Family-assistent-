@@ -6,6 +6,7 @@ import { ensureShoppingList } from "@/lib/shoppingList";
 import { preparePicnicTransfer } from "@/lib/picnicAdapter";
 import NavBar from "@/components/NavBar";
 import PicnicTransfer from "./PicnicTransfer";
+import AddToPicnicCart from "./AddToPicnicCart";
 
 function formatQuantity(quantity: number, unit: string) {
   if (unit === "GRAM") return `${quantity} g`;
@@ -92,6 +93,10 @@ export default async function BoodschappenPage() {
         text={picnicTransfer.text}
         itemCount={picnicTransfer.itemCount}
         transferred={picnicTransfer.status === "TRANSFERRED"}
+      />
+      <AddToPicnicCart
+        shoppingListId={shoppingList.id}
+        connected={Boolean(household.picnicAuthToken)}
       />
 
       <NavBar />

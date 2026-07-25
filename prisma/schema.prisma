@@ -21,6 +21,11 @@ model Household {
   weeklyRhythm       Json     @default("{}") @map("weekly_rhythm")
   deliveryPreference Json     @default("{}") @map("delivery_preference")
   onboardingStatus   OnboardingStatus @default(NOT_STARTED) @map("onboarding_status")
+  // Picnic-integratie (fase 4, verdiept): sessie-token van de niet-officiële
+  // Picnic-API. Nooit een wachtwoord — dat komt nooit verder dan het
+  // eenmalige login-script van de gebruiker zelf (scripts/picnic-login.ts).
+  picnicAuthToken    String?  @map("picnic_auth_token")
+  picnicTokenUpdatedAt DateTime? @map("picnic_token_updated_at")
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
