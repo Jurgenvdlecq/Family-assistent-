@@ -40,9 +40,9 @@ export default function PicnicTransfer({
   }
 
   return (
-    <div className="mt-8 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-      <h2 className="mb-1 font-medium">Naar Picnic</h2>
-      <p className="mb-3 text-sm text-neutral-500">
+    <div className="mt-6 min-w-0 rounded-xl border border-line bg-surface p-4">
+      <h2 className="mb-1 font-medium text-ink">Naar Picnic</h2>
+      <p className="mb-3 text-sm text-ink-muted">
         Kopieer de lijst en plak &lsquo;m in de Picnic-app om te bestellen.
         Definitief bestellen en een bezorgmoment kiezen doe je altijd zelf, in Picnic.
       </p>
@@ -52,18 +52,18 @@ export default function PicnicTransfer({
         value={text}
         rows={Math.min(itemCount, 10)}
         onFocus={(e) => e.currentTarget.select()}
-        className="mb-3 w-full rounded-lg border border-neutral-200 bg-neutral-50 p-3 font-mono text-xs text-neutral-700 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300"
+        className="mb-3 w-full min-w-0 rounded-lg border border-line bg-surface-2 p-3 font-mono text-xs text-ink-muted"
       />
       {copyFailed && (
-        <p className="mb-3 text-xs text-amber-600">
+        <p className="mb-3 text-xs text-tag-amber-ink">
           Automatisch kopiëren lukte niet — de tekst hierboven is geselecteerd, kopieer &lsquo;m handmatig.
         </p>
       )}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <button
           type="button"
           onClick={handleCopy}
-          className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-600"
+          className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90"
         >
           {copied ? "Gekopieerd" : "Kopieer lijst"}
         </button>
@@ -71,7 +71,7 @@ export default function PicnicTransfer({
           type="button"
           onClick={handleConfirm}
           disabled={isPending || transferred}
-          className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-900"
+          className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {transferred ? "Overgedragen" : "Markeer als overgedragen"}
         </button>

@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
+import { ChevronLeft, ShoppingCart, CheckCircle2, Utensils, ChevronRight } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { getCurrentWeekStart } from "@/lib/week";
@@ -30,74 +32,92 @@ export default async function BoodschappenPage() {
   const picnicTransfer = await preparePicnicTransfer(shoppingList.id);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-2xl flex-col px-6 py-10 pb-24">
-      <p className="mb-1 font-mono text-xs uppercase tracking-wide text-orange-600">Boodschappen</p>
-      <h1 className="mb-2 text-2xl font-semibold">Jullie boodschappen staan klaar</h1>
-      <p className="mb-6 text-neutral-600 dark:text-neutral-400">
-        {sortedLines.length} producten verzameld uit {mealPlan.entries.length} maaltijden deze
-        week.
-      </p>
+    <div className="mx-auto flex min-h-screen w-full min-w-0 max-w-2xl flex-col pb-24">
+      <header className="flex items-center justify-between px-6 pt-6 pb-2">
+        <Link href="/" aria-label="Terug naar Jouw week" className="text-ink-muted">
+          <ChevronLeft size={22} />
+        </Link>
+        <span className="text-sm font-semibold">Boodschappen</span>
+        <ShoppingCart size={18} className="text-ink-muted" />
+      </header>
 
-      {reviewCount > 0 && (
-        <a
-          href="/controle"
-          className="mb-6 flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 dark:border-amber-900 dark:bg-amber-950/20 dark:text-amber-400"
-        >
-          <span>{reviewCount} product(en) vragen jullie aandacht</span>
-          <span>Naar Controle →</span>
-        </a>
-      )}
+      <div className="min-w-0 px-6 pt-4">
+        <h1 className="mb-1 flex items-center gap-2 text-[1.6rem] font-semibold leading-tight text-ink">
+          Jullie boodschappen staan klaar
+          <CheckCircle2 size={22} className="shrink-0 text-tag-green-ink" />
+        </h1>
+        <div className="mb-6 flex flex-wrap items-center gap-4 text-sm text-ink-muted">
+          <span className="inline-flex items-center gap-1.5">
+            <Utensils size={14} className="text-ink-faint" />
+            {mealPlan.entries.length} maaltijden
+          </span>
+          <span>{sortedLines.length} producten</span>
+        </div>
 
-      <div className="flex flex-col divide-y divide-neutral-200 rounded-xl border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800">
-        {sortedLines.map((line) => (
-          <div key={line.id} className="flex items-center justify-between gap-4 p-4">
-            <div>
-              <p>{line.product?.name ?? line.ingredient.name}</p>
-              {line.product?.brand && (
-                <p className="text-xs text-neutral-400">
-                  {line.product.brand}
-                  {line.product.packageSize ? ` · ${line.product.packageSize}` : ""}
-                </p>
-              )}
-              {line.needsReview && (
-                <p className="mt-0.5 text-xs font-medium text-amber-600">Nog te bevestigen</p>
-              )}
-            </div>
-            <span className="shrink-0 text-sm text-neutral-500">
-              {formatQuantity(line.quantity, line.unit)}
-            </span>
-          </div>
-        ))}
+        {reviewCount > 0 && (
+          <Link
+            href="/controle"
+            className="mb-6 flex items-center justify-between rounded-xl border border-tag-amber-ink/25 bg-tag-amber-bg px-4 py-3 text-sm font-medium text-tag-amber-ink"
+          >
+            <span>{reviewCount} product(en) vragen jullie aandacht</span>
+            <ChevronRight size={16} />
+          </Link>
+        )}
       </div>
 
-      <details className="mt-8 rounded-xl border border-neutral-200 p-4 dark:border-neutral-800">
-        <summary className="cursor-pointer font-medium">Per maaltijd bekijken</summary>
-        <div className="mt-4 flex flex-col gap-4">
-          {mealPlan.entries.map((entry) => (
-            <div key={entry.id}>
-              <p className="mb-1 text-sm font-medium">{entry.recipeVariant.recipe.title}</p>
-              <ul className="text-sm text-neutral-500">
-                {entry.recipeVariant.recipe.ingredients.map((ri) => (
-                  <li key={ri.id}>
-                    {ri.ingredient.name} — {formatQuantity(ri.quantity, ri.unit)}
-                  </li>
-                ))}
-              </ul>
+      <div className="min-w-0 px-6">
+        <h2 className="mb-3 text-sm font-semibold text-ink">Deze week nodig</h2>
+        <div className="flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
+          {sortedLines.map((line) => (
+            <div key={line.id} className="flex min-w-0 items-center justify-between gap-4 p-4">
+              <div className="min-w-0">
+                <p className="truncate text-ink">{line.product?.name ?? line.ingredient.name}</p>
+                {line.product?.brand && (
+                  <p className="truncate text-xs text-ink-faint">
+                    {line.product.brand}
+                    {line.product.packageSize ? ` · ${line.product.packageSize}` : ""}
+                  </p>
+                )}
+                {line.needsReview && (
+                  <p className="mt-0.5 text-xs font-medium text-tag-amber-ink">Nog te bevestigen</p>
+                )}
+              </div>
+              <span className="shrink-0 text-sm text-ink-muted">
+                {formatQuantity(line.quantity, line.unit)}
+              </span>
             </div>
           ))}
         </div>
-      </details>
 
-      <PicnicTransfer
-        shoppingListId={shoppingList.id}
-        text={picnicTransfer.text}
-        itemCount={picnicTransfer.itemCount}
-        transferred={picnicTransfer.status === "TRANSFERRED"}
-      />
-      <AddToPicnicCart
-        shoppingListId={shoppingList.id}
-        connected={Boolean(household.picnicAuthToken)}
-      />
+        <details className="mt-6 rounded-xl border border-line bg-surface p-4">
+          <summary className="cursor-pointer font-medium text-ink">Per maaltijd bekijken</summary>
+          <div className="mt-4 flex flex-col gap-4">
+            {mealPlan.entries.map((entry) => (
+              <div key={entry.id} className="min-w-0">
+                <p className="mb-1 text-sm font-medium text-ink">{entry.recipeVariant.recipe.title}</p>
+                <ul className="text-sm text-ink-muted">
+                  {entry.recipeVariant.recipe.ingredients.map((ri) => (
+                    <li key={ri.id}>
+                      {ri.ingredient.name} — {formatQuantity(ri.quantity, ri.unit)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </details>
+
+        <PicnicTransfer
+          shoppingListId={shoppingList.id}
+          text={picnicTransfer.text}
+          itemCount={picnicTransfer.itemCount}
+          transferred={picnicTransfer.status === "TRANSFERRED"}
+        />
+        <AddToPicnicCart
+          shoppingListId={shoppingList.id}
+          connected={Boolean(household.picnicAuthToken)}
+        />
+      </div>
 
       <NavBar />
     </div>

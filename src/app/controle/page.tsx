@@ -1,9 +1,12 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
+import { ChevronLeft, ClipboardCheck, CheckCircle2, AlertCircle } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { getCurrentWeekStart } from "@/lib/week";
 import { ensureShoppingList, getShoppingListCandidates } from "@/lib/shoppingList";
 import NavBar from "@/components/NavBar";
+import Tag from "@/components/Tag";
 import { confirmProductChoice, skipReview, confirmShoppingList } from "./actions";
 
 function formatPrice(price: unknown) {
@@ -30,110 +33,119 @@ export default async function ControlePage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-2xl flex-col px-6 py-10 pb-24">
-      <p className="mb-1 font-mono text-xs uppercase tracking-wide text-orange-600">Controle</p>
-      <h1 className="mb-2 text-2xl font-semibold">
-        {reviewLines.length === 0 ? "Alles staat klaar!" : "Alles staat bijna klaar"}
-      </h1>
-      <p className="mb-6 text-neutral-600 dark:text-neutral-400">
-        Ik heb {shoppingList.lines.length} producten voorbereid op basis van jullie weekplanning.
-      </p>
+    <div className="mx-auto flex min-h-screen w-full min-w-0 max-w-2xl flex-col pb-24">
+      <header className="flex items-center justify-between px-6 pt-6 pb-2">
+        <Link href="/" aria-label="Terug naar Jouw week" className="text-ink-muted">
+          <ChevronLeft size={22} />
+        </Link>
+        <span className="text-sm font-semibold">Controle</span>
+        <ClipboardCheck size={18} className="text-ink-muted" />
+      </header>
 
-      <div className="mb-8 flex gap-2 text-sm">
-        <span className="rounded-full bg-green-50 px-3 py-1 font-medium text-green-700 dark:bg-green-950/30 dark:text-green-400">
-          {trustedLines.length} vertrouwde keuzes
-        </span>
+      <div className="min-w-0 px-6 pt-4">
+        <h1 className="mb-1 flex items-center gap-2 text-[1.6rem] font-semibold leading-tight text-ink">
+          {reviewLines.length === 0 ? "Alles staat klaar" : "Alles staat bijna klaar"}
+          <CheckCircle2 size={22} className="shrink-0 text-tag-green-ink" />
+        </h1>
+        <p className="mb-5 text-[15px] text-ink-muted">
+          Ik heb {shoppingList.lines.length} producten voorbereid op basis van jullie weekplanning.
+        </p>
+
+        <div className="mb-7 flex flex-wrap gap-2">
+          <Tag tone="green">{trustedLines.length} vertrouwde keuzes</Tag>
+          {reviewLines.length > 0 && (
+            <Tag tone="amber">{reviewLines.length} vragen aandacht</Tag>
+          )}
+        </div>
+
         {reviewLines.length > 0 && (
-          <span className="rounded-full bg-amber-50 px-3 py-1 font-medium text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
-            {reviewLines.length} vragen aandacht
-          </span>
-        )}
-      </div>
+          <div className="mb-8">
+            <div className="mb-3 flex items-center gap-1.5">
+              <AlertCircle size={16} className="text-tag-amber-ink" />
+              <h2 className="text-sm font-semibold text-ink">Even jullie hulp nodig</h2>
+            </div>
+            <div className="flex min-w-0 flex-col gap-4">
+              {reviewLines.map((line) => {
+                const candidates = candidatesByLine.get(line.id) ?? [];
+                return (
+                  <div
+                    key={line.id}
+                    className="min-w-0 rounded-xl border border-tag-amber-ink/25 bg-tag-amber-bg p-4"
+                  >
+                    <p className="mb-2 font-medium text-ink">{line.ingredient.name}</p>
 
-      {reviewLines.length > 0 && (
-        <div className="mb-8">
-          <h2 className="mb-3 text-sm font-semibold text-neutral-500">Even jullie hulp nodig</h2>
-          <div className="flex flex-col gap-4">
-            {reviewLines.map((line) => {
-              const candidates = candidatesByLine.get(line.id) ?? [];
-              return (
-                <div
-                  key={line.id}
-                  className="rounded-xl border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-900 dark:bg-amber-950/10"
-                >
-                  <p className="mb-2 font-medium">{line.ingredient.name}</p>
-
-                  {candidates.length === 0 && (
-                    <>
-                      <p className="mb-3 text-sm text-neutral-500">
-                        Geen product gevonden voor dit ingrediënt — voeg het later zelf toe.
-                      </p>
-                      <form action={skipReview}>
-                        <input type="hidden" name="lineId" value={line.id} />
-                        <button
-                          type="submit"
-                          className="rounded-lg border border-neutral-300 px-3 py-1.5 text-sm font-medium dark:border-neutral-700"
-                        >
-                          Begrepen
-                        </button>
-                      </form>
-                    </>
-                  )}
-
-                  {candidates.length > 0 && (
-                    <div className="flex flex-col gap-2">
-                      {candidates.map((candidate) => (
-                        <form key={candidate.id} action={confirmProductChoice}>
+                    {candidates.length === 0 && (
+                      <>
+                        <p className="mb-3 text-sm text-ink-muted">
+                          Geen product gevonden voor dit ingrediënt — voeg het later zelf toe.
+                        </p>
+                        <form action={skipReview}>
                           <input type="hidden" name="lineId" value={line.id} />
-                          <input type="hidden" name="productId" value={candidate.id} />
-                          <input type="hidden" name="householdId" value={household.id} />
                           <button
                             type="submit"
-                            className="flex w-full items-center justify-between rounded-lg border border-neutral-200 bg-white px-3 py-2 text-left text-sm hover:border-orange-300 dark:border-neutral-700 dark:bg-neutral-900"
+                            className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink"
                           >
-                            <span>
-                              {candidate.name}
-                              {candidate.brand && (
-                                <span className="text-neutral-400"> — {candidate.brand}</span>
-                              )}
-                              {candidate.packageSize && (
-                                <span className="text-neutral-400"> · {candidate.packageSize}</span>
-                              )}
-                            </span>
-                            <span className="shrink-0 font-medium text-orange-600">
-                              {formatPrice(candidate.price) ?? "Kies"}
-                            </span>
+                            Begrepen
                           </button>
                         </form>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                      </>
+                    )}
+
+                    {candidates.length > 0 && (
+                      <div className="flex min-w-0 flex-col gap-2">
+                        {candidates.map((candidate) => (
+                          <form key={candidate.id} action={confirmProductChoice}>
+                            <input type="hidden" name="lineId" value={line.id} />
+                            <input type="hidden" name="productId" value={candidate.id} />
+                            <input type="hidden" name="householdId" value={household.id} />
+                            <button
+                              type="submit"
+                              className="flex w-full min-w-0 items-center justify-between gap-3 rounded-lg border border-line bg-surface px-3 py-2 text-left text-sm hover:border-accent/50"
+                            >
+                              <span className="min-w-0 truncate">
+                                {candidate.name}
+                                {candidate.brand && (
+                                  <span className="text-ink-faint"> — {candidate.brand}</span>
+                                )}
+                                {candidate.packageSize && (
+                                  <span className="text-ink-faint"> · {candidate.packageSize}</span>
+                                )}
+                              </span>
+                              <span className="shrink-0 font-medium text-accent">
+                                {formatPrice(candidate.price) ?? "Kies"}
+                              </span>
+                            </button>
+                          </form>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
+        )}
+
+        <div className="mb-8">
+          <h2 className="mb-3 text-sm font-semibold text-ink">
+            Alle andere producten ({trustedLines.length})
+          </h2>
+          <p className="text-sm text-ink-muted">
+            {trustedLines.length} producten zijn automatisch goedgekeurd.
+          </p>
         </div>
-      )}
 
-      <div className="mb-8">
-        <h2 className="mb-3 text-sm font-semibold text-neutral-500">
-          Alle andere producten ({trustedLines.length})
-        </h2>
-        <p className="text-sm text-neutral-500">
-          {trustedLines.length} producten zijn automatisch goedgekeurd.
-        </p>
+        <form action={confirmShoppingList}>
+          <input type="hidden" name="shoppingListId" value={shoppingList.id} />
+          <button
+            type="submit"
+            disabled={reviewLines.length > 0}
+            className="w-full rounded-xl bg-accent px-4 py-3.5 text-center font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {reviewLines.length > 0 ? "Los eerst de twijfelgevallen op" : "Bevestigen"}
+          </button>
+        </form>
       </div>
-
-      <form action={confirmShoppingList}>
-        <input type="hidden" name="shoppingListId" value={shoppingList.id} />
-        <button
-          type="submit"
-          disabled={reviewLines.length > 0}
-          className="w-full rounded-lg bg-orange-500 px-4 py-3 text-center font-medium text-white transition-colors hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {reviewLines.length > 0 ? "Los eerst de twijfelgevallen op" : "Bevestigen"}
-        </button>
-      </form>
 
       <NavBar />
     </div>
