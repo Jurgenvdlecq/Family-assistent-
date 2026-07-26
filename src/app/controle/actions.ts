@@ -91,6 +91,73 @@ export async function rejectProductChoice(formData: FormData) {
   revalidatePath("/boodschappen");
 }
 
+/**
+ * Kiest een alternatief voor déze keer, zonder het als nieuwe standaard-
+ * voorkeur te onthouden (Fase 6: "alleen deze week gebruiken" is een aparte
+ * actie naast "goedkeuren", die wél onthoudt).
+ */
+export async function useProductThisWeekOnly(formData: FormData) {
+  const lineId = String(formData.get("lineId"));
+  const productId = String(formData.get("productId"));
+  const householdId = String(formData.get("householdId"));
+
+  const line = await prisma.shoppingListLine.findUniqueOrThrow({ where: { id: lineId } });
+
+  if (line.productId && line.productId !== productId) {
+    await logFeedbackEvent({
+      householdId,
+      subjectType: "PRODUCT",
+      subjectId: line.productId,
+      eventType: "REPLACED",
+      explicit: true,
+    });
+  }
+
+  await prisma.shoppingListLine.update({
+    where: { id: lineId },
+    data: {
+      productId,
+      needsReview: false,
+      matchStatus: "MANUALLY_SELECTED",
+      matchConfidence: 1,
+      matchReasons: ["Alleen deze week gekozen — volgende week vraagt dit opnieuw om een keuze."],
+    },
+  });
+
+  await logFeedbackEvent({
+    householdId,
+    subjectType: "PRODUCT",
+    subjectId: productId,
+    eventType: "CHOSEN",
+    explicit: true,
+    context: { source: "controle_screen", onceOnly: true },
+  });
+
+  revalidatePath("/controle");
+  revalidatePath("/boodschappen");
+}
+
+/** Past de hoeveelheid van deze ene regel aan (bv. een twijfelgeval bleek toch meer of minder nodig te hebben). */
+export async function adjustLineQuantity(formData: FormData) {
+  const lineId = String(formData.get("lineId"));
+  const quantity = Number(formData.get("quantity"));
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    throw new Error("Vul een geldige hoeveelheid groter dan 0 in.");
+  }
+
+  await prisma.shoppingListLine.update({ where: { id: lineId }, data: { quantity } });
+  revalidatePath("/controle");
+  revalidatePath("/boodschappen");
+}
+
+/** Verwijdert een regel volledig van de lijst — voor producten die niet gevonden zijn en niet nodig blijken. */
+export async function removeLineFromList(formData: FormData) {
+  const lineId = String(formData.get("lineId"));
+  await prisma.shoppingListLine.delete({ where: { id: lineId } });
+  revalidatePath("/controle");
+  revalidatePath("/boodschappen");
+}
+
 export async function skipReview(formData: FormData) {
   const lineId = String(formData.get("lineId"));
   await prisma.shoppingListLine.update({
