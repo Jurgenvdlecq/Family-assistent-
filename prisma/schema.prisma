@@ -16,24 +16,27 @@ datasource db {
 // ── Household ────────────────────────────────────────────────────────────
 
 model Household {
-  id                 String   @id @default(uuid())
-  name               String
-  weeklyRhythm       Json     @default("{}") @map("weekly_rhythm")
-  deliveryPreference Json     @default("{}") @map("delivery_preference")
-  onboardingStatus   OnboardingStatus @default(NOT_STARTED) @map("onboarding_status")
+  id                   String           @id @default(uuid())
+  name                 String
+  weeklyRhythm         Json             @default("{}") @map("weekly_rhythm")
+  deliveryPreference   Json             @default("{}") @map("delivery_preference")
+  onboardingStatus     OnboardingStatus @default(NOT_STARTED) @map("onboarding_status")
   // Picnic-integratie (fase 4, verdiept): sessie-token van de niet-officiële
   // Picnic-API. Nooit een wachtwoord — dat komt nooit verder dan het
   // eenmalige login-script van de gebruiker zelf (scripts/picnic-login.ts).
-  picnicAuthToken    String?  @map("picnic_auth_token")
-  picnicTokenUpdatedAt DateTime? @map("picnic_token_updated_at")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
+  picnicAuthToken      String?          @map("picnic_auth_token")
+  picnicTokenUpdatedAt DateTime?        @map("picnic_token_updated_at")
+  createdAt            DateTime         @default(now()) @map("created_at")
+  updatedAt            DateTime         @updatedAt @map("updated_at")
 
-  persons          Person[]
-  mealPlans        MealPlan[]
-  mealSuggestions  MealSuggestion[]
-  feedbackEvents   FeedbackEvent[]
-  fixedGroceries   FixedGrocery[]
+  persons                Person[]
+  mealPlans              MealPlan[]
+  mealSuggestions        MealSuggestion[]
+  feedbackEvents         FeedbackEvent[]
+  fixedGroceries         FixedGrocery[]
+  inventoryItems         InventoryItem[]
+  productPreferences     HouseholdProductPreference[]
+  rejectedProductMatches RejectedProductMatch[]
 
   @@map("households")
 }
@@ -48,28 +51,59 @@ enum OnboardingStatus {
 
 // Vaste, terugkerende boodschappen van een huishouden (melk, koffie, kaas…)
 model FixedGrocery {
-  id           String    @id @default(uuid())
-  householdId  String    @map("household_id")
-  ingredientId String    @map("ingredient_id")
+  id           String @id @default(uuid())
+  householdId  String @map("household_id")
+  ingredientId String @map("ingredient_id")
   quantity     Float
   unit         Unit
 
   household  Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
   ingredient Ingredient @relation(fields: [ingredientId], references: [id])
 
+  @@unique([householdId, ingredientId])
   @@map("fixed_groceries")
+}
+
+// Eenvoudige voorraadstatus per huishouden + ingrediënt (Fase 2: "geen
+// complex magazijnsysteem"). `status` is de bron van waarheid voor de
+// boodschappenflow; `quantity`/`unit` zijn optioneel voor wie een preciezer
+// aantal wil vastleggen. Blijft — in tegenstelling tot Picnic-besteller —
+// gewoon bewaard tussen weken totdat de gebruiker het zelf bijwerkt.
+model InventoryItem {
+  id           String          @id @default(uuid())
+  householdId  String          @map("household_id")
+  ingredientId String          @map("ingredient_id")
+  status       InventoryStatus @default(UNKNOWN)
+  quantity     Float?
+  unit         Unit?
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  household  Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+
+  @@unique([householdId, ingredientId])
+  @@map("inventory_items")
+}
+
+enum InventoryStatus {
+  SUFFICIENT
+  LOW
+  OUT_OF_STOCK
+  UNKNOWN
+
+  @@map("inventory_status")
 }
 
 // ── Person ───────────────────────────────────────────────────────────────
 
 model Person {
-  id                String   @id @default(uuid())
-  householdId       String   @map("household_id")
-  name              String
-  role              PersonRole @default(OTHER)
-  hardRestrictions  Json     @default("[]") @map("hard_restrictions")
-  defaultPresent    Boolean  @default(true) @map("default_present")
-  createdAt         DateTime @default(now()) @map("created_at")
+  id               String     @id @default(uuid())
+  householdId      String     @map("household_id")
+  name             String
+  role             PersonRole @default(OTHER)
+  hardRestrictions Json       @default("[]") @map("hard_restrictions")
+  defaultPresent   Boolean    @default(true) @map("default_present")
+  createdAt        DateTime   @default(now()) @map("created_at")
 
   household      Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
   feedbackEvents FeedbackEvent[]
@@ -89,14 +123,14 @@ enum PersonRole {
 // ── Recipe & RecipeVariant ──────────────────────────────────────────────
 
 model Recipe {
-  id           String   @id @default(uuid())
-  title        String   @unique
+  id           String         @id @default(uuid())
+  title        String         @unique
   category     RecipeCategory
   source       String?
-  properties   String[] @default([])
-  instructions String[] @default([])
-  status       RecipeStatus @default(FOUND)
-  createdAt    DateTime @default(now()) @map("created_at")
+  properties   String[]       @default([])
+  instructions String[]       @default([])
+  status       RecipeStatus   @default(FOUND)
+  createdAt    DateTime       @default(now()) @map("created_at")
 
   ingredients RecipeIngredient[]
   variants    RecipeVariant[]
@@ -142,14 +176,14 @@ model RecipeIngredient {
 }
 
 model RecipeVariant {
-  id                  String   @id @default(uuid())
-  recipeId            String   @map("recipe_id")
+  id                  String      @id @default(uuid())
+  recipeId            String      @map("recipe_id")
   variantType         VariantType @map("variant_type")
-  ingredientOverrides Json     @default("{}") @map("ingredient_overrides")
-  contextFit          String[] @default([]) @map("context_fit")
-  createdAt           DateTime @default(now()) @map("created_at")
+  ingredientOverrides Json        @default("{}") @map("ingredient_overrides")
+  contextFit          String[]    @default([]) @map("context_fit")
+  createdAt           DateTime    @default(now()) @map("created_at")
 
-  recipe          Recipe            @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  recipe          Recipe           @relation(fields: [recipeId], references: [id], onDelete: Cascade)
   mealSuggestions MealSuggestion[]
   mealPlanEntries MealPlanEntry[]
 
@@ -169,11 +203,11 @@ enum VariantType {
 // ── MealPlan ─────────────────────────────────────────────────────────────
 
 model MealPlan {
-  id          String   @id @default(uuid())
-  householdId String   @map("household_id")
-  weekStart   DateTime @map("week_start") @db.Date
+  id          String         @id @default(uuid())
+  householdId String         @map("household_id")
+  weekStart   DateTime       @map("week_start") @db.Date
   status      MealPlanStatus @default(CONCEPT)
-  createdAt   DateTime @default(now()) @map("created_at")
+  createdAt   DateTime       @default(now()) @map("created_at")
 
   household    Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
   entries      MealPlanEntry[]
@@ -193,10 +227,10 @@ enum MealPlanStatus {
 
 // De 7 dagregels van een weekplanning
 model MealPlanEntry {
-  id              String   @id @default(uuid())
-  mealPlanId      String   @map("meal_plan_id")
+  id              String    @id @default(uuid())
+  mealPlanId      String    @map("meal_plan_id")
   dayOfWeek       DayOfWeek @map("day_of_week")
-  recipeVariantId String   @map("recipe_variant_id")
+  recipeVariantId String    @map("recipe_variant_id")
 
   mealPlan      MealPlan      @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
   recipeVariant RecipeVariant @relation(fields: [recipeVariantId], references: [id])
@@ -220,13 +254,13 @@ enum DayOfWeek {
 // ── MealSuggestion ───────────────────────────────────────────────────────
 
 model MealSuggestion {
-  id              String   @id @default(uuid())
-  householdId     String   @map("household_id")
-  recipeVariantId String   @map("recipe_variant_id")
+  id              String          @id @default(uuid())
+  householdId     String          @map("household_id")
+  recipeVariantId String          @map("recipe_variant_id")
   reason          String
   confidenceLevel ConfidenceLevel @map("confidence_level")
-  targetSlot      DateTime @map("target_slot") @db.Date
-  createdAt       DateTime @default(now()) @map("created_at")
+  targetSlot      DateTime        @map("target_slot") @db.Date
+  createdAt       DateTime        @default(now()) @map("created_at")
 
   household     Household     @relation(fields: [householdId], references: [id], onDelete: Cascade)
   recipeVariant RecipeVariant @relation(fields: [recipeVariantId], references: [id])
@@ -246,15 +280,28 @@ enum ConfidenceLevel {
 // ── Ingredient & Product ─────────────────────────────────────────────────
 
 model Ingredient {
-  id       String @id @default(uuid())
-  name     String @unique
-  unit     Unit
-  category IngredientCategory
+  id              String             @id @default(uuid())
+  name            String             @unique
+  unit            Unit
+  category        IngredientCategory
+  // Gecontroleerd vocabulaire (zie src/lib/dietaryRestrictions.ts) waarmee
+  // een harde beperking van een gezinslid ("pinda's", "lactose", ...)
+  // betrouwbaar aan een ingrediënt kan worden gekoppeld. Bewust geen vrije
+  // tekst: alleen tags uit dat vocabulaire mogen hier terechtkomen.
+  restrictionTags String[]           @default([]) @map("restriction_tags")
+  // Kandidaat voor de voorraadcontrole (Fase 4): een pantry-basisproduct dat
+  // waarschijnlijk al in huis is (olie, bloem, bouillon, ...), dus de moeite
+  // waard om ernaar te vragen — in tegenstelling tot verse producten die
+  // sowieso elke keer opnieuw gekocht worden.
+  likelyInStock   Boolean            @default(false) @map("likely_in_stock")
 
-  recipeIngredients RecipeIngredient[]
-  fixedGroceries    FixedGrocery[]
-  products          Product[]
-  shoppingListLines ShoppingListLine[]
+  recipeIngredients      RecipeIngredient[]
+  fixedGroceries         FixedGrocery[]
+  products               Product[]
+  shoppingListLines      ShoppingListLine[]
+  inventoryItems         InventoryItem[]
+  productPreferences     HouseholdProductPreference[]
+  rejectedProductMatches RejectedProductMatch[]
 
   @@map("ingredients")
 }
@@ -282,29 +329,85 @@ enum IngredientCategory {
 }
 
 model Product {
-  id                 String    @id @default(uuid())
-  ingredientId       String?   @map("ingredient_id")
-  externalRef        String?   @map("external_ref")
-  name               String
-  brand              String?
-  packageSize        String?   @map("package_size")
-  price              Decimal?  @db.Decimal(10, 2)
-  lastSeenAvailable  DateTime? @map("last_seen_available")
+  id                String    @id @default(uuid())
+  ingredientId      String?   @map("ingredient_id")
+  externalRef       String?   @map("external_ref")
+  name              String
+  brand             String?
+  packageSize       String?   @map("package_size")
+  // Structureel aantal eenheden (in de eenheid van het gekoppelde
+  // Ingredient) per verpakking — bv. 500 voor "500 gram", 4 voor "4 stuks".
+  // Null wanneer packageSize niet betrouwbaar te herleiden is tot de
+  // ingrediënt-eenheid (zie src/lib/quantity/parsePackageSize.ts); dan is
+  // handmatige controle nodig in plaats van een geraden waarde.
+  packageQuantity   Float?    @map("package_quantity")
+  price             Decimal?  @db.Decimal(10, 2)
+  lastSeenAvailable DateTime? @map("last_seen_available")
 
-  ingredient        Ingredient?        @relation(fields: [ingredientId], references: [id])
-  shoppingListLines ShoppingListLine[]
+  ingredient           Ingredient?                  @relation(fields: [ingredientId], references: [id])
+  shoppingListLines    ShoppingListLine[]
+  householdPreferences HouseholdProductPreference[]
+  rejections           RejectedProductMatch[]
 
   @@index([ingredientId])
   @@map("products")
 }
 
+// Vervangt het generieke gebruik van Preference{subjectType: PRODUCT} met
+// iets rijkers (Fase 2 / Fase 5): niet alleen "vertrouwd of niet", maar ook
+// hoe vaak en wanneer voor het laatst gekozen, en of dat automatisch of
+// handmatig gebeurde. Eén actieve voorkeur per ingrediënt per huishouden.
+model HouseholdProductPreference {
+  id           String                  @id @default(uuid())
+  householdId  String                  @map("household_id")
+  ingredientId String                  @map("ingredient_id")
+  productId    String                  @map("product_id")
+  timesChosen  Int                     @default(1) @map("times_chosen")
+  lastChosenAt DateTime                @default(now()) @map("last_chosen_at")
+  confidence   Float                   @default(1)
+  source       ProductPreferenceSource @default(MANUAL)
+
+  household  Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+  product    Product    @relation(fields: [productId], references: [id])
+
+  @@unique([householdId, ingredientId])
+  @@map("household_product_preferences")
+}
+
+enum ProductPreferenceSource {
+  MANUAL
+  AUTOMATIC
+
+  @@map("product_preference_source")
+}
+
+// Een product dat een huishouden expliciet heeft afgewezen voor een
+// ingrediënt — sluit het uit van toekomstige automatische matches voor dat
+// ingrediënt (Fase 5: "afgewezen producten").
+model RejectedProductMatch {
+  id           String   @id @default(uuid())
+  householdId  String   @map("household_id")
+  ingredientId String   @map("ingredient_id")
+  productId    String   @map("product_id")
+  reason       String?
+  rejectedAt   DateTime @default(now()) @map("rejected_at")
+
+  household  Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+  product    Product    @relation(fields: [productId], references: [id])
+
+  @@unique([householdId, ingredientId, productId])
+  @@map("rejected_product_matches")
+}
+
 // ── ShoppingList ─────────────────────────────────────────────────────────
 
 model ShoppingList {
-  id         String   @id @default(uuid())
-  mealPlanId String   @unique @map("meal_plan_id")
+  id         String             @id @default(uuid())
+  mealPlanId String             @unique @map("meal_plan_id")
   status     ShoppingListStatus @default(PREPARED)
-  createdAt  DateTime @default(now()) @map("created_at")
+  createdAt  DateTime           @default(now()) @map("created_at")
 
   mealPlan MealPlan           @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
   lines    ShoppingListLine[]
@@ -321,14 +424,22 @@ enum ShoppingListStatus {
 }
 
 model ShoppingListLine {
-  id             String   @id @default(uuid())
-  shoppingListId String   @map("shopping_list_id")
-  ingredientId   String   @map("ingredient_id")
-  productId      String?  @map("product_id")
-  quantity       Float
-  unit           Unit
-  source         LineSource
-  needsReview    Boolean  @default(false) @map("needs_review")
+  id              String      @id @default(uuid())
+  shoppingListId  String      @map("shopping_list_id")
+  ingredientId    String      @map("ingredient_id")
+  productId       String?     @map("product_id")
+  quantity        Float
+  unit            Unit
+  source          LineSource
+  needsReview     Boolean     @default(false) @map("needs_review")
+  // Uitlegbare productmatching (Fase 5) — needsReview blijft de simpele
+  // boolean die de bestaande UI al gebruikt, deze velden voegen het "hoe
+  // zeker, en waarom" toe. matchReasons is bewust String[] i.p.v. één
+  // opgebouwde zin: elk element is een losse, voor de gebruiker leesbare
+  // reden (zie src/domain/product-matching).
+  matchStatus     MatchStatus @default(NOT_FOUND) @map("match_status")
+  matchConfidence Float       @default(0) @map("match_confidence")
+  matchReasons    String[]    @default([]) @map("match_reasons")
 
   shoppingList ShoppingList @relation(fields: [shoppingListId], references: [id], onDelete: Cascade)
   ingredient   Ingredient   @relation(fields: [ingredientId], references: [id])
@@ -338,9 +449,24 @@ model ShoppingListLine {
   @@map("shopping_list_lines")
 }
 
+enum MatchStatus {
+  MATCHED_TRUSTED
+  MATCHED_REVIEW_REQUIRED
+  NOT_FOUND
+  MANUALLY_SELECTED
+  UNAVAILABLE
+
+  @@map("match_status")
+}
+
 enum LineSource {
   MEAL
   FIXED
+  // Toegevoegd omdat de voorraadcontrole een pantry-item als "bijna op"/"op"
+  // markeerde, terwijl geen enkel recept deze week dat ingrediënt gebruikt —
+  // dus geen MEAL-regel om aan te vullen. Altijd needsReview: de gebruiker
+  // gaf alleen een status door, geen exacte hoeveelheid.
+  INVENTORY
 
   @@map("line_source")
 }
@@ -348,15 +474,15 @@ enum LineSource {
 // ── FeedbackEvent ────────────────────────────────────────────────────────
 
 model FeedbackEvent {
-  id          String   @id @default(uuid())
-  householdId String   @map("household_id")
-  personId    String?  @map("person_id")
+  id          String              @id @default(uuid())
+  householdId String              @map("household_id")
+  personId    String?             @map("person_id")
   subjectType FeedbackSubjectType @map("subject_type")
-  subjectId   String   @map("subject_id")
-  eventType   FeedbackEventType @map("event_type")
-  explicit    Boolean  @default(false)
-  context     Json     @default("{}")
-  createdAt   DateTime @default(now()) @map("created_at")
+  subjectId   String              @map("subject_id")
+  eventType   FeedbackEventType   @map("event_type")
+  explicit    Boolean             @default(false)
+  context     Json                @default("{}")
+  createdAt   DateTime            @default(now()) @map("created_at")
 
   household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
   person    Person?   @relation(fields: [personId], references: [id])
@@ -386,15 +512,15 @@ enum FeedbackEventType {
 // ── Preference ───────────────────────────────────────────────────────────
 
 model Preference {
-  id          String   @id @default(uuid())
+  id          String              @id @default(uuid())
   ownerType   PreferenceOwnerType @map("owner_type")
-  ownerId     String   @map("owner_id")
+  ownerId     String              @map("owner_id")
   subjectType FeedbackSubjectType @map("subject_type")
-  subjectId   String   @map("subject_id")
-  stance      Stance   @default(UNKNOWN)
+  subjectId   String              @map("subject_id")
+  stance      Stance              @default(UNKNOWN)
   source      PreferenceSource
-  confidence  Float    @default(0)
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  confidence  Float               @default(0)
+  updatedAt   DateTime            @updatedAt @map("updated_at")
 
   @@unique([ownerType, ownerId, subjectType, subjectId])
   @@index([subjectType, subjectId])

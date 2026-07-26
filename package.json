@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "tsx --test $(find src -name '*.test.ts')",
     "db:seed": "tsx prisma/seed.ts",
     "picnic:login": "tsx scripts/picnic-login.ts"
   },

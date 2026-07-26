@@ -18,6 +18,14 @@ export interface IngredientSeed {
   name: string;
   unit: IngredientUnit;
   category: IngredientCategory;
+  // Tags uit het vocabulaire van src/lib/dietaryRestrictions.ts. Optioneel:
+  // de meeste ingrediënten (groente, kruiden, vlees zonder allergeen) hebben
+  // er geen nodig.
+  restrictionTags?: string[];
+  // Kandidaat voor de voorraadcontrole (Fase 4) — pantry-basisproducten die
+  // waarschijnlijk al in huis zijn (olie, boter, kruiden, rijst, pasta,
+  // bloem, bouillon, sauzen).
+  likelyInStock?: boolean;
 }
 
 // ── Genormaliseerde ingrediëntenpool ────────────────────────────────────
@@ -36,19 +44,19 @@ export const INGREDIENTS: IngredientSeed[] = [
   { name: "Kipshoarma", unit: "GRAM", category: "MEAT" },
   { name: "Kipdrumsticks", unit: "PIECE", category: "MEAT" },
   // Vis
-  { name: "Zalmfilet", unit: "PIECE", category: "FISH" },
-  { name: "Vissticks", unit: "PIECE", category: "FISH" },
-  { name: "Witvisfilet", unit: "PIECE", category: "FISH" },
+  { name: "Zalmfilet", unit: "PIECE", category: "FISH", restrictionTags: ["vis"] },
+  { name: "Vissticks", unit: "PIECE", category: "FISH", restrictionTags: ["vis"] },
+  { name: "Witvisfilet", unit: "PIECE", category: "FISH", restrictionTags: ["vis"] },
   // Zuivel & eieren
-  { name: "Geraspte kaas", unit: "GRAM", category: "DAIRY" },
-  { name: "Parmezaanse kaas", unit: "GRAM", category: "DAIRY" },
-  { name: "Melk", unit: "ML", category: "DAIRY" },
-  { name: "Boter", unit: "GRAM", category: "DAIRY" },
-  { name: "Slagroom", unit: "ML", category: "DAIRY" },
-  { name: "Feta", unit: "GRAM", category: "DAIRY" },
-  { name: "Mozzarella", unit: "GRAM", category: "DAIRY" },
-  { name: "Ei", unit: "PIECE", category: "DAIRY" },
-  { name: "Griekse yoghurt", unit: "GRAM", category: "DAIRY" },
+  { name: "Geraspte kaas", unit: "GRAM", category: "DAIRY", restrictionTags: ["lactose"] },
+  { name: "Parmezaanse kaas", unit: "GRAM", category: "DAIRY", restrictionTags: ["lactose"] },
+  { name: "Melk", unit: "ML", category: "DAIRY", restrictionTags: ["lactose"] },
+  { name: "Boter", unit: "GRAM", category: "DAIRY", restrictionTags: ["lactose"], likelyInStock: true },
+  { name: "Slagroom", unit: "ML", category: "DAIRY", restrictionTags: ["lactose"] },
+  { name: "Feta", unit: "GRAM", category: "DAIRY", restrictionTags: ["lactose"] },
+  { name: "Mozzarella", unit: "GRAM", category: "DAIRY", restrictionTags: ["lactose"] },
+  { name: "Ei", unit: "PIECE", category: "DAIRY", restrictionTags: ["ei"] },
+  { name: "Griekse yoghurt", unit: "GRAM", category: "DAIRY", restrictionTags: ["lactose"] },
   // Groente
   { name: "Ui", unit: "PIECE", category: "VEGETABLE" },
   { name: "Knoflook", unit: "PIECE", category: "VEGETABLE" },
@@ -76,13 +84,13 @@ export const INGREDIENTS: IngredientSeed[] = [
   { name: "Citroen", unit: "PIECE", category: "FRUIT" },
   { name: "Avocado", unit: "PIECE", category: "FRUIT" },
   // Granen / zetmeel
-  { name: "Pasta", unit: "GRAM", category: "GRAIN" },
-  { name: "Rijst", unit: "GRAM", category: "GRAIN" },
-  { name: "Lasagnebladen", unit: "GRAM", category: "GRAIN" },
-  { name: "Tortillawraps", unit: "PIECE", category: "GRAIN" },
-  { name: "Broodjes (burger)", unit: "PIECE", category: "GRAIN" },
-  { name: "Brood", unit: "PIECE", category: "GRAIN" },
-  { name: "Couscous", unit: "GRAM", category: "GRAIN" },
+  { name: "Pasta", unit: "GRAM", category: "GRAIN", restrictionTags: ["gluten"], likelyInStock: true },
+  { name: "Rijst", unit: "GRAM", category: "GRAIN", likelyInStock: true },
+  { name: "Lasagnebladen", unit: "GRAM", category: "GRAIN", restrictionTags: ["gluten"] },
+  { name: "Tortillawraps", unit: "PIECE", category: "GRAIN", restrictionTags: ["gluten"] },
+  { name: "Broodjes (burger)", unit: "PIECE", category: "GRAIN", restrictionTags: ["gluten"] },
+  { name: "Brood", unit: "PIECE", category: "GRAIN", restrictionTags: ["gluten"] },
+  { name: "Couscous", unit: "GRAM", category: "GRAIN", restrictionTags: ["gluten"] },
   // Peulvruchten
   { name: "Kidneybonen (blik)", unit: "GRAM", category: "LEGUME" },
   { name: "Bruine linzen", unit: "GRAM", category: "LEGUME" },
@@ -91,21 +99,21 @@ export const INGREDIENTS: IngredientSeed[] = [
   // Voorraadkast
   { name: "Tomatenblokjes (blik)", unit: "GRAM", category: "PANTRY" },
   { name: "Kokosmelk", unit: "ML", category: "PANTRY" },
-  { name: "Currypasta", unit: "GRAM", category: "PANTRY" },
-  { name: "Teriyakisaus", unit: "ML", category: "PANTRY" },
-  { name: "Pesto", unit: "GRAM", category: "PANTRY" },
-  { name: "Olijfolie", unit: "ML", category: "PANTRY" },
-  { name: "Sojasaus", unit: "ML", category: "PANTRY" },
-  { name: "Kerriepoeder", unit: "GRAM", category: "PANTRY" },
-  { name: "Groentebouillon", unit: "ML", category: "PANTRY" },
-  { name: "Runderbouillon", unit: "ML", category: "PANTRY" },
-  { name: "Pijnboompitten", unit: "GRAM", category: "PANTRY" },
-  { name: "Bloem", unit: "GRAM", category: "PANTRY" },
-  { name: "Paneermeel", unit: "GRAM", category: "PANTRY" },
-  { name: "Chilivlokken", unit: "GRAM", category: "PANTRY" },
-  { name: "Paprikapoeder", unit: "GRAM", category: "PANTRY" },
-  { name: "Komijnpoeder", unit: "GRAM", category: "PANTRY" },
-  { name: "Balsamicoazijn", unit: "ML", category: "PANTRY" },
+  { name: "Currypasta", unit: "GRAM", category: "PANTRY", likelyInStock: true },
+  { name: "Teriyakisaus", unit: "ML", category: "PANTRY", likelyInStock: true },
+  { name: "Pesto", unit: "GRAM", category: "PANTRY", likelyInStock: true },
+  { name: "Olijfolie", unit: "ML", category: "PANTRY", likelyInStock: true },
+  { name: "Sojasaus", unit: "ML", category: "PANTRY", likelyInStock: true },
+  { name: "Kerriepoeder", unit: "GRAM", category: "PANTRY", likelyInStock: true },
+  { name: "Groentebouillon", unit: "ML", category: "PANTRY", likelyInStock: true },
+  { name: "Runderbouillon", unit: "ML", category: "PANTRY", likelyInStock: true },
+  { name: "Pijnboompitten", unit: "GRAM", category: "PANTRY", restrictionTags: ["noten"] },
+  { name: "Bloem", unit: "GRAM", category: "PANTRY", restrictionTags: ["gluten"], likelyInStock: true },
+  { name: "Paneermeel", unit: "GRAM", category: "PANTRY", restrictionTags: ["gluten"] },
+  { name: "Chilivlokken", unit: "GRAM", category: "PANTRY", likelyInStock: true },
+  { name: "Paprikapoeder", unit: "GRAM", category: "PANTRY", likelyInStock: true },
+  { name: "Komijnpoeder", unit: "GRAM", category: "PANTRY", likelyInStock: true },
+  { name: "Balsamicoazijn", unit: "ML", category: "PANTRY", likelyInStock: true },
   { name: "Tomatensoep (pak)", unit: "ML", category: "PANTRY" },
 ];
 

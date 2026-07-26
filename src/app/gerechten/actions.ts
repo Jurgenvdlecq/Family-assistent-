@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { logFeedbackEvent } from "@/lib/feedback";
 import { invalidateShoppingList } from "@/lib/shoppingList";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "@/lib/scoring";
+import { getHouseholdHardRestrictions } from "@/lib/household";
+import { recipeConflictsWithRestrictions } from "@/lib/dietaryRestrictions";
 import { DAY_ENUM, type DayKey } from "@/lib/week";
 
 export async function replaceMealPlanEntry(formData: FormData) {
@@ -13,6 +15,30 @@ export async function replaceMealPlanEntry(formData: FormData) {
   const dayKey = String(formData.get("dayKey")) as DayKey;
   const recipeVariantId = String(formData.get("recipeVariantId"));
   const weekStart = new Date(String(formData.get("weekStart")));
+
+  // Server actions zijn een publiek bereikbaar POST-endpoint (elke
+  // aanroeper kan hetzelfde form-veld met een andere id versturen) — de UI
+  // filtert onveilige gerechten al weg, maar dat is geen beveiliging.
+  // Daarom hier nogmaals hard controleren, ongeacht wat er binnenkomt.
+  const [variant, hardRestrictions] = await Promise.all([
+    prisma.recipeVariant.findUniqueOrThrow({
+      where: { id: recipeVariantId },
+      include: { recipe: { include: { ingredients: { include: { ingredient: true } } } } },
+    }),
+    getHouseholdHardRestrictions(householdId),
+  ]);
+  const conflicts = recipeConflictsWithRestrictions(
+    variant.recipe.ingredients.map((ri) => ({
+      category: ri.ingredient.category,
+      restrictionTags: ri.ingredient.restrictionTags,
+    })),
+    hardRestrictions
+  );
+  if (conflicts) {
+    throw new Error(
+      "Dit gerecht botst met een harde beperking van jullie huishouden en kan niet worden ingepland."
+    );
+  }
 
   const mealPlan = await prisma.mealPlan.findUniqueOrThrow({
     where: { householdId_weekStart: { householdId, weekStart } },

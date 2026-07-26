@@ -7,7 +7,7 @@ import { getCurrentWeekStart } from "@/lib/week";
 import { ensureShoppingList, getShoppingListCandidates } from "@/lib/shoppingList";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
-import { confirmProductChoice, skipReview, confirmShoppingList } from "./actions";
+import { confirmProductChoice, rejectProductChoice, skipReview, confirmShoppingList } from "./actions";
 
 // ensureShoppingList schrijft (idempotent) naar de database — nooit
 // statisch prerenderen tijdens de build.
@@ -33,7 +33,7 @@ export default async function ControlePage() {
 
   const candidatesByLine = new Map<string, Awaited<ReturnType<typeof getShoppingListCandidates>>>();
   for (const line of reviewLines) {
-    candidatesByLine.set(line.id, await getShoppingListCandidates(line.ingredientId));
+    candidatesByLine.set(line.id, await getShoppingListCandidates(household.id, line.ingredientId));
   }
 
   return (
@@ -77,6 +77,9 @@ export default async function ControlePage() {
                     className="min-w-0 rounded-xl border border-tag-amber-ink/25 bg-tag-amber-bg p-4"
                   >
                     <p className="mb-2 font-medium text-ink">{line.ingredient.name}</p>
+                    {line.matchReasons.length > 0 && (
+                      <p className="mb-2 text-xs text-ink-muted">{line.matchReasons.join(" ")}</p>
+                    )}
 
                     {candidates.length === 0 && (
                       <>
@@ -98,28 +101,43 @@ export default async function ControlePage() {
                     {candidates.length > 0 && (
                       <div className="flex min-w-0 flex-col gap-2">
                         {candidates.map((candidate) => (
-                          <form key={candidate.id} action={confirmProductChoice}>
-                            <input type="hidden" name="lineId" value={line.id} />
-                            <input type="hidden" name="productId" value={candidate.id} />
-                            <input type="hidden" name="householdId" value={household.id} />
-                            <button
-                              type="submit"
-                              className="flex w-full min-w-0 items-center justify-between gap-3 rounded-lg border border-line bg-surface px-3 py-2 text-left text-sm hover:border-accent/50"
-                            >
-                              <span className="min-w-0 truncate">
-                                {candidate.name}
-                                {candidate.brand && (
-                                  <span className="text-ink-faint"> — {candidate.brand}</span>
-                                )}
-                                {candidate.packageSize && (
-                                  <span className="text-ink-faint"> · {candidate.packageSize}</span>
-                                )}
-                              </span>
-                              <span className="shrink-0 font-medium text-accent">
-                                {formatPrice(candidate.price) ?? "Kies"}
-                              </span>
-                            </button>
-                          </form>
+                          <div key={candidate.id} className="flex min-w-0 items-center gap-2">
+                            <form action={confirmProductChoice} className="min-w-0 flex-1">
+                              <input type="hidden" name="lineId" value={line.id} />
+                              <input type="hidden" name="productId" value={candidate.id} />
+                              <input type="hidden" name="householdId" value={household.id} />
+                              <button
+                                type="submit"
+                                className="flex w-full min-w-0 items-center justify-between gap-3 rounded-lg border border-line bg-surface px-3 py-2 text-left text-sm hover:border-accent/50"
+                              >
+                                <span className="min-w-0 truncate">
+                                  {candidate.name}
+                                  {candidate.brand && (
+                                    <span className="text-ink-faint"> — {candidate.brand}</span>
+                                  )}
+                                  {candidate.packageSize && (
+                                    <span className="text-ink-faint"> · {candidate.packageSize}</span>
+                                  )}
+                                </span>
+                                <span className="shrink-0 font-medium text-accent">
+                                  {formatPrice(candidate.price) ?? "Kies"}
+                                </span>
+                              </button>
+                            </form>
+                            <form action={rejectProductChoice}>
+                              <input type="hidden" name="lineId" value={line.id} />
+                              <input type="hidden" name="productId" value={candidate.id} />
+                              <input type="hidden" name="householdId" value={household.id} />
+                              <button
+                                type="submit"
+                                aria-label={`${candidate.name} nooit meer voorstellen`}
+                                title="Nooit meer voorstellen"
+                                className="shrink-0 rounded-lg border border-line bg-surface px-2.5 py-2 text-xs text-ink-faint hover:border-red-300 hover:text-red-600"
+                              >
+                                Nooit
+                              </button>
+                            </form>
+                          </div>
                         ))}
                       </div>
                     )}
@@ -131,12 +149,23 @@ export default async function ControlePage() {
         )}
 
         <div className="mb-8">
-          <h2 className="mb-3 text-sm font-semibold text-ink">
-            Alle andere producten ({trustedLines.length})
-          </h2>
-          <p className="text-sm text-ink-muted">
-            {trustedLines.length} producten zijn automatisch goedgekeurd.
-          </p>
+          <details className="rounded-xl border border-line bg-surface p-4">
+            <summary className="cursor-pointer text-sm font-medium text-ink">
+              {trustedLines.length} vertrouwde keuzes
+            </summary>
+            <div className="mt-3 flex min-w-0 flex-col divide-y divide-line">
+              {trustedLines.map((line) => (
+                <div key={line.id} className="min-w-0 py-2">
+                  <p className="truncate text-sm text-ink">
+                    {line.product?.name ?? line.ingredient.name}
+                  </p>
+                  {line.matchReasons.length > 0 && (
+                    <p className="truncate text-xs text-ink-faint">{line.matchReasons.join(" ")}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </details>
         </div>
 
         <form action={confirmShoppingList}>

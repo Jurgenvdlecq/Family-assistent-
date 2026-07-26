@@ -2,6 +2,8 @@ import { prisma } from "./prisma";
 import { logFeedbackEvent } from "./feedback";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "./scoring";
 import { DAY_KEYS, DAY_ENUM, dateForDay, type DayKey } from "./week";
+import { getHouseholdHardRestrictions } from "./household";
+import { recipeConflictsWithRestrictions } from "./dietaryRestrictions";
 import type { ConfidenceLevel } from "@/generated/prisma/enums";
 
 type WeeklyRhythm = Partial<Record<DayKey, "busy" | "quiet">>;
@@ -40,7 +42,7 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
   const existing = await getMealPlanForWeek(householdId, weekStart);
   if (existing) return existing;
 
-  const [household, preferences, variants] = await Promise.all([
+  const [household, preferences, allVariants, hardRestrictions] = await Promise.all([
     prisma.household.findUniqueOrThrow({ where: { id: householdId } }),
     prisma.preference.findMany({
       where: {
@@ -50,8 +52,30 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
         stance: "LIKED",
       },
     }),
-    prisma.recipeVariant.findMany({ include: { recipe: true } }),
+    prisma.recipeVariant.findMany({
+      include: { recipe: { include: { ingredients: { include: { ingredient: true } } } } },
+    }),
+    getHouseholdHardRestrictions(householdId),
   ]);
+
+  // Harde beperkingen (allergieën, "nooit") gelden voor het hele huishouden
+  // en worden vóór elke andere afweging toegepast — nooit als gewone
+  // voorkeur behandeld (sectie 10 van de Blueprint).
+  const variants = allVariants.filter(
+    (v) =>
+      !recipeConflictsWithRestrictions(
+        v.recipe.ingredients.map((ri) => ({
+          category: ri.ingredient.category,
+          restrictionTags: ri.ingredient.restrictionTags,
+        })),
+        hardRestrictions
+      )
+  );
+  if (variants.length === 0) {
+    throw new Error(
+      "Geen enkel gerecht in de bibliotheek voldoet aan de harde beperkingen van dit huishouden. Voeg geschikte recepten toe voordat er een weekplanning gemaakt kan worden."
+    );
+  }
 
   const preferredCategories = new Set(preferences.map((p) => p.subjectId));
   const rhythm = (household.weeklyRhythm ?? {}) as unknown as WeeklyRhythm;
