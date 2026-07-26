@@ -44,15 +44,10 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 | WP5 | Productmatching als domein | `src/domain/product-matching/` (eerste map onder de doelarchitectuur `src/domain/`) — deterministische, uitlegbare matching, geen `Math.random()`. |
 | WP6 | Controlepagina herbouwd | `/controle` in 3 secties (aandacht nodig / niet gevonden / vertrouwd), met verpakkingsberekening, hoeveelheid aanpassen, "alleen deze week", verwijderen. |
 | WP7 | Picnic-mandje professionaliseren | `src/lib/picnic/cartService.ts` (idempotente add + clear), `PicnicNetworkError`/`PicnicApiError`, bevestigingsscherm vóór het vullen van het mandje (`src/lib/picnic/confirmationSummary.ts`), "mandje legen"-knop. |
+| WP8 | Uitlegbare weekplanning-scoring | `src/domain/meal-planning/scoreMealPlanCandidate.ts` + `src/lib/mealPlan.ts` — `Math.random()` vervangen door deterministische score met stabiele tiebreak op variant-id, concrete redenen, recente-planning-signaal en variantvoorkeuren. |
 
 ## Nog te doen (roadmap, nog niet gestart)
 
-- **WP8 — Uitlegbare weekplanning-scoring.** `ensureMealPlan` in
-  `src/lib/mealPlan.ts` gebruikt momenteel nog een `Math.random()`-tiebreak
-  bij het kiezen tussen gelijkwaardige receptvarianten. Vervang dit door een
-  deterministische, uitlegbare score (zoals eerder gedaan in WP5 voor
-  productmatching: stabiele tiebreak, bv. sorteren op ID-string, en een
-  reden waarom een gerecht is gekozen).
 - **WP9 — Multi-household / authenticatie.** Bewust laatste work package:
   raakt vrijwel elk bestand (elke query filtert nu al op `householdId`,
   maar er is nog geen inlog/sessiebeheer — er is precies één huishouden dat
