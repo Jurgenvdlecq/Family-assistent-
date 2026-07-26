@@ -34,6 +34,7 @@ model Household {
   mealSuggestions  MealSuggestion[]
   feedbackEvents   FeedbackEvent[]
   fixedGroceries   FixedGrocery[]
+  inventoryItems   InventoryItem[]
 
   @@map("households")
 }
@@ -59,6 +60,36 @@ model FixedGrocery {
 
   @@unique([householdId, ingredientId])
   @@map("fixed_groceries")
+}
+
+// Eenvoudige voorraadstatus per huishouden + ingrediënt (Fase 2: "geen
+// complex magazijnsysteem"). `status` is de bron van waarheid voor de
+// boodschappenflow; `quantity`/`unit` zijn optioneel voor wie een preciezer
+// aantal wil vastleggen. Blijft — in tegenstelling tot Picnic-besteller —
+// gewoon bewaard tussen weken totdat de gebruiker het zelf bijwerkt.
+model InventoryItem {
+  id           String          @id @default(uuid())
+  householdId  String          @map("household_id")
+  ingredientId String          @map("ingredient_id")
+  status       InventoryStatus @default(UNKNOWN)
+  quantity     Float?
+  unit         Unit?
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+
+  household  Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+
+  @@unique([householdId, ingredientId])
+  @@map("inventory_items")
+}
+
+enum InventoryStatus {
+  SUFFICIENT
+  LOW
+  OUT_OF_STOCK
+  UNKNOWN
+
+  @@map("inventory_status")
 }
 
 // ── Person ───────────────────────────────────────────────────────────────
@@ -256,11 +287,17 @@ model Ingredient {
   // betrouwbaar aan een ingrediënt kan worden gekoppeld. Bewust geen vrije
   // tekst: alleen tags uit dat vocabulaire mogen hier terechtkomen.
   restrictionTags String[] @default([]) @map("restriction_tags")
+  // Kandidaat voor de voorraadcontrole (Fase 4): een pantry-basisproduct dat
+  // waarschijnlijk al in huis is (olie, bloem, bouillon, ...), dus de moeite
+  // waard om ernaar te vragen — in tegenstelling tot verse producten die
+  // sowieso elke keer opnieuw gekocht worden.
+  likelyInStock   Boolean  @default(false) @map("likely_in_stock")
 
   recipeIngredients RecipeIngredient[]
   fixedGroceries    FixedGrocery[]
   products          Product[]
   shoppingListLines ShoppingListLine[]
+  inventoryItems    InventoryItem[]
 
   @@map("ingredients")
 }
@@ -353,6 +390,11 @@ model ShoppingListLine {
 enum LineSource {
   MEAL
   FIXED
+  // Toegevoegd omdat de voorraadcontrole een pantry-item als "bijna op"/"op"
+  // markeerde, terwijl geen enkel recept deze week dat ingrediënt gebruikt —
+  // dus geen MEAL-regel om aan te vullen. Altijd needsReview: de gebruiker
+  // gaf alleen een status door, geen exacte hoeveelheid.
+  INVENTORY
 
   @@map("line_source")
 }

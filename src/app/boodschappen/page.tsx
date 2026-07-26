@@ -6,6 +6,7 @@ import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { getCurrentWeekStart } from "@/lib/week";
 import { ensureShoppingList } from "@/lib/shoppingList";
 import { getFixedGroceries, getIngredientsWithoutFixedGrocery } from "@/lib/fixedGroceries";
+import { getInventoryChecklist } from "@/lib/inventory";
 import { preparePicnicTransfer } from "@/lib/picnicAdapter";
 import NavBar from "@/components/NavBar";
 import PicnicTransfer from "./PicnicTransfer";
@@ -17,8 +18,15 @@ import {
   addFixedGrocery,
   removeFixedGroceryPermanently,
 } from "./fixedGroceriesActions";
+import { updateInventoryStatus } from "./inventoryActions";
 
 const UNIT_LABELS: Record<string, string> = { GRAM: "gram", ML: "ml", PIECE: "stuks" };
+
+const INVENTORY_STATUS_OPTIONS = [
+  { value: "SUFFICIENT", label: "Genoeg" },
+  { value: "LOW", label: "Bijna op" },
+  { value: "OUT_OF_STOCK", label: "Op" },
+] as const;
 
 // ensureShoppingList schrijft (idempotent) naar de database — nooit
 // statisch prerenderen tijdens de build.
@@ -42,14 +50,15 @@ export default async function BoodschappenPage() {
   const sortedLines = [...shoppingList.lines].sort((a, b) =>
     a.ingredient.name.localeCompare(b.ingredient.name)
   );
-  const mealLines = sortedLines.filter((l) => l.source === "MEAL");
+  const mealLines = sortedLines.filter((l) => l.source === "MEAL" || l.source === "INVENTORY");
   const activeFixedLines = sortedLines.filter((l) => l.source === "FIXED");
   const reviewCount = sortedLines.filter((l) => l.needsReview).length;
   const picnicTransfer = await preparePicnicTransfer(shoppingList.id);
 
-  const [fixedGroceries, availableIngredients] = await Promise.all([
+  const [fixedGroceries, availableIngredients, inventoryChecklist] = await Promise.all([
     getFixedGroceries(household.id),
     getIngredientsWithoutFixedGrocery(household.id),
+    getInventoryChecklist(household.id),
   ]);
   const activeIngredientIds = new Set(activeFixedLines.map((l) => l.ingredientId));
   const inactiveFixedItems = fixedGroceries.filter((f) => !activeIngredientIds.has(f.ingredientId));
@@ -235,6 +244,40 @@ export default async function BoodschappenPage() {
             </form>
           )}
         </details>
+
+        <h2 className="mb-3 mt-8 text-sm font-semibold text-ink">Voorraadcontrole</h2>
+        <p className="mb-3 text-sm text-ink-muted">
+          Hoe staat het met deze basisproducten? Ik onthoud je antwoord voor volgende keren.
+        </p>
+        <div className="flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
+          {inventoryChecklist.map((item) => (
+            <div
+              key={item.ingredientId}
+              className="flex min-w-0 flex-wrap items-center justify-between gap-2 p-4"
+            >
+              <p className="min-w-0 truncate text-ink">{item.name}</p>
+              <div className="flex shrink-0 gap-1 rounded-lg bg-surface-2 p-1">
+                {INVENTORY_STATUS_OPTIONS.map((option) => (
+                  <form key={option.value} action={updateInventoryStatus}>
+                    <input type="hidden" name="householdId" value={household.id} />
+                    <input type="hidden" name="ingredientId" value={item.ingredientId} />
+                    <input type="hidden" name="status" value={option.value} />
+                    <button
+                      type="submit"
+                      className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                        item.status === option.value
+                          ? "bg-accent text-accent-ink"
+                          : "text-ink-muted hover:text-ink"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  </form>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
 
         <details className="mt-6 rounded-xl border border-line bg-surface p-4">
           <summary className="cursor-pointer font-medium text-ink">Per maaltijd bekijken</summary>
