@@ -1,21 +1,61 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, ClipboardCheck, CheckCircle2, AlertCircle } from "lucide-react";
+import { ChevronLeft, ClipboardCheck, CheckCircle2, AlertCircle, HelpCircle } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { getCurrentWeekStart } from "@/lib/week";
-import { ensureShoppingList, getShoppingListCandidates } from "@/lib/shoppingList";
+import { ensureShoppingList, getShoppingListCandidates, describeLinePackaging } from "@/lib/shoppingList";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
-import { confirmProductChoice, rejectProductChoice, skipReview, confirmShoppingList } from "./actions";
+import {
+  confirmProductChoice,
+  rejectProductChoice,
+  useProductThisWeekOnly,
+  adjustLineQuantity,
+  removeLineFromList,
+  skipReview,
+  confirmShoppingList,
+} from "./actions";
 
 // ensureShoppingList schrijft (idempotent) naar de database — nooit
 // statisch prerenderen tijdens de build.
 export const dynamic = "force-dynamic";
 
+const UNIT_LABELS: Record<string, string> = { GRAM: "gram", ML: "ml", PIECE: "stuks" };
+
 function formatPrice(price: unknown) {
   if (price === null || price === undefined) return null;
   return `€ ${Number(price).toFixed(2)}`;
+}
+
+function formatQuantity(quantity: number, unit: string) {
+  if (unit === "GRAM") return `${quantity} g`;
+  if (unit === "ML") return `${quantity} ml`;
+  return `${quantity}x`;
+}
+
+/** "2 verpakkingen · 1000 g totaal · 200 g over" — of niets als de verpakking onbekend is (Fase 3). */
+function PackagingLine({
+  line,
+  product,
+}: {
+  line: { quantity: number; unit: string };
+  product: { packageQuantity: number | null } | null | undefined;
+}) {
+  const breakdown = describeLinePackaging(
+    { quantity: line.quantity, unit: line.unit as "GRAM" | "ML" | "PIECE" },
+    product
+  );
+  if (breakdown.status !== "OK") return null;
+  return (
+    <p className="text-xs text-ink-faint">
+      {breakdown.packagesToBuy} {breakdown.packagesToBuy === 1 ? "verpakking" : "verpakkingen"} ·{" "}
+      {formatQuantity(breakdown.totalPurchased!.amount, breakdown.totalPurchased!.unit)} totaal
+      {breakdown.expectedSurplus!.amount > 0 && (
+        <> · {formatQuantity(breakdown.expectedSurplus!.amount, breakdown.expectedSurplus!.unit)} over</>
+      )}
+    </p>
+  );
 }
 
 export default async function ControlePage() {
@@ -35,6 +75,12 @@ export default async function ControlePage() {
   for (const line of reviewLines) {
     candidatesByLine.set(line.id, await getShoppingListCandidates(household.id, line.ingredientId));
   }
+
+  // Fase 6: "niet gevonden" is een apart geval van "aandacht nodig" — geen
+  // enkel bekend product om uit te kiezen, dus andere acties dan een
+  // twijfelgeval met wél kandidaten.
+  const notFoundLines = reviewLines.filter((l) => (candidatesByLine.get(l.id) ?? []).length === 0);
+  const attentionLines = reviewLines.filter((l) => (candidatesByLine.get(l.id) ?? []).length > 0);
 
   return (
     <div className="mx-auto flex min-h-screen w-full min-w-0 max-w-2xl flex-col pb-24">
@@ -57,58 +103,64 @@ export default async function ControlePage() {
 
         <div className="mb-7 flex flex-wrap gap-2">
           <Tag tone="green">{trustedLines.length} vertrouwde keuzes</Tag>
-          {reviewLines.length > 0 && (
-            <Tag tone="amber">{reviewLines.length} vragen aandacht</Tag>
-          )}
+          {attentionLines.length > 0 && <Tag tone="amber">{attentionLines.length} vragen aandacht</Tag>}
+          {notFoundLines.length > 0 && <Tag tone="amber">{notFoundLines.length} niet gevonden</Tag>}
         </div>
 
-        {reviewLines.length > 0 && (
+        {attentionLines.length > 0 && (
           <div className="mb-8">
             <div className="mb-3 flex items-center gap-1.5">
               <AlertCircle size={16} className="text-tag-amber-ink" />
               <h2 className="text-sm font-semibold text-ink">Even jullie hulp nodig</h2>
             </div>
             <div className="flex min-w-0 flex-col gap-4">
-              {reviewLines.map((line) => {
+              {attentionLines.map((line) => {
                 const candidates = candidatesByLine.get(line.id) ?? [];
                 return (
                   <div
                     key={line.id}
                     className="min-w-0 rounded-xl border border-tag-amber-ink/25 bg-tag-amber-bg p-4"
                   >
-                    <p className="mb-2 font-medium text-ink">{line.ingredient.name}</p>
+                    <p className="mb-1 font-medium text-ink">{line.ingredient.name}</p>
                     {line.matchReasons.length > 0 && (
                       <p className="mb-2 text-xs text-ink-muted">{line.matchReasons.join(" ")}</p>
                     )}
 
-                    {candidates.length === 0 && (
-                      <>
-                        <p className="mb-3 text-sm text-ink-muted">
-                          Geen product gevonden voor dit ingrediënt — voeg het later zelf toe.
-                        </p>
-                        <form action={skipReview}>
-                          <input type="hidden" name="lineId" value={line.id} />
-                          <button
-                            type="submit"
-                            className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink"
-                          >
-                            Begrepen
-                          </button>
-                        </form>
-                      </>
-                    )}
+                    <form action={adjustLineQuantity} className="mb-3 flex flex-wrap items-center gap-2">
+                      <input type="hidden" name="lineId" value={line.id} />
+                      <input
+                        type="number"
+                        name="quantity"
+                        defaultValue={line.quantity}
+                        step="any"
+                        min="0.01"
+                        className="w-20 rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink"
+                      />
+                      <span className="text-xs text-ink-faint">
+                        {UNIT_LABELS[line.unit] ?? line.unit} nodig
+                      </span>
+                      <button
+                        type="submit"
+                        className="rounded-md border border-line bg-surface px-2 py-1 text-xs font-medium text-ink hover:border-accent/50"
+                      >
+                        Aantal bijwerken
+                      </button>
+                    </form>
 
-                    {candidates.length > 0 && (
-                      <div className="flex min-w-0 flex-col gap-2">
-                        {candidates.map((candidate) => (
-                          <div key={candidate.id} className="flex min-w-0 items-center gap-2">
+                    <div className="flex min-w-0 flex-col gap-2">
+                      {candidates.map((candidate) => (
+                        <div
+                          key={candidate.id}
+                          className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-line bg-surface px-3 py-2"
+                        >
+                          <div className="flex min-w-0 items-center gap-2">
                             <form action={confirmProductChoice} className="min-w-0 flex-1">
                               <input type="hidden" name="lineId" value={line.id} />
                               <input type="hidden" name="productId" value={candidate.id} />
                               <input type="hidden" name="householdId" value={household.id} />
                               <button
                                 type="submit"
-                                className="flex w-full min-w-0 items-center justify-between gap-3 rounded-lg border border-line bg-surface px-3 py-2 text-left text-sm hover:border-accent/50"
+                                className="flex w-full min-w-0 items-center justify-between gap-3 text-left text-sm hover:opacity-80"
                               >
                                 <span className="min-w-0 truncate">
                                   {candidate.name}
@@ -138,12 +190,65 @@ export default async function ControlePage() {
                               </button>
                             </form>
                           </div>
-                        ))}
-                      </div>
-                    )}
+
+                          <PackagingLine line={line} product={candidate} />
+
+                          <form action={useProductThisWeekOnly}>
+                            <input type="hidden" name="lineId" value={line.id} />
+                            <input type="hidden" name="productId" value={candidate.id} />
+                            <input type="hidden" name="householdId" value={household.id} />
+                            <button
+                              type="submit"
+                              className="text-xs font-medium text-ink-faint underline decoration-dotted hover:text-ink"
+                            >
+                              Alleen deze week
+                            </button>
+                          </form>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {notFoundLines.length > 0 && (
+          <div className="mb-8">
+            <div className="mb-3 flex items-center gap-1.5">
+              <HelpCircle size={16} className="text-ink-faint" />
+              <h2 className="text-sm font-semibold text-ink">Niet gevonden</h2>
+            </div>
+            <div className="flex min-w-0 flex-col gap-3">
+              {notFoundLines.map((line) => (
+                <div key={line.id} className="min-w-0 rounded-xl border border-line bg-surface p-4">
+                  <p className="mb-1 font-medium text-ink">{line.ingredient.name}</p>
+                  <p className="mb-3 text-sm text-ink-muted">
+                    {line.matchReasons[0] ?? "Geen product gevonden voor dit ingrediënt."}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <form action={skipReview}>
+                      <input type="hidden" name="lineId" value={line.id} />
+                      <button
+                        type="submit"
+                        className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink"
+                      >
+                        Zonder product doorgaan
+                      </button>
+                    </form>
+                    <form action={removeLineFromList}>
+                      <input type="hidden" name="lineId" value={line.id} />
+                      <button
+                        type="submit"
+                        className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink-faint hover:text-red-600"
+                      >
+                        Van lijst verwijderen
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -162,6 +267,7 @@ export default async function ControlePage() {
                   {line.matchReasons.length > 0 && (
                     <p className="truncate text-xs text-ink-faint">{line.matchReasons.join(" ")}</p>
                   )}
+                  <PackagingLine line={line} product={line.product} />
                 </div>
               ))}
             </div>

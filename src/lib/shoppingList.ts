@@ -9,6 +9,7 @@ import { matchProduct } from "@/domain/product-matching/matchProduct";
 import { matchProductForIngredient } from "@/domain/product-matching/matchIngredient";
 import { getRejectedProductIds, getTrustedPreferences, toMatchCandidate } from "@/domain/product-matching/repository";
 import type { ProductMatchResult } from "@/domain/product-matching/types";
+import { calculatePackageRequirement, type PackageRequirementResult } from "./quantity/packages";
 
 type InventoryLookup = Awaited<ReturnType<typeof getInventoryMap>>;
 
@@ -293,4 +294,21 @@ export async function getShoppingListCandidates(householdId: string, ingredientI
   ]);
   const rejected = rejectedMap.get(ingredientId) ?? new Set<string>();
   return products.filter((p) => !rejected.has(p.id));
+}
+
+/**
+ * Vertaalt een boodschappenregel naar de verpakkingsberekening uit Fase 3
+ * (aantal verpakkingen, totaal gekocht, verwacht overschot). `line.quantity`
+ * is al de netto hoeveelheid (na aftrek van voorraad, zie ensureShoppingList),
+ * dus die gaat rechtstreeks als behoefte de engine in. Geen enkele pagina
+ * mag dit zelf uitrekenen — vandaar deze ene, gedeelde ingang.
+ */
+export function describeLinePackaging(
+  line: { quantity: number; unit: Unit },
+  product: { packageQuantity: number | null } | null | undefined
+): PackageRequirementResult {
+  return calculatePackageRequirement({
+    recipeNeed: { amount: line.quantity, unit: line.unit },
+    packageSize: product?.packageQuantity != null ? { amount: product.packageQuantity, unit: line.unit } : null,
+  });
 }
