@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { assertCurrentHousehold } from "@/lib/auth";
 import { logFeedbackEvent } from "@/lib/feedback";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "@/lib/scoring";
 import { DAY_ENUM, type DayKey } from "@/lib/week";
@@ -14,6 +15,7 @@ import { DAY_ENUM, type DayKey } from "@/lib/week";
  */
 export async function submitMealFeedback(formData: FormData) {
   const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
   const recipeVariantId = String(formData.get("recipeVariantId"));
   const dayKey = String(formData.get("dayKey")) as DayKey;
   const positive = formData.get("positive") === "true";

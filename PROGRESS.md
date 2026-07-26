@@ -45,13 +45,13 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 | WP6 | Controlepagina herbouwd | `/controle` in 3 secties (aandacht nodig / niet gevonden / vertrouwd), met verpakkingsberekening, hoeveelheid aanpassen, "alleen deze week", verwijderen. |
 | WP7 | Picnic-mandje professionaliseren | `src/lib/picnic/cartService.ts` (idempotente add + clear), `PicnicNetworkError`/`PicnicApiError`, bevestigingsscherm vóór het vullen van het mandje (`src/lib/picnic/confirmationSummary.ts`), "mandje legen"-knop. |
 | WP8 | Uitlegbare weekplanning-scoring | `src/domain/meal-planning/scoreMealPlanCandidate.ts` + `src/lib/mealPlan.ts` — `Math.random()` vervangen door deterministische score met stabiele tiebreak op variant-id, concrete redenen, recente-planning-signaal en variantvoorkeuren. |
+| WP9 | Multi-household / authenticatie | `src/lib/auth.ts`, `/login`, `HouseholdSession` + toegangscode-hash — pagina's gebruiken het huidige huishouden uit een HttpOnly-sessiecookie en server actions valideren household-toegang voordat ze muteren. |
 
 ## Nog te doen (roadmap, nog niet gestart)
 
-- **WP9 — Multi-household / authenticatie.** Bewust laatste work package:
-  raakt vrijwel elk bestand (elke query filtert nu al op `householdId`,
-  maar er is nog geen inlog/sessiebeheer — er is precies één huishouden dat
-  impliciet wordt gebruikt via `prisma.household.findFirst()`).
+- **WP10 — Persoonlijke gezinslogica.** Volgende logische pakket uit Fase 10:
+  aanwezigheid per dag, voorkeuren per persoon, portiegrootte/kind-volwassene
+  en planningregels die deze signalen echt meewegen.
 
 ## Niet-voor-de-hand-liggende operationele kennis
 
@@ -114,6 +114,13 @@ Workflow die wel werkt:
 - Geen `Math.random()`-tiebreaks — altijd een deterministische, uitlegbare
   volgorde (zie WP5 `matchProduct.ts` als voorbeeld; WP8 moet hetzelfde doen
   voor `ensureMealPlan`).
+- Sinds WP9 komt het actuele huishouden uit `src/lib/auth.ts` via een
+  HttpOnly-sessiecookie. Server actions mogen een `householdId` uit een form
+  alleen gebruiken nadat `assertCurrentHousehold()` is aangeroepen, of moeten
+  ownership afleiden via de betreffende shopping-list/line.
+- Bestaande productie-installaties met precies één huishouden zonder
+  toegangscode blijven tijdelijk werken via een legacy-pad. Stel daarna bij
+  `/ons-gezin` een toegangscode in zodat `/login` gebruikt kan worden.
 
 ### Beveiliging
 

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, ClipboardCheck, CheckCircle2, AlertCircle, HelpCircle } from "lucide-react";
-import { prisma } from "@/lib/prisma";
+import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { getCurrentWeekStart } from "@/lib/week";
 import { ensureShoppingList, getShoppingListCandidates, describeLinePackaging } from "@/lib/shoppingList";
@@ -59,8 +59,7 @@ function PackagingLine({
 }
 
 export default async function ControlePage() {
-  const household = await prisma.household.findFirst({ orderBy: { createdAt: "asc" } });
-  if (!household) redirect("/onboarding");
+  const household = await requireCurrentHousehold();
 
   const weekStart = getCurrentWeekStart();
   const mealPlan = await getMealPlanForWeek(household.id, weekStart);

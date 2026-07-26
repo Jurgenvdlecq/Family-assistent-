@@ -1,11 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { assertCurrentHousehold, clearHouseholdSession, setHouseholdAccessCode } from "@/lib/auth";
 import { DAY_KEYS, type DayKey } from "@/lib/week";
 
 export async function addPerson(formData: FormData) {
   const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
   const name = String(formData.get("name") ?? "").trim();
   const role = String(formData.get("role") ?? "OTHER") as "PARENT" | "CHILD" | "OTHER";
 
@@ -23,6 +26,7 @@ export async function addPerson(formData: FormData) {
 
 export async function updateWeeklyRhythm(formData: FormData) {
   const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
   const dayKey = String(formData.get("dayKey")) as DayKey;
   const value = String(formData.get("value")) as "busy" | "quiet";
 
@@ -40,4 +44,17 @@ export async function updateWeeklyRhythm(formData: FormData) {
 
   revalidatePath("/ons-gezin");
   revalidatePath("/");
+}
+
+export async function updateAccessCode(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const accessCode = String(formData.get("accessCode") ?? "");
+  await setHouseholdAccessCode(householdId, accessCode);
+  revalidatePath("/ons-gezin");
+}
+
+export async function logout() {
+  await clearHouseholdSession();
+  redirect("/login");
 }

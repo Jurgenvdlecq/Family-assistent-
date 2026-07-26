@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { assertCurrentHousehold } from "@/lib/auth";
 import { matchProductForIngredient } from "@/domain/product-matching/matchIngredient";
 import { upsertFixedGrocery, removeFixedGrocery } from "@/lib/fixedGroceries";
 import { Unit } from "@/generated/prisma/enums";
@@ -43,6 +44,7 @@ async function loadFixedLine(lineId: string) {
   if (line.source !== "FIXED") {
     throw new Error("Deze actie is alleen bedoeld voor vaste boodschappen.");
   }
+  await assertCurrentHousehold(line.shoppingList.mealPlan.householdId);
   return { line, householdId: line.shoppingList.mealPlan.householdId };
 }
 
@@ -63,6 +65,7 @@ export async function restoreFixedLineThisWeek(formData: FormData) {
     where: { id: shoppingListId },
     include: { mealPlan: { select: { householdId: true } } },
   });
+  await assertCurrentHousehold(shoppingList.mealPlan.householdId);
   const fixed = await prisma.fixedGrocery.findUniqueOrThrow({
     where: { householdId_ingredientId: { householdId: shoppingList.mealPlan.householdId, ingredientId } },
   });
@@ -105,6 +108,7 @@ export async function updateFixedLineQuantity(formData: FormData) {
 /** Voegt een nieuwe vaste boodschap toe aan de standaardlijst, en meteen aan de huidige lijst als die al bestaat. */
 export async function addFixedGrocery(formData: FormData) {
   const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
   const ingredientId = String(formData.get("ingredientId"));
   const quantity = parseQuantity(formData.get("quantity"));
   const unit = parseUnit(formData.get("unit"));
@@ -131,6 +135,7 @@ export async function addFixedGrocery(formData: FormData) {
 /** Verwijdert een vaste boodschap definitief uit de standaardlijst (niet alleen deze week). */
 export async function removeFixedGroceryPermanently(formData: FormData) {
   const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
   const ingredientId = String(formData.get("ingredientId"));
   const lineId = formData.get("lineId");
 

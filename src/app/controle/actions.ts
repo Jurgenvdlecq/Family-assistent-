@@ -3,16 +3,27 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { assertCurrentHousehold } from "@/lib/auth";
 import { logFeedbackEvent } from "@/lib/feedback";
 import { recordProductChosen, recordProductRejected } from "@/domain/product-matching/repository";
 import { matchProductForIngredient } from "@/domain/product-matching/matchIngredient";
+
+async function loadLineForCurrentHousehold(lineId: string) {
+  const line = await prisma.shoppingListLine.findUniqueOrThrow({
+    where: { id: lineId },
+    include: { shoppingList: { include: { mealPlan: { select: { householdId: true } } } } },
+  });
+  await assertCurrentHousehold(line.shoppingList.mealPlan.householdId);
+  return { line, householdId: line.shoppingList.mealPlan.householdId };
+}
 
 export async function confirmProductChoice(formData: FormData) {
   const lineId = String(formData.get("lineId"));
   const productId = String(formData.get("productId"));
   const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
 
-  const line = await prisma.shoppingListLine.findUniqueOrThrow({ where: { id: lineId } });
+  const { line } = await loadLineForCurrentHousehold(lineId);
 
   if (line.productId && line.productId !== productId) {
     await logFeedbackEvent({
@@ -62,8 +73,9 @@ export async function rejectProductChoice(formData: FormData) {
   const lineId = String(formData.get("lineId"));
   const productId = String(formData.get("productId"));
   const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
 
-  const line = await prisma.shoppingListLine.findUniqueOrThrow({ where: { id: lineId } });
+  const { line } = await loadLineForCurrentHousehold(lineId);
 
   await recordProductRejected(householdId, line.ingredientId, productId);
   await logFeedbackEvent({
@@ -100,8 +112,9 @@ export async function useProductThisWeekOnly(formData: FormData) {
   const lineId = String(formData.get("lineId"));
   const productId = String(formData.get("productId"));
   const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
 
-  const line = await prisma.shoppingListLine.findUniqueOrThrow({ where: { id: lineId } });
+  const { line } = await loadLineForCurrentHousehold(lineId);
 
   if (line.productId && line.productId !== productId) {
     await logFeedbackEvent({
@@ -140,6 +153,7 @@ export async function useProductThisWeekOnly(formData: FormData) {
 /** Past de hoeveelheid van deze ene regel aan (bv. een twijfelgeval bleek toch meer of minder nodig te hebben). */
 export async function adjustLineQuantity(formData: FormData) {
   const lineId = String(formData.get("lineId"));
+  await loadLineForCurrentHousehold(lineId);
   const quantity = Number(formData.get("quantity"));
   if (!Number.isFinite(quantity) || quantity <= 0) {
     throw new Error("Vul een geldige hoeveelheid groter dan 0 in.");
@@ -153,6 +167,7 @@ export async function adjustLineQuantity(formData: FormData) {
 /** Verwijdert een regel volledig van de lijst — voor producten die niet gevonden zijn en niet nodig blijken. */
 export async function removeLineFromList(formData: FormData) {
   const lineId = String(formData.get("lineId"));
+  await loadLineForCurrentHousehold(lineId);
   await prisma.shoppingListLine.delete({ where: { id: lineId } });
   revalidatePath("/controle");
   revalidatePath("/boodschappen");
@@ -160,6 +175,7 @@ export async function removeLineFromList(formData: FormData) {
 
 export async function skipReview(formData: FormData) {
   const lineId = String(formData.get("lineId"));
+  await loadLineForCurrentHousehold(lineId);
   await prisma.shoppingListLine.update({
     where: { id: lineId },
     data: { needsReview: false },
@@ -170,6 +186,11 @@ export async function skipReview(formData: FormData) {
 
 export async function confirmShoppingList(formData: FormData) {
   const shoppingListId = String(formData.get("shoppingListId"));
+  const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
+    where: { id: shoppingListId },
+    include: { mealPlan: { select: { householdId: true } } },
+  });
+  await assertCurrentHousehold(shoppingList.mealPlan.householdId);
   await prisma.shoppingList.update({
     where: { id: shoppingListId },
     data: { status: "REVIEWED" },

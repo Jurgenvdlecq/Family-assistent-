@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { assertCurrentHousehold } from "@/lib/auth";
 import { markTransferred } from "@/lib/picnicAdapter";
 import {
   addShoppingListToPicnicCart,
@@ -12,14 +13,25 @@ import { buildConfirmationSummary, type ConfirmationSummary } from "@/lib/picnic
 
 export async function confirmTransfer(formData: FormData) {
   const shoppingListId = String(formData.get("shoppingListId"));
+  await assertShoppingListAccess(shoppingListId);
   await markTransferred(shoppingListId);
   revalidatePath("/boodschappen");
+}
+
+async function assertShoppingListAccess(shoppingListId: string) {
+  const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
+    where: { id: shoppingListId },
+    include: { mealPlan: { select: { householdId: true } } },
+  });
+  await assertCurrentHousehold(shoppingList.mealPlan.householdId);
+  return shoppingList;
 }
 
 /** Bevestigingssamenvatting vóór het echt vullen van het Picnic-mandje (Fase 7/8). */
 export async function getPicnicConfirmationSummary(
   shoppingListId: string
 ): Promise<ConfirmationSummary> {
+  await assertShoppingListAccess(shoppingListId);
   const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
     where: { id: shoppingListId },
     include: { lines: { include: { ingredient: true, product: true } } },
@@ -42,6 +54,7 @@ export async function getPicnicConfirmationSummary(
 }
 
 export async function addToPicnicCart(shoppingListId: string): Promise<PicnicCartResult> {
+  await assertShoppingListAccess(shoppingListId);
   const result = await addShoppingListToPicnicCart(shoppingListId);
   if (result.notFound.length === 0 && result.errors.length === 0) {
     await markTransferred(shoppingListId);
@@ -51,6 +64,7 @@ export async function addToPicnicCart(shoppingListId: string): Promise<PicnicCar
 }
 
 export async function clearPicnicCart(shoppingListId: string): Promise<void> {
+  await assertShoppingListAccess(shoppingListId);
   await clearPicnicCartForShoppingList(shoppingListId);
   revalidatePath("/boodschappen");
 }
