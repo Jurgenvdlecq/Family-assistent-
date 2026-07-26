@@ -294,6 +294,12 @@ model Product {
   name               String
   brand              String?
   packageSize        String?   @map("package_size")
+  // Structureel aantal eenheden (in de eenheid van het gekoppelde
+  // Ingredient) per verpakking — bv. 500 voor "500 gram", 4 voor "4 stuks".
+  // Null wanneer packageSize niet betrouwbaar te herleiden is tot de
+  // ingrediënt-eenheid (zie src/lib/quantity/parsePackageSize.ts); dan is
+  // handmatige controle nodig in plaats van een geraden waarde.
+  packageQuantity    Float?    @map("package_quantity")
   price              Decimal?  @db.Decimal(10, 2)
   lastSeenAvailable  DateTime? @map("last_seen_available")
 

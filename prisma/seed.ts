@@ -3,6 +3,7 @@ import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { INGREDIENTS, RECIPES } from "./seed-data";
 import { PRODUCTS } from "./product-seed-data";
+import { parsePackageQuantity } from "../src/lib/quantity/parsePackageSize";
 
 async function main() {
   const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
@@ -10,6 +11,7 @@ async function main() {
 
   console.log(`Ingrediënten upserten (${INGREDIENTS.length})...`);
   const ingredientIdByName = new Map<string, string>();
+  const ingredientUnitByName = new Map<string, (typeof INGREDIENTS)[number]["unit"]>();
   for (const ing of INGREDIENTS) {
     const row = await prisma.ingredient.upsert({
       where: { name: ing.name },
@@ -17,6 +19,7 @@ async function main() {
       create: { ...ing, restrictionTags: ing.restrictionTags ?? [] },
     });
     ingredientIdByName.set(ing.name, row.id);
+    ingredientUnitByName.set(ing.name, ing.unit);
   }
 
   console.log(`Recepten upserten (${RECIPES.length})...`);
@@ -76,6 +79,7 @@ async function main() {
     const alreadySeeded = await prisma.product.findFirst({ where: { ingredientId } });
     if (alreadySeeded) continue;
 
+    const ingredientUnit = ingredientUnitByName.get(mapping.ingredient)!;
     for (const candidate of mapping.candidates) {
       await prisma.product.create({
         data: {
@@ -83,6 +87,7 @@ async function main() {
           name: candidate.name,
           brand: candidate.brand,
           packageSize: candidate.packageSize,
+          packageQuantity: parsePackageQuantity(candidate.packageSize, ingredientUnit),
           price: candidate.price,
           lastSeenAvailable: new Date(),
         },
