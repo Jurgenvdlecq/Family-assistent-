@@ -24,6 +24,24 @@ export class Picnic2FAError extends Error {
   }
 }
 
+/** Netwerk/verbindingsfout (geen respons van Picnic ontvangen) — anders dan een fout die Picnic zelf teruggeeft. */
+export class PicnicNetworkError extends Error {
+  cause?: unknown;
+  constructor(message: string, cause?: unknown) {
+    super(message);
+    this.cause = cause;
+  }
+}
+
+/** Overige fouten die Picnic als JSON teruggeeft (bv. product niet leverbaar, mandje-fout) — geen auth-probleem. */
+export class PicnicApiError extends Error {
+  code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
 interface PicnicErrorBody {
   error?: { code?: string; message?: string };
   second_factor_authentication_required?: boolean;
@@ -64,11 +82,16 @@ export class PicnicClient {
     };
     if (this.authToken) headers[AUTH_HEADER] = this.authToken;
 
-    const res = await fetch(BASE_URL + path, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
+    let res: Response;
+    try {
+      res = await fetch(BASE_URL + path, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+    } catch (cause) {
+      throw new PicnicNetworkError("Geen verbinding met Picnic — probeer het later opnieuw.", cause);
+    }
     this.updateTokenFromResponse(res);
     return res;
   }
@@ -83,6 +106,9 @@ export class PicnicClient {
     const data = (await res.json().catch(() => ({}))) as PicnicErrorBody;
     if (data?.error?.code === "AUTH_ERROR" || data?.error?.code === "AUTH_INVALID_CRED") {
       throw new PicnicAuthError(data.error.message ?? "Picnic-authenticatiefout");
+    }
+    if (data?.error?.code) {
+      throw new PicnicApiError(data.error.message ?? "Onbekende fout van Picnic", data.error.code);
     }
     return data;
   }
@@ -146,5 +172,9 @@ export class PicnicClient {
 
   async getCart() {
     return this.requestJson("GET", "/cart");
+  }
+
+  async clearCart() {
+    return this.requestJson("POST", "/cart/clear");
   }
 }
