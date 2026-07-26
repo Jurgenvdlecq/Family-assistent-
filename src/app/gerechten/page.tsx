@@ -1,7 +1,7 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, SlidersHorizontal, Heart, Sparkles } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { getHouseholdHardRestrictions } from "@/lib/household";
 import { recipeConflictsWithRestrictions } from "@/lib/dietaryRestrictions";
@@ -35,8 +35,7 @@ export default async function GerechtenPage({
 }) {
   const params = await searchParams;
 
-  const household = await prisma.household.findFirst({ orderBy: { createdAt: "asc" } });
-  if (!household) redirect("/onboarding");
+  const household = await requireCurrentHousehold();
 
   const dayKey: DayKey = (DAY_KEYS as readonly string[]).includes(params.day ?? "")
     ? (params.day as DayKey)

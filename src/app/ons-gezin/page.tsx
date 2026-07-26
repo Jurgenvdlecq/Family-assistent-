@@ -1,12 +1,13 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
-import { ChevronLeft, Settings, Heart, ShoppingBag, Sparkles } from "lucide-react";
+import { ChevronLeft, LogOut, Heart, ShoppingBag, Sparkles } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { requireCurrentHousehold } from "@/lib/auth";
 import type { DayKey } from "@/lib/week";
 import { CATEGORY_LABELS } from "@/lib/categoryStyle";
 import NavBar from "@/components/NavBar";
 import AddPersonForm from "./AddPersonForm";
 import WeeklyRhythmEditor from "./WeeklyRhythmEditor";
+import { logout, updateAccessCode } from "./actions";
 
 // Leest live gezinsdata — nooit statisch prerenderen.
 export const dynamic = "force-dynamic";
@@ -43,11 +44,11 @@ function initials(name: string) {
 }
 
 export default async function OnsGezinPage() {
-  const household = await prisma.household.findFirst({
-    orderBy: { createdAt: "asc" },
+  const currentHousehold = await requireCurrentHousehold();
+  const household = await prisma.household.findUniqueOrThrow({
+    where: { id: currentHousehold.id },
     include: { persons: { orderBy: { createdAt: "asc" } } },
   });
-  if (!household) redirect("/onboarding");
 
   const preferences = await prisma.preference.findMany({
     where: { ownerType: "HOUSEHOLD", ownerId: household.id },
@@ -83,7 +84,11 @@ export default async function OnsGezinPage() {
           <ChevronLeft size={22} />
         </Link>
         <span className="text-sm font-semibold">Ons gezin</span>
-        <Settings size={18} className="text-ink-muted" />
+        <form action={logout}>
+          <button type="submit" aria-label="Uitloggen" title="Uitloggen" className="text-ink-muted">
+            <LogOut size={18} />
+          </button>
+        </form>
       </header>
 
       <div className="min-w-0 px-6 pt-4">
@@ -116,6 +121,27 @@ export default async function OnsGezinPage() {
         <div className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
           <WeeklyRhythmEditor householdId={household.id} initialRhythm={rhythm} />
         </div>
+
+        <h2 className="mb-3 text-sm font-semibold text-ink">Toegangscode</h2>
+        <form action={updateAccessCode} className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <input type="hidden" name="householdId" value={household.id} />
+          <p className="mb-3 text-sm text-ink-muted">
+            Gebruik deze code om dit huishouden op een ander apparaat te openen.
+          </p>
+          <div className="flex min-w-0 gap-2">
+            <input
+              type="password"
+              name="accessCode"
+              minLength={6}
+              required
+              placeholder={household.accessCodeHash ? "Nieuwe toegangscode" : "Toegangscode instellen"}
+              className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+            />
+            <button type="submit" className="shrink-0 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink">
+              Opslaan
+            </button>
+          </div>
+        </form>
 
         <div className="mb-8 flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
           <div className="flex min-w-0 items-start gap-3 p-4">

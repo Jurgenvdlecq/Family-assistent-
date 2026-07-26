@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { assertCurrentHousehold } from "@/lib/auth";
 import { logFeedbackEvent } from "@/lib/feedback";
 import { invalidateShoppingList } from "@/lib/shoppingList";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "@/lib/scoring";
@@ -12,6 +13,7 @@ import { DAY_ENUM, type DayKey } from "@/lib/week";
 
 export async function replaceMealPlanEntry(formData: FormData) {
   const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
   const dayKey = String(formData.get("dayKey")) as DayKey;
   const recipeVariantId = String(formData.get("recipeVariantId"));
   const weekStart = new Date(String(formData.get("weekStart")));

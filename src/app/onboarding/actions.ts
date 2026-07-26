@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { createHouseholdSession, hashHouseholdAccessCode } from "@/lib/auth";
 
 export type OnboardingPersonInput = {
   name: string;
@@ -13,6 +14,7 @@ export type OnboardingPayload = {
   persons: OnboardingPersonInput[];
   weeklyRhythm: Record<string, "busy" | "quiet">;
   preferredCategories: string[];
+  accessCode: string;
 };
 
 export async function completeOnboarding(payload: OnboardingPayload) {
@@ -26,6 +28,9 @@ export async function completeOnboarding(payload: OnboardingPayload) {
   }
   if (persons.length === 0) {
     throw new Error("Voeg minimaal één gezinslid toe.");
+  }
+  if (payload.accessCode.trim().length < 6) {
+    throw new Error("Kies een toegangscode van minimaal 6 tekens.");
   }
 
   const household = await prisma.household.create({
@@ -43,6 +48,11 @@ export async function completeOnboarding(payload: OnboardingPayload) {
     },
   });
 
+  await prisma.household.update({
+    where: { id: household.id },
+    data: { accessCodeHash: hashHouseholdAccessCode(household.id, payload.accessCode) },
+  });
+
   if (payload.preferredCategories.length > 0) {
     await prisma.preference.createMany({
       data: payload.preferredCategories.map((category) => ({
@@ -57,5 +67,6 @@ export async function completeOnboarding(payload: OnboardingPayload) {
     });
   }
 
+  await createHouseholdSession(household.id);
   return { householdId: household.id };
 }

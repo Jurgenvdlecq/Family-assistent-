@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft, ShoppingCart, CheckCircle2, Utensils, ChevronRight } from "lucide-react";
-import { prisma } from "@/lib/prisma";
+import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { getCurrentWeekStart } from "@/lib/week";
 import { ensureShoppingList } from "@/lib/shoppingList";
@@ -39,8 +39,7 @@ function formatQuantity(quantity: number, unit: string) {
 }
 
 export default async function BoodschappenPage() {
-  const household = await prisma.household.findFirst({ orderBy: { createdAt: "asc" } });
-  if (!household) redirect("/onboarding");
+  const household = await requireCurrentHousehold();
 
   const weekStart = getCurrentWeekStart();
   const mealPlan = await getMealPlanForWeek(household.id, weekStart);

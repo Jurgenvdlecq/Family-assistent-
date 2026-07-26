@@ -1,6 +1,6 @@
-import { redirect } from "next/navigation";
 import { Menu, SlidersHorizontal, Flame, Leaf, MoreHorizontal, Utensils } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { requireCurrentHousehold } from "@/lib/auth";
 import { ensureMealPlan, getMealPlanForWeek, getReasonsForPlan } from "@/lib/mealPlan";
 import {
   getCurrentWeekStart,
@@ -24,13 +24,11 @@ import { submitMealFeedback } from "./actions";
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const household = await prisma.household.findFirst({
-    orderBy: { createdAt: "asc" },
+  const currentHousehold = await requireCurrentHousehold();
+  const household = await prisma.household.findUniqueOrThrow({
+    where: { id: currentHousehold.id },
     include: { persons: { orderBy: { createdAt: "asc" } } },
   });
-  if (!household) {
-    redirect("/onboarding");
-  }
 
   const weekStart = getCurrentWeekStart();
   await ensureMealPlan(household.id, weekStart);

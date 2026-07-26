@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { assertCurrentHousehold } from "@/lib/auth";
 import { setInventoryStatus } from "@/lib/inventory";
 import { syncShoppingListForInventoryChange } from "@/lib/shoppingList";
 import type { InventoryStatus } from "@/generated/prisma/enums";
@@ -9,6 +10,7 @@ const VALID_STATUSES = new Set(["SUFFICIENT", "LOW", "OUT_OF_STOCK", "UNKNOWN"])
 
 export async function updateInventoryStatus(formData: FormData) {
   const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
   const ingredientId = String(formData.get("ingredientId"));
   const status = String(formData.get("status"));
 
