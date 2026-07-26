@@ -2,9 +2,19 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { resolveProductChoice } from "@/lib/shoppingList";
+import { matchProductForIngredient } from "@/domain/product-matching/matchIngredient";
 import { upsertFixedGrocery, removeFixedGrocery } from "@/lib/fixedGroceries";
 import { Unit } from "@/generated/prisma/enums";
+
+function matchToLineFields(match: Awaited<ReturnType<typeof matchProductForIngredient>>) {
+  return {
+    productId: match.productId,
+    needsReview: match.status !== "MATCHED_TRUSTED",
+    matchStatus: match.status,
+    matchConfidence: match.confidence,
+    matchReasons: match.reasons,
+  };
+}
 
 const VALID_UNITS = new Set(Object.values(Unit));
 
@@ -57,31 +67,16 @@ export async function restoreFixedLineThisWeek(formData: FormData) {
     where: { householdId_ingredientId: { householdId: shoppingList.mealPlan.householdId, ingredientId } },
   });
 
-  const [candidates, productPreferences] = await Promise.all([
-    prisma.product.findMany({ where: { ingredientId } }),
-    prisma.preference.findMany({
-      where: {
-        ownerType: "HOUSEHOLD",
-        ownerId: shoppingList.mealPlan.householdId,
-        subjectType: "PRODUCT",
-        stance: "LIKED",
-      },
-    }),
-  ]);
-  const { productId, needsReview } = resolveProductChoice(
-    candidates,
-    new Set(productPreferences.map((p) => p.subjectId))
-  );
+  const match = await matchProductForIngredient(shoppingList.mealPlan.householdId, ingredientId);
 
   await prisma.shoppingListLine.create({
     data: {
       shoppingListId,
       ingredientId,
-      productId,
       quantity: fixed.quantity,
       unit: fixed.unit,
       source: "FIXED",
-      needsReview,
+      ...matchToLineFields(match),
     },
   });
   revalidatePath("/boodschappen");
@@ -118,25 +113,15 @@ export async function addFixedGrocery(formData: FormData) {
   await upsertFixedGrocery(householdId, ingredientId, quantity, unit);
 
   if (shoppingListId) {
-    const [candidates, productPreferences] = await Promise.all([
-      prisma.product.findMany({ where: { ingredientId } }),
-      prisma.preference.findMany({
-        where: { ownerType: "HOUSEHOLD", ownerId: householdId, subjectType: "PRODUCT", stance: "LIKED" },
-      }),
-    ]);
-    const { productId, needsReview } = resolveProductChoice(
-      candidates,
-      new Set(productPreferences.map((p) => p.subjectId))
-    );
+    const match = await matchProductForIngredient(householdId, ingredientId);
     await prisma.shoppingListLine.create({
       data: {
         shoppingListId: String(shoppingListId),
         ingredientId,
-        productId,
         quantity,
         unit,
         source: "FIXED",
-        needsReview,
+        ...matchToLineFields(match),
       },
     });
   }

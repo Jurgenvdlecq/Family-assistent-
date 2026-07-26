@@ -5,8 +5,11 @@ import { subtractInventory } from "./quantity/inventory";
 import { resolveInStockQuantity } from "./quantity/inventoryStatus";
 import type { BaseQuantity } from "./quantity/units";
 import { getCurrentWeekStart } from "./week";
+import { matchProduct } from "@/domain/product-matching/matchProduct";
+import { matchProductForIngredient } from "@/domain/product-matching/matchIngredient";
+import { getRejectedProductIds, getTrustedPreferences, toMatchCandidate } from "@/domain/product-matching/repository";
+import type { ProductMatchResult } from "@/domain/product-matching/types";
 
-type ProductCandidate = { id: string };
 type InventoryLookup = Awaited<ReturnType<typeof getInventoryMap>>;
 
 /**
@@ -27,25 +30,15 @@ function netAfterInventory(
   return net.amount > 0 ? net : null;
 }
 
-/**
- * Productkeuze volgt de prioriteitsregel uit sectie 10 van de Blueprint:
- * eerdere, expliciet vertrouwde keuze (Preference) wint altijd. Zonder zo'n
- * voorkeur en met meerdere kandidaat-producten is het een twijfelgeval
- * (needsReview) dat op het Controle-scherm om een keuze vraagt. Gedeeld
- * tussen receptregels (MEAL) en vaste boodschappen (FIXED) — dezelfde regel
- * geldt voor allebei.
- */
-export function resolveProductChoice<T extends ProductCandidate>(
-  candidates: T[],
-  trustedProductIds: Set<string>
-): { productId: string | null; needsReview: boolean } {
-  const trusted = candidates.find((c) => trustedProductIds.has(c.id));
-  if (trusted) return { productId: trusted.id, needsReview: false };
-  if (candidates.length === 1) return { productId: candidates[0].id, needsReview: false };
-  if (candidates.length > 1) {
-    return { productId: candidates[0].id, needsReview: true }; // voorlopige suggestie, gebruiker beslist
-  }
-  return { productId: null, needsReview: true }; // geen product gevonden — ook een twijfelgeval
+/** Zet een uitlegbare match (Fase 5) om naar de velden die op een ShoppingListLine terechtkomen. */
+function matchToLineFields(match: ProductMatchResult) {
+  return {
+    productId: match.productId,
+    needsReview: match.status !== "MATCHED_TRUSTED",
+    matchStatus: match.status,
+    matchConfidence: match.confidence,
+    matchReasons: match.reasons,
+  };
 }
 
 /**
@@ -112,17 +105,12 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
 
   const ingredientIds = new Set(coveredIngredientIds);
   for (const ing of lowStockToReplenish) ingredientIds.add(ing.id);
+  const ingredientIdList = Array.from(ingredientIds);
 
-  const [allCandidates, productPreferences] = await Promise.all([
-    prisma.product.findMany({ where: { ingredientId: { in: Array.from(ingredientIds) } } }),
-    prisma.preference.findMany({
-      where: {
-        ownerType: "HOUSEHOLD",
-        ownerId: householdId,
-        subjectType: "PRODUCT",
-        stance: "LIKED",
-      },
-    }),
+  const [allCandidates, trustedByIngredient, rejectedByIngredient] = await Promise.all([
+    prisma.product.findMany({ where: { ingredientId: { in: ingredientIdList } } }),
+    getTrustedPreferences(householdId, ingredientIdList),
+    getRejectedProductIds(householdId, ingredientIdList),
   ]);
 
   const candidatesByIngredient = new Map<string, typeof allCandidates>();
@@ -132,7 +120,15 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
     list.push(product);
     candidatesByIngredient.set(product.ingredientId, list);
   }
-  const trustedProductIds = new Set(productPreferences.map((p) => p.subjectId));
+
+  function runMatch(ingredientId: string): ProductMatchResult {
+    const candidates = candidatesByIngredient.get(ingredientId) ?? [];
+    return matchProduct({
+      candidates: candidates.map(toMatchCandidate),
+      trusted: trustedByIngredient.get(ingredientId) ?? null,
+      rejectedProductIds: rejectedByIngredient.get(ingredientId) ?? new Set(),
+    });
+  }
 
   // Voorraad aftrekken (Fase 3): een ingrediënt dat als "genoeg op voorraad"
   // is gemarkeerd, verlaagt of schrapt de receptbehoefte voor deze week.
@@ -140,51 +136,40 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
     .map((t) => {
       const net = netAfterInventory({ amount: t.quantity, unit: t.unit }, t.ingredientId, inventory);
       if (!net) return null;
-      const { productId, needsReview } = resolveProductChoice(
-        candidatesByIngredient.get(t.ingredientId) ?? [],
-        trustedProductIds
-      );
       return {
         ingredientId: t.ingredientId,
-        productId,
         quantity: net.amount,
         unit: net.unit,
         source: "MEAL" as const,
-        needsReview,
+        ...matchToLineFields(runMatch(t.ingredientId)),
       };
     })
     .filter((line) => line !== null);
 
   const inventoryLines = lowStockToReplenish.map((ing) => {
+    const match = runMatch(ing.id);
     const candidates = candidatesByIngredient.get(ing.id) ?? [];
-    const { productId } = resolveProductChoice(candidates, trustedProductIds);
-    const matchedProduct = candidates.find((c) => c.id === productId);
+    const matchedProduct = candidates.find((c) => c.id === match.productId);
     return {
       ingredientId: ing.id,
-      productId,
       quantity: matchedProduct?.packageQuantity ?? 1,
       unit: ing.unit,
       source: "INVENTORY" as const,
       // Altijd controleren: de gebruiker gaf alleen een status door
-      // ("bijna op"), geen exacte hoeveelheid.
+      // ("bijna op"), geen exacte hoeveelheid — ongeacht hoe zeker de
+      // productmatch zelf is.
+      ...matchToLineFields(match),
       needsReview: true,
     };
   });
 
-  const fixedLines = fixedGroceries.map((fixed) => {
-    const { productId, needsReview } = resolveProductChoice(
-      candidatesByIngredient.get(fixed.ingredientId) ?? [],
-      trustedProductIds
-    );
-    return {
-      ingredientId: fixed.ingredientId,
-      productId,
-      quantity: fixed.quantity,
-      unit: fixed.unit,
-      source: "FIXED" as const,
-      needsReview,
-    };
-  });
+  const fixedLines = fixedGroceries.map((fixed) => ({
+    ingredientId: fixed.ingredientId,
+    quantity: fixed.quantity,
+    unit: fixed.unit,
+    source: "FIXED" as const,
+    ...matchToLineFields(runMatch(fixed.ingredientId)),
+  }));
 
   return prisma.shoppingList.create({
     data: {
@@ -247,16 +232,6 @@ export async function syncShoppingListForInventoryChange(householdId: string, in
 
   const existingLine = shoppingList.lines.find((l) => l.ingredientId === ingredientId);
 
-  async function resolveProductForIngredient() {
-    const [candidates, productPreferences] = await Promise.all([
-      prisma.product.findMany({ where: { ingredientId } }),
-      prisma.preference.findMany({
-        where: { ownerType: "HOUSEHOLD", ownerId: householdId, subjectType: "PRODUCT", stance: "LIKED" },
-      }),
-    ]);
-    return { candidates, ...resolveProductChoice(candidates, new Set(productPreferences.map((p) => p.subjectId))) };
-  }
-
   if (rawNeed) {
     // Dit ingrediënt komt uit het weekmenu: voorraad kan de MEAL-regel
     // verlagen of laten vervallen, maar creëert er geen INVENTORY-regel bij.
@@ -268,16 +243,15 @@ export async function syncShoppingListForInventoryChange(householdId: string, in
         await prisma.shoppingListLine.update({ where: { id: existingLine.id }, data: { quantity: net.amount } });
       }
     } else if (!existingLine && net) {
-      const { productId, needsReview } = await resolveProductForIngredient();
+      const match = await matchProductForIngredient(householdId, ingredientId);
       await prisma.shoppingListLine.create({
         data: {
           shoppingListId: shoppingList.id,
           ingredientId,
-          productId,
           quantity: net.amount,
           unit: net.unit,
           source: "MEAL",
-          needsReview,
+          ...matchToLineFields(match),
         },
       });
     }
@@ -295,22 +269,28 @@ export async function syncShoppingListForInventoryChange(householdId: string, in
   if (existingLine && existingLine.source === "INVENTORY" && !shouldReplenish) {
     await prisma.shoppingListLine.delete({ where: { id: existingLine.id } });
   } else if (!existingLine && shouldReplenish) {
-    const { candidates, productId } = await resolveProductForIngredient();
-    const matchedProduct = candidates.find((c) => c.id === productId);
+    const match = await matchProductForIngredient(householdId, ingredientId);
+    const products = await prisma.product.findMany({ where: { ingredientId } });
+    const matchedProduct = products.find((c) => c.id === match.productId);
     await prisma.shoppingListLine.create({
       data: {
         shoppingListId: shoppingList.id,
         ingredientId,
-        productId,
         quantity: matchedProduct?.packageQuantity ?? 1,
         unit: ingredient.unit,
         source: "INVENTORY",
+        ...matchToLineFields(match),
         needsReview: true,
       },
     });
   }
 }
 
-export async function getShoppingListCandidates(ingredientId: string) {
-  return prisma.product.findMany({ where: { ingredientId } });
+export async function getShoppingListCandidates(householdId: string, ingredientId: string) {
+  const [products, rejectedMap] = await Promise.all([
+    prisma.product.findMany({ where: { ingredientId } }),
+    getRejectedProductIds(householdId, [ingredientId]),
+  ]);
+  const rejected = rejectedMap.get(ingredientId) ?? new Set<string>();
+  return products.filter((p) => !rejected.has(p.id));
 }
