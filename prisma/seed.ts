@@ -13,8 +13,8 @@ async function main() {
   for (const ing of INGREDIENTS) {
     const row = await prisma.ingredient.upsert({
       where: { name: ing.name },
-      update: { unit: ing.unit, category: ing.category },
-      create: ing,
+      update: { unit: ing.unit, category: ing.category, restrictionTags: ing.restrictionTags ?? [] },
+      create: { ...ing, restrictionTags: ing.restrictionTags ?? [] },
     });
     ingredientIdByName.set(ing.name, row.id);
   }

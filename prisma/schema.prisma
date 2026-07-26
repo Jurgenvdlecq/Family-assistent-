@@ -246,10 +246,15 @@ enum ConfidenceLevel {
 // ── Ingredient & Product ─────────────────────────────────────────────────
 
 model Ingredient {
-  id       String @id @default(uuid())
-  name     String @unique
-  unit     Unit
-  category IngredientCategory
+  id             String   @id @default(uuid())
+  name           String   @unique
+  unit           Unit
+  category       IngredientCategory
+  // Gecontroleerd vocabulaire (zie src/lib/dietaryRestrictions.ts) waarmee
+  // een harde beperking van een gezinslid ("pinda's", "lactose", ...)
+  // betrouwbaar aan een ingrediënt kan worden gekoppeld. Bewust geen vrije
+  // tekst: alleen tags uit dat vocabulaire mogen hier terechtkomen.
+  restrictionTags String[] @default([]) @map("restriction_tags")
 
   recipeIngredients RecipeIngredient[]
   fixedGroceries    FixedGrocery[]

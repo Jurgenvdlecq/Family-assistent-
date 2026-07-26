@@ -3,6 +3,8 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight, SlidersHorizontal, Heart, Sparkles } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
+import { getHouseholdHardRestrictions } from "@/lib/household";
+import { recipeConflictsWithRestrictions } from "@/lib/dietaryRestrictions";
 import { DAY_KEYS, DAY_ENUM, DAY_LABELS, getCurrentWeekStart, type DayKey } from "@/lib/week";
 import { CATEGORY_GRADIENT, STATUS_LABELS, statusTone } from "@/lib/categoryStyle";
 import NavBar from "@/components/NavBar";
@@ -18,9 +20,13 @@ const DIRECTIONS = [
   { key: "quick", label: "Snel & makkelijk" },
 ] as const;
 
-type VariantWithRecipe = Awaited<ReturnType<typeof prisma.recipeVariant.findMany>>[number] & {
-  recipe: Awaited<ReturnType<typeof prisma.recipe.findFirstOrThrow>>;
-};
+const VARIANT_INCLUDE = {
+  recipe: { include: { ingredients: { include: { ingredient: true } } } },
+} as const;
+
+type VariantWithRecipe = Awaited<
+  ReturnType<typeof prisma.recipeVariant.findMany<{ include: typeof VARIANT_INCLUDE }>>
+>[number];
 
 export default async function GerechtenPage({
   searchParams,
@@ -54,7 +60,23 @@ export default async function GerechtenPage({
     preferences.filter((p) => p.subjectType === "RECIPE_VARIANT").map((p) => [p.subjectId, p.confidence])
   );
 
-  const variants = await prisma.recipeVariant.findMany({ include: { recipe: true } });
+  const [allVariants, hardRestrictions] = await Promise.all([
+    prisma.recipeVariant.findMany({ include: VARIANT_INCLUDE }),
+    getHouseholdHardRestrictions(household.id),
+  ]);
+
+  // Een onveilig gerecht mag niet eens als suggestie zichtbaar zijn — niet
+  // pas bij het bevestigen ervan (sectie 10 van de Blueprint).
+  const variants = allVariants.filter(
+    (v) =>
+      !recipeConflictsWithRestrictions(
+        v.recipe.ingredients.map((ri) => ({
+          category: ri.ingredient.category,
+          restrictionTags: ri.ingredient.restrictionTags,
+        })),
+        hardRestrictions
+      )
+  );
 
   let filtered = variants;
   if (direction === "favorites") {
