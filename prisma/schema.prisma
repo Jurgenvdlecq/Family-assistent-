@@ -441,6 +441,11 @@ model ShoppingListLine {
   matchConfidence Float       @default(0) @map("match_confidence")
   matchReasons    String[]    @default([]) @map("match_reasons")
 
+  // Fase 7/8: per-regel idempotentie voor het vullen van het Picnic-mandje —
+  // een regel die al is overgedragen wordt bij een herhaalde poging
+  // overgeslagen in plaats van dubbel toegevoegd.
+  transferredToPicnicAt DateTime? @map("transferred_to_picnic_at")
+
   shoppingList ShoppingList @relation(fields: [shoppingListId], references: [id], onDelete: Cascade)
   ingredient   Ingredient   @relation(fields: [ingredientId], references: [id])
   product      Product?     @relation(fields: [productId], references: [id])
