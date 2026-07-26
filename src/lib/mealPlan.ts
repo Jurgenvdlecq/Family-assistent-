@@ -4,11 +4,13 @@ import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "./scorin
 import { DAY_KEYS, DAY_ENUM, dateForDay, type DayKey } from "./week";
 import { getHouseholdHardRestrictions } from "./household";
 import { recipeConflictsWithRestrictions } from "./dietaryRestrictions";
+import { chooseMealPlanCandidate, formatMealPlanReason } from "@/domain/meal-planning/scoreMealPlanCandidate";
 import type { ConfidenceLevel } from "@/generated/prisma/enums";
 
 type WeeklyRhythm = Partial<Record<DayKey, "busy" | "quiet">>;
 
 const BUSY_VARIANT_TYPES = new Set(["FAST", "REHEATABLE"]);
+const RECENT_PLANNING_WINDOW_DAYS = 56;
 
 const MEAL_PLAN_INCLUDE = {
   entries: {
@@ -42,7 +44,10 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
   const existing = await getMealPlanForWeek(householdId, weekStart);
   if (existing) return existing;
 
-  const [household, preferences, allVariants, hardRestrictions] = await Promise.all([
+  const recentPlanningStart = new Date(weekStart);
+  recentPlanningStart.setDate(recentPlanningStart.getDate() - RECENT_PLANNING_WINDOW_DAYS);
+
+  const [household, preferences, variantPreferences, recentSuggestions, allVariants, hardRestrictions] = await Promise.all([
     prisma.household.findUniqueOrThrow({ where: { id: householdId } }),
     prisma.preference.findMany({
       where: {
@@ -51,6 +56,24 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
         subjectType: "RECIPE_CATEGORY",
         stance: "LIKED",
       },
+    }),
+    prisma.preference.findMany({
+      where: {
+        ownerType: "HOUSEHOLD",
+        ownerId: householdId,
+        subjectType: "RECIPE_VARIANT",
+      },
+    }),
+    prisma.mealSuggestion.findMany({
+      where: {
+        householdId,
+        targetSlot: {
+          gte: recentPlanningStart,
+          lt: weekStart,
+        },
+      },
+      include: { recipeVariant: { select: { recipeId: true } } },
+      orderBy: { targetSlot: "desc" },
     }),
     prisma.recipeVariant.findMany({
       include: { recipe: { include: { ingredients: { include: { ingredient: true } } } } },
@@ -78,6 +101,18 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
   }
 
   const preferredCategories = new Set(preferences.map((p) => p.subjectId));
+  const variantPreferenceById = new Map(
+    variantPreferences.map((preference) => [
+      preference.subjectId,
+      { stance: preference.stance, confidence: preference.confidence },
+    ])
+  );
+  const lastPlannedByRecipeId = new Map<string, Date>();
+  for (const suggestion of recentSuggestions) {
+    if (!lastPlannedByRecipeId.has(suggestion.recipeVariant.recipeId)) {
+      lastPlannedByRecipeId.set(suggestion.recipeVariant.recipeId, suggestion.targetSlot);
+    }
+  }
   const rhythm = (household.weeklyRhythm ?? {}) as unknown as WeeklyRhythm;
 
   const usedRecipeIds = new Set<string>();
@@ -106,24 +141,32 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
       confidence = "SLIGHT_DOUBT";
     }
 
-    const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+    const scored = chooseMealPlanCandidate({
+      candidates: candidates.map((candidate) => ({
+        id: candidate.id,
+        recipeId: candidate.recipeId,
+        recipeTitle: candidate.recipe.title,
+        recipeCategory: candidate.recipe.category,
+        recipeStatus: candidate.recipe.status,
+        recipeProperties: candidate.recipe.properties,
+        variantType: candidate.variantType,
+        contextFit: candidate.contextFit,
+      })),
+      dayKey,
+      busy,
+      preferredCategories,
+      variantPreferences: variantPreferenceById,
+      lastPlannedByRecipeId,
+      usedRecipeIds,
+      targetDate: dateForDay(weekStart, dayKey),
+    });
+    const chosen = candidates.find((candidate) => candidate.id === scored.candidate.id)!;
     usedRecipeIds.add(chosen.recipeId);
-
-    const reasonParts: string[] = [];
-    if (busy && (BUSY_VARIANT_TYPES.has(chosen.variantType) || chosen.contextFit.includes("drukke_dag"))) {
-      reasonParts.push("past goed bij een drukke dag");
-    }
-    if (preferredCategories.has(chosen.recipe.category)) {
-      reasonParts.push("sluit aan bij jullie voorkeuren");
-    }
-    if (reasonParts.length === 0) {
-      reasonParts.push("nieuwe suggestie om te proberen");
-    }
 
     picks[dayKey] = {
       variant: chosen,
-      reason: `${chosen.recipe.title} ${reasonParts.join(" en ")}.`,
-      confidence,
+      reason: formatMealPlanReason(scored),
+      confidence: confidence === "SLIGHT_DOUBT" ? confidence : scored.confidence,
     };
   }
 
