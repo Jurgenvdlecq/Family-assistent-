@@ -1,0 +1,121 @@
+# Voortgang & overdrachtsdocument
+
+Dit bestand is bedoeld voor een AI-coding-agent (Claude Code, Codex, of wie
+dan ook) die dit project overneemt in een nieuwe sessie zonder chatgeschiedenis.
+Lees eerst `AGENTS.md` (de volledige productspecificatie), en dan dit bestand
+voor de actuele status en de manier van werken die tot nu toe is gevolgd.
+
+## Manier van werken (belangrijk — hou dit aan)
+
+- **Werk per work package (WP)**, niet alles in één keer. Na elk work
+  package: rapporteer kort wat er is gebouwd en wat de gebruiker live zou
+  moeten zien, en wacht op een expliciete bevestiging ("ga door", "graag
+  verder", etc.) voordat je aan het volgende begint.
+- **Vraag altijd expliciet toestemming voordat je:**
+  - een pull request merget naar `main` (ook al is-ie al aangemaakt),
+  - iets naar productie (Vercel/Supabase) pusht of migreert,
+  - een destructieve git-actie uitvoert (force-push, reset --hard, etc.).
+- Ontwikkel op branch **`claude/family-assistant-rebuild-fw4fav`**. Na een
+  merge naar `main`: reset deze branch naar de nieuwe `main`
+  (`git fetch origin main && git checkout -B claude/family-assistant-rebuild-fw4fav origin/main && git push`)
+  zodat het volgende work package op een schone basis begint.
+- Commit-berichten en PR's zijn in het Nederlands geschreven, consistent met
+  de rest van het project (`AGENTS.md`, UI-teksten).
+
+## Status: work packages
+
+Alle work packages hieronder zijn **gemerged in `main`** en staan live in
+productie (Vercel + Supabase), tenzij anders vermeld.
+
+| WP | Titel | Kern |
+|----|-------|------|
+| WP1 | Dieetbeperkingen | `src/lib/dietaryRestrictions.ts`, harde filtering in `ensureMealPlan` (`src/lib/mealPlan.ts`) — onbekende restrictie-tekst wordt nooit stilzwijgend genegeerd. |
+| WP2 | Vaste boodschappen | `src/lib/fixedGroceries.ts`, sectie "Vaste boodschappen" op `/boodschappen`. |
+| WP3 | Quantity-engine | `src/lib/quantity/*` — eenheden, verpakkingsberekening, voorraad-aftrek, tekstparser voor pakketgroottes. Pure, goed geteste module. |
+| WP4 | Eenvoudig voorraadmodel | `InventoryItem`-model, `src/lib/inventory.ts`, sectie "Voorraadcontrole" op `/boodschappen`. Onbekende/lage voorraad wordt nooit als "genoeg" aangenomen. |
+| WP5 | Productmatching als domein | `src/domain/product-matching/` (eerste map onder de doelarchitectuur `src/domain/`) — deterministische, uitlegbare matching, geen `Math.random()`. |
+| WP6 | Controlepagina herbouwd | `/controle` in 3 secties (aandacht nodig / niet gevonden / vertrouwd), met verpakkingsberekening, hoeveelheid aanpassen, "alleen deze week", verwijderen. |
+| WP7 | Picnic-mandje professionaliseren | `src/lib/picnic/cartService.ts` (idempotente add + clear), `PicnicNetworkError`/`PicnicApiError`, bevestigingsscherm vóór het vullen van het mandje (`src/lib/picnic/confirmationSummary.ts`), "mandje legen"-knop. |
+
+## Nog te doen (roadmap, nog niet gestart)
+
+- **WP8 — Uitlegbare weekplanning-scoring.** `ensureMealPlan` in
+  `src/lib/mealPlan.ts` gebruikt momenteel nog een `Math.random()`-tiebreak
+  bij het kiezen tussen gelijkwaardige receptvarianten. Vervang dit door een
+  deterministische, uitlegbare score (zoals eerder gedaan in WP5 voor
+  productmatching: stabiele tiebreak, bv. sorteren op ID-string, en een
+  reden waarom een gerecht is gekozen).
+- **WP9 — Multi-household / authenticatie.** Bewust laatste work package:
+  raakt vrijwel elk bestand (elke query filtert nu al op `householdId`,
+  maar er is nog geen inlog/sessiebeheer — er is precies één huishouden dat
+  impliciet wordt gebruikt via `prisma.household.findFirst()`).
+
+## Niet-voor-de-hand-liggende operationele kennis
+
+Deze dingen kostten tijd om uit te zoeken — lees dit voordat je ze opnieuw
+ontdekt.
+
+### Prisma-migraties in een niet-interactieve sandbox
+
+`npx prisma migrate dev` werkt hier niet (vraagt om interactieve input).
+Workflow die wel werkt:
+1. `npx prisma migrate diff --from-config-datasource prisma.config.ts --to-schema prisma/schema.prisma --script` → geeft de exacte SQL.
+2. Maak handmatig een tijdgestempelde map onder `prisma/migrations/<timestamp>_<naam>/migration.sql` met die SQL.
+3. `npx prisma migrate deploy` (lokale Postgres moet draaien: `sudo service postgresql start`).
+4. Draai stap 1 nogmaals om te bevestigen dat er geen drift meer is (moet "empty migration" teruggeven).
+
+### Productie-migraties tegen Supabase
+
+- De sandbox-omgeving kan geen rechtstreekse TCP-verbinding maken met de
+  Supabase-database (netwerk-egress wordt geblokkeerd) — migraties tegen
+  productie moeten **door de gebruiker zelf** gedraaid worden, vanaf hun
+  eigen machine.
+- Supabase heeft twee poolers:
+  - **Transaction-mode pooler** (poort **6543**, `?pgbouncer=true`) — dit is
+    de `DATABASE_URL` die de Next.js-app zelf gebruikt in Vercel. Ondersteunt
+    **geen** Prisma-migratielocking; `prisma migrate deploy` hangt hier
+    oneindig.
+  - **Session-mode pooler / directe verbinding** (poort **5432**, geen
+    `pgbouncer`-parameter) — hiermee moet `prisma migrate deploy` draaien.
+- Instructie voor de gebruiker: haal de sessie-pooler-connectiestring op uit
+  het Supabase-dashboard ("Connect to your project" → Session pooler), en
+  draai lokaal:
+  ```
+  DATABASE_URL="postgresql://postgres.<project-ref>:<wachtwoord>@aws-0-eu-central-1.pooler.supabase.com:5432/postgres" npx prisma migrate deploy
+  ```
+
+### Testen
+
+- `npm test` draait `tsx --test $(find src -name '*.test.ts')` — bewust geen
+  extern testframework (Node's ingebouwde `node:test` + `node:assert/strict`).
+- Zowel pure unit tests als integratietests tegen een **echte lokale
+  Postgres** (geen Prisma-mocking) — zie `src/lib/inventory.test.ts` en
+  `src/lib/picnic/cartService.test.ts` voor het gangbare patroon
+  (fixture aanmaken → testen → opruimen in een `finally`-blok).
+- Voor UI-verificatie: Playwright met het voorgeïnstalleerde systeem-Chromium
+  (`executablePath: "/opt/pw-browsers/chromium"`), altijd gecombineerd met
+  een directe Prisma-query als bron van waarheid — niet blind op
+  DOM/screenshot-timing vertrouwen.
+
+### Architectuur
+
+- Domain-driven, incrementele migratie: nieuwe domeinlogica komt onder
+  `src/domain/<naam>/` (tot nu toe alleen `product-matching`), naast de
+  bestaande `src/lib/`. Geen big-bang herschrijving.
+- Server Components + Server Actions (`"use server"`) zijn de enige manier
+  om te muteren; `revalidatePath` voor cache-invalidatie.
+- Consistent principe door het hele project: **nooit stilzwijgend een
+  aanname doen** bij onzekerheid — onbekende dieetrestrictie-tekst,
+  onbekende pakketgrootte, onbekende voorraadstatus worden allemaal expliciet
+  gemaakt aan de gebruiker in plaats van geraden.
+- Geen `Math.random()`-tiebreaks — altijd een deterministische, uitlegbare
+  volgorde (zie WP5 `matchProduct.ts` als voorbeeld; WP8 moet hetzelfde doen
+  voor `ensureMealPlan`).
+
+### Beveiliging
+
+- Er is ooit per ongeluk een GitHub Personal Access Token gedeeld in de chat
+  in plaats van een `DATABASE_URL`. Als dat nog niet is gebeurd: de
+  gebruiker is geadviseerd dat token te herroepen via GitHub Settings →
+  Developer settings → Personal access tokens. Gebruik nooit een
+  credential die niet expliciet voor het huidige doel is gegeven.
