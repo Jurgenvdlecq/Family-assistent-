@@ -11,9 +11,17 @@ voor de actuele status en de manier van werken die tot nu toe is gevolgd.
   package: rapporteer kort wat er is gebouwd en wat de gebruiker live zou
   moeten zien, en wacht op een expliciete bevestiging ("ga door", "graag
   verder", etc.) voordat je aan het volgende begint.
-- **Vraag altijd expliciet toestemming voordat je:**
-  - een pull request merget naar `main` (ook al is-ie al aangemaakt),
-  - iets naar productie (Vercel/Supabase) pusht of migreert,
+- **Standaardgedrag (sinds WP7, expliciet zo gewenst door de gebruiker):**
+  zodra een work package klaar en getest is (tests/lint/typecheck/build
+  slagen), maak een pull request aan en **merge die meteen naar `main`
+  zonder daar apart om toestemming te vragen** — dat leverde alleen
+  verwarring op. Rapporteer na afloop gewoon wat er is gemerged en wat de
+  gebruiker live zou moeten zien.
+- **Vraag nog wél altijd expliciet toestemming voordat je:**
+  - iets naar productie (Vercel/Supabase) migreert — dit *kan* trouwens
+    sowieso niet automatisch: de sandbox-omgeving heeft geen netwerktoegang
+    tot de Supabase-database, dus productie-migraties moeten altijd door de
+    gebruiker zelf op hun eigen machine gedraaid worden (zie hieronder),
   - een destructieve git-actie uitvoert (force-push, reset --hard, etc.).
 - Ontwikkel op branch **`claude/family-assistant-rebuild-fw4fav`**. Na een
   merge naar `main`: reset deze branch naar de nieuwe `main`
