@@ -57,6 +57,7 @@ model FixedGrocery {
   household  Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
   ingredient Ingredient @relation(fields: [ingredientId], references: [id])
 
+  @@unique([householdId, ingredientId])
   @@map("fixed_groceries")
 }
 

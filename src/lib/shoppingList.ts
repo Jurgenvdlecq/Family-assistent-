@@ -1,15 +1,34 @@
 import { prisma } from "./prisma";
 import type { Unit } from "@/generated/prisma/enums";
 
+type ProductCandidate = { id: string };
+
+/**
+ * Productkeuze volgt de prioriteitsregel uit sectie 10 van de Blueprint:
+ * eerdere, expliciet vertrouwde keuze (Preference) wint altijd. Zonder zo'n
+ * voorkeur en met meerdere kandidaat-producten is het een twijfelgeval
+ * (needsReview) dat op het Controle-scherm om een keuze vraagt. Gedeeld
+ * tussen receptregels (MEAL) en vaste boodschappen (FIXED) — dezelfde regel
+ * geldt voor allebei.
+ */
+export function resolveProductChoice<T extends ProductCandidate>(
+  candidates: T[],
+  trustedProductIds: Set<string>
+): { productId: string | null; needsReview: boolean } {
+  const trusted = candidates.find((c) => trustedProductIds.has(c.id));
+  if (trusted) return { productId: trusted.id, needsReview: false };
+  if (candidates.length === 1) return { productId: candidates[0].id, needsReview: false };
+  if (candidates.length > 1) {
+    return { productId: candidates[0].id, needsReview: true }; // voorlopige suggestie, gebruiker beslist
+  }
+  return { productId: null, needsReview: true }; // geen product gevonden — ook een twijfelgeval
+}
+
 /**
  * Zorgt dat er een boodschappenlijst bestaat voor deze weekplanning —
  * automatisch afgeleid uit de gekozen maaltijden (sectie 10 van de
- * Blueprint: "Van maaltijd naar mandje").
- *
- * Productkeuze volgt de prioriteitsregel uit sectie 10: eerdere,
- * expliciet vertrouwde keuze (Preference) wint altijd. Zonder zo'n
- * voorkeur en met meerdere kandidaat-producten is het een twijfelgeval
- * (needsReview) dat op het Controle-scherm om een keuze vraagt.
+ * Blueprint: "Van maaltijd naar mandje") én aangevuld met de vaste
+ * boodschappen van het huishouden (Fase 4).
  */
 export async function ensureShoppingList(mealPlanId: string, householdId: string) {
   const existing = await prisma.shoppingList.findUnique({
@@ -22,20 +41,23 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
   });
   if (existing) return existing;
 
-  const mealPlan = await prisma.mealPlan.findUniqueOrThrow({
-    where: { id: mealPlanId },
-    include: {
-      entries: {
-        include: {
-          recipeVariant: {
-            include: {
-              recipe: { include: { ingredients: { include: { ingredient: true } } } },
+  const [mealPlan, fixedGroceries] = await Promise.all([
+    prisma.mealPlan.findUniqueOrThrow({
+      where: { id: mealPlanId },
+      include: {
+        entries: {
+          include: {
+            recipeVariant: {
+              include: {
+                recipe: { include: { ingredients: { include: { ingredient: true } } } },
+              },
             },
           },
         },
       },
-    },
-  });
+    }),
+    prisma.fixedGrocery.findMany({ where: { householdId } }),
+  ]);
 
   type Agg = { ingredientId: string; quantity: number; unit: Unit };
   const totals = new Map<string, Agg>();
@@ -51,9 +73,11 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
     }
   }
 
-  const ingredientIds = Array.from(totals.values()).map((t) => t.ingredientId);
+  const ingredientIds = new Set(Array.from(totals.values()).map((t) => t.ingredientId));
+  for (const fixed of fixedGroceries) ingredientIds.add(fixed.ingredientId);
+
   const [allCandidates, productPreferences] = await Promise.all([
-    prisma.product.findMany({ where: { ingredientId: { in: ingredientIds } } }),
+    prisma.product.findMany({ where: { ingredientId: { in: Array.from(ingredientIds) } } }),
     prisma.preference.findMany({
       where: {
         ownerType: "HOUSEHOLD",
@@ -73,27 +97,11 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
   }
   const trustedProductIds = new Set(productPreferences.map((p) => p.subjectId));
 
-  const lines = Array.from(totals.values()).map((t) => {
-    const candidates = candidatesByIngredient.get(t.ingredientId) ?? [];
-    const trusted = candidates.find((c) => trustedProductIds.has(c.id));
-
-    let productId: string | null = null;
-    let needsReview = false;
-
-    if (trusted) {
-      productId = trusted.id;
-      needsReview = false;
-    } else if (candidates.length === 1) {
-      productId = candidates[0].id;
-      needsReview = false;
-    } else if (candidates.length > 1) {
-      productId = candidates[0].id; // voorlopige suggestie, gebruiker beslist
-      needsReview = true;
-    } else {
-      productId = null; // geen product gevonden — ook een twijfelgeval
-      needsReview = true;
-    }
-
+  const mealLines = Array.from(totals.values()).map((t) => {
+    const { productId, needsReview } = resolveProductChoice(
+      candidatesByIngredient.get(t.ingredientId) ?? [],
+      trustedProductIds
+    );
     return {
       ingredientId: t.ingredientId,
       productId,
@@ -104,11 +112,26 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
     };
   });
 
+  const fixedLines = fixedGroceries.map((fixed) => {
+    const { productId, needsReview } = resolveProductChoice(
+      candidatesByIngredient.get(fixed.ingredientId) ?? [],
+      trustedProductIds
+    );
+    return {
+      ingredientId: fixed.ingredientId,
+      productId,
+      quantity: fixed.quantity,
+      unit: fixed.unit,
+      source: "FIXED" as const,
+      needsReview,
+    };
+  });
+
   return prisma.shoppingList.create({
     data: {
       mealPlanId,
       status: "PREPARED",
-      lines: { create: lines },
+      lines: { create: [...mealLines, ...fixedLines] },
     },
     include: {
       lines: { include: { ingredient: true, product: true } },
