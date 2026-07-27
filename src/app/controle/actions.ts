@@ -20,9 +20,10 @@ async function loadLineForCurrentHousehold(lineId: string) {
   return { line, householdId: line.shoppingList.mealPlan.householdId };
 }
 
-function refreshControle() {
+function refreshControle(lineId?: string) {
   revalidatePath("/controle");
   revalidatePath("/boodschappen");
+  if (lineId) redirect(`/controle?focus=${encodeURIComponent(lineId)}#line-${encodeURIComponent(lineId)}`);
   redirect("/controle");
 }
 
@@ -68,7 +69,7 @@ export async function confirmProductChoice(formData: FormData) {
   // (productkeuze-prioriteitsregel #1 uit sectie 10 van de Blueprint).
   await recordProductChosen(householdId, line.ingredientId, productId, "MANUAL");
 
-  refreshControle();
+  refreshControle(lineId);
 }
 
 /**
@@ -107,7 +108,7 @@ export async function rejectProductChoice(formData: FormData) {
     },
   });
 
-  refreshControle();
+  refreshControle(lineId);
 }
 
 /**
@@ -153,7 +154,7 @@ export async function useProductThisWeekOnly(formData: FormData) {
     context: { source: "controle_screen", onceOnly: true },
   });
 
-  refreshControle();
+  refreshControle(lineId);
 }
 
 /** Past de hoeveelheid van deze ene regel aan (bv. een twijfelgeval bleek toch meer of minder nodig te hebben). */
@@ -166,7 +167,7 @@ export async function adjustLineQuantity(formData: FormData) {
   }
 
   await prisma.shoppingListLine.update({ where: { id: lineId }, data: { quantity } });
-  refreshControle();
+  refreshControle(lineId);
 }
 
 export async function searchPicnicProductsForLine(formData: FormData) {
@@ -231,7 +232,7 @@ export async function searchPicnicProductsForLine(formData: FormData) {
     },
   });
 
-  refreshControle();
+  refreshControle(lineId);
 }
 
 async function persistRefreshedToken(client: PicnicClient, householdId: string, previousToken: string | null) {
@@ -249,7 +250,7 @@ export async function removeLineFromList(formData: FormData) {
   const lineId = String(formData.get("lineId"));
   await loadLineForCurrentHousehold(lineId);
   await prisma.shoppingListLine.delete({ where: { id: lineId } });
-  refreshControle();
+  refreshControle(lineId);
 }
 
 export async function skipReview(formData: FormData) {
@@ -259,7 +260,7 @@ export async function skipReview(formData: FormData) {
     where: { id: lineId },
     data: { needsReview: false },
   });
-  refreshControle();
+  refreshControle(lineId);
 }
 
 export async function confirmShoppingList(formData: FormData) {
