@@ -1,0 +1,16 @@
+CREATE TYPE "feedback_reason" AS ENUM (
+  'NOT_TASTY',
+  'NO_APPETITE_NOW',
+  'TOO_MUCH_EFFORT',
+  'TOO_REPETITIVE',
+  'WRONG_DAY',
+  'WRONG_PARTICIPANTS',
+  'PRODUCT_WRONG',
+  'ONLY_THIS_TIME',
+  'ALWAYS_USE',
+  'NEVER_USE',
+  'COINCIDENCE'
+);
+
+ALTER TABLE "feedback_events"
+  ADD COLUMN "reason" "feedback_reason";

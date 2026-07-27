@@ -1,4 +1,5 @@
 import { prisma } from "./prisma";
+import { replacementPenaltyForReason } from "@/domain/learning/feedbackReasons";
 
 type EventContext = { busy?: boolean; positive?: boolean };
 
@@ -21,7 +22,7 @@ export async function recalculateVariantConfidence(householdId: string, recipeVa
   let explicitPositive = 0;
   let explicitNegative = 0;
   let passiveChosen = 0;
-  let passiveReplaced = 0;
+  let passiveReplacedPenalty = 0;
 
   for (const event of events) {
     const ctx = readContext(event.context);
@@ -31,7 +32,7 @@ export async function recalculateVariantConfidence(householdId: string, recipeVa
     } else if (event.eventType === "CHOSEN") {
       passiveChosen += 1;
     } else if (event.eventType === "REPLACED") {
-      passiveReplaced += 1;
+      passiveReplacedPenalty += replacementPenaltyForReason(event.reason);
     }
   }
 
@@ -40,7 +41,7 @@ export async function recalculateVariantConfidence(householdId: string, recipeVa
     0.2 * explicitPositive -
     0.2 * explicitNegative +
     0.03 * passiveChosen -
-    0.05 * passiveReplaced;
+    passiveReplacedPenalty;
   const confidence = Math.min(0.98, Math.max(0.05, raw));
   const stance = confidence >= 0.75 ? "LIKED" : confidence <= 0.3 ? "RATHER_NOT" : "SOMETIMES";
 
