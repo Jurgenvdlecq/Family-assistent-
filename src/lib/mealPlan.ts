@@ -2,9 +2,13 @@ import { prisma } from "./prisma";
 import { logFeedbackEvent } from "./feedback";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "./scoring";
 import { DAY_KEYS, DAY_ENUM, dateForDay, type DayKey } from "./week";
-import { getHouseholdHardRestrictions } from "./household";
+import { getHouseholdHardRestrictions, getHouseholdMealParticipantsByDay } from "./household";
 import { recipeConflictsWithRestrictions } from "./dietaryRestrictions";
-import { chooseMealPlanCandidate, formatMealPlanReason } from "@/domain/meal-planning/scoreMealPlanCandidate";
+import {
+  chooseMealPlanCandidate,
+  formatMealPlanReason,
+  type PersonalRecipeVariantPreference,
+} from "@/domain/meal-planning/scoreMealPlanCandidate";
 import type { ConfidenceLevel } from "@/generated/prisma/enums";
 
 type WeeklyRhythm = Partial<Record<DayKey, "busy" | "quiet">>;
@@ -47,7 +51,15 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
   const recentPlanningStart = new Date(weekStart);
   recentPlanningStart.setDate(recentPlanningStart.getDate() - RECENT_PLANNING_WINDOW_DAYS);
 
-  const [household, preferences, variantPreferences, recentSuggestions, allVariants, hardRestrictionsByDayEntries] = await Promise.all([
+  const [
+    household,
+    preferences,
+    variantPreferences,
+    recentSuggestions,
+    allVariants,
+    hardRestrictionsByDayEntries,
+    participantsByDay,
+  ] = await Promise.all([
     prisma.household.findUniqueOrThrow({ where: { id: householdId } }),
     prisma.preference.findMany({
       where: {
@@ -79,9 +91,44 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
       include: { recipe: { include: { ingredients: { include: { ingredient: true } } } } },
     }),
     Promise.all(DAY_KEYS.map(async (dayKey) => [dayKey, await getHouseholdHardRestrictions(householdId, dayKey)] as const)),
+    getHouseholdMealParticipantsByDay(householdId),
   ]);
+  const allVariantIds = allVariants.map((variant) => variant.id);
+  const allPersonIds = [...new Set(DAY_KEYS.flatMap((dayKey) => participantsByDay[dayKey].map((person) => person.id)))];
+  const personNamesById = new Map(
+    DAY_KEYS.flatMap((dayKey) => participantsByDay[dayKey].map((person) => [person.id, person.name] as const))
+  );
+  const personalPreferences = await prisma.preference.findMany({
+    where: {
+      ownerType: "PERSON",
+      ownerId: { in: allPersonIds },
+      subjectType: "RECIPE_VARIANT",
+      subjectId: { in: allVariantIds },
+    },
+  });
 
   const hardRestrictionsByDay = new Map<DayKey, string[]>(hardRestrictionsByDayEntries);
+  const personalPreferenceByPersonAndVariant = new Map(
+    personalPreferences.map((preference) => [`${preference.ownerId}:${preference.subjectId}`, preference])
+  );
+  const personalPreferencesForDay = (dayKey: DayKey) => {
+    const presentPersons = participantsByDay[dayKey];
+    const byVariant = new Map<string, PersonalRecipeVariantPreference[]>();
+    for (const person of presentPersons) {
+      for (const variantId of allVariantIds) {
+        const preference = personalPreferenceByPersonAndVariant.get(`${person.id}:${variantId}`);
+        if (!preference) continue;
+        const list = byVariant.get(variantId) ?? [];
+        list.push({
+          personName: personNamesById.get(person.id) ?? person.name,
+          stance: preference.stance,
+          confidence: preference.confidence,
+        });
+        byVariant.set(variantId, list);
+      }
+    }
+    return byVariant;
+  };
   const safeVariantsForDay = (dayKey: DayKey) =>
     allVariants.filter(
       (v) =>
@@ -116,7 +163,10 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
 
   for (const dayKey of DAY_KEYS) {
     const busy = rhythm[dayKey] === "busy";
-    const variants = safeVariantsForDay(dayKey);
+    const personalVariantPreferences = personalPreferencesForDay(dayKey);
+    const variants = safeVariantsForDay(dayKey).filter(
+      (variant) => !(personalVariantPreferences.get(variant.id) ?? []).some((preference) => preference.stance === "NEVER")
+    );
     if (variants.length === 0) {
       throw new Error(
         `Geen enkel gerecht in de bibliotheek voldoet aan de harde beperkingen voor ${DAY_ENUM[dayKey]}. Voeg geschikte recepten toe voordat er een weekplanning gemaakt kan worden.`
@@ -156,6 +206,7 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
       busy,
       preferredCategories,
       variantPreferences: variantPreferenceById,
+      personalVariantPreferences,
       lastPlannedByRecipeId,
       usedRecipeIds,
       targetDate: dateForDay(weekStart, dayKey),

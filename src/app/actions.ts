@@ -5,7 +5,17 @@ import { prisma } from "@/lib/prisma";
 import { assertCurrentHousehold } from "@/lib/auth";
 import { logFeedbackEvent } from "@/lib/feedback";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "@/lib/scoring";
-import { DAY_ENUM, type DayKey } from "@/lib/week";
+import { DAY_ENUM, DAY_KEYS, type DayKey } from "@/lib/week";
+
+const PERSONAL_STANCES = ["LIKED", "SOMETIMES", "RATHER_NOT", "NEVER"] as const;
+
+function parsePersonalStance(value: FormDataEntryValue | null): (typeof PERSONAL_STANCES)[number] {
+  const stance = String(value ?? "SOMETIMES");
+  if (!PERSONAL_STANCES.includes(stance as (typeof PERSONAL_STANCES)[number])) {
+    throw new Error("Onbekende voorkeur.");
+  }
+  return stance as (typeof PERSONAL_STANCES)[number];
+}
 
 /**
  * De "eenmalige, korte" feedbackvraag bij nieuwe gerechten (sectie 7 van
@@ -37,4 +47,57 @@ export async function submitMealFeedback(formData: FormData) {
   await maybePromoteRecipeStatus(recipeVariantId, householdId);
 
   revalidatePath("/");
+}
+
+export async function setPersonMealPreference(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const personId = String(formData.get("personId"));
+  const recipeVariantId = String(formData.get("recipeVariantId"));
+  const dayKey = String(formData.get("dayKey")) as DayKey;
+  const stance = parsePersonalStance(formData.get("stance"));
+
+  if (!DAY_KEYS.includes(dayKey)) {
+    throw new Error("Onbekende dag.");
+  }
+
+  await prisma.person.findUniqueOrThrow({
+    where: { id: personId, householdId },
+    select: { id: true },
+  });
+  await prisma.recipeVariant.findUniqueOrThrow({ where: { id: recipeVariantId }, select: { id: true } });
+
+  await prisma.preference.upsert({
+    where: {
+      ownerType_ownerId_subjectType_subjectId: {
+        ownerType: "PERSON",
+        ownerId: personId,
+        subjectType: "RECIPE_VARIANT",
+        subjectId: recipeVariantId,
+      },
+    },
+    update: { stance, source: "EXPLICIT", confidence: 1 },
+    create: {
+      ownerType: "PERSON",
+      ownerId: personId,
+      subjectType: "RECIPE_VARIANT",
+      subjectId: recipeVariantId,
+      stance,
+      source: "EXPLICIT",
+      confidence: 1,
+    },
+  });
+
+  await logFeedbackEvent({
+    householdId,
+    personId,
+    subjectType: "RECIPE_VARIANT",
+    subjectId: recipeVariantId,
+    eventType: "EXPLICIT_FEEDBACK",
+    explicit: true,
+    context: { dayOfWeek: DAY_ENUM[dayKey], stance, source: "personal_week_plan" },
+  });
+
+  revalidatePath("/");
+  revalidatePath("/gerechten");
 }

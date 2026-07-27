@@ -7,7 +7,7 @@ import { assertCurrentHousehold } from "@/lib/auth";
 import { logFeedbackEvent } from "@/lib/feedback";
 import { invalidateShoppingList } from "@/lib/shoppingList";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "@/lib/scoring";
-import { getHouseholdHardRestrictions } from "@/lib/household";
+import { getHouseholdHardRestrictions, getHouseholdMealParticipantsByDay } from "@/lib/household";
 import { recipeConflictsWithRestrictions } from "@/lib/dietaryRestrictions";
 import { DAY_ENUM, DAY_KEYS, type DayKey } from "@/lib/week";
 
@@ -25,13 +25,26 @@ export async function replaceMealPlanEntry(formData: FormData) {
   // aanroeper kan hetzelfde form-veld met een andere id versturen) — de UI
   // filtert onveilige gerechten al weg, maar dat is geen beveiliging.
   // Daarom hier nogmaals hard controleren, ongeacht wat er binnenkomt.
-  const [variant, hardRestrictions] = await Promise.all([
+  const [variant, hardRestrictions, participantsByDay] = await Promise.all([
     prisma.recipeVariant.findUniqueOrThrow({
       where: { id: recipeVariantId },
       include: { recipe: { include: { ingredients: { include: { ingredient: true } } } } },
     }),
     getHouseholdHardRestrictions(householdId, dayKey),
+    getHouseholdMealParticipantsByDay(householdId),
   ]);
+  const neverPreference = await prisma.preference.findFirst({
+    where: {
+      ownerType: "PERSON",
+      ownerId: { in: participantsByDay[dayKey].map((person) => person.id) },
+      subjectType: "RECIPE_VARIANT",
+      subjectId: recipeVariantId,
+      stance: "NEVER",
+    },
+  });
+  if (neverPreference) {
+    throw new Error("Dit gerecht staat voor iemand die deze dag mee-eet op 'nooit' en kan niet worden ingepland.");
+  }
   const conflicts = recipeConflictsWithRestrictions(
     variant.recipe.ingredients.map((ri) => ({
       category: ri.ingredient.category,

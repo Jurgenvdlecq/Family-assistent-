@@ -1,6 +1,7 @@
 import { Menu, SlidersHorizontal, Flame, Leaf, MoreHorizontal, Utensils } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
+import { getHouseholdMealParticipantsByDay } from "@/lib/household";
 import { ensureMealPlan, getMealPlanForWeek, getReasonsForPlan } from "@/lib/mealPlan";
 import {
   getCurrentWeekStart,
@@ -15,13 +16,29 @@ import {
 import { CATEGORY_GRADIENT, VARIANT_LABELS, STATUS_LABELS, statusTone, variantTone } from "@/lib/categoryStyle";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
-import { submitMealFeedback } from "./actions";
+import { setPersonMealPreference, submitMealFeedback } from "./actions";
 
 // Deze pagina schrijft (idempotent) naar de database bij elk bezoek
 // (ensureMealPlan) — nooit statisch prerenderen tijdens de build, dat
 // voert dezelfde databasecode uit met build-time state en botst met
 // bestaande data.
 export const dynamic = "force-dynamic";
+
+const PERSONAL_STANCE_LABELS = {
+  LIKED: "Favoriet",
+  SOMETIMES: "Oké",
+  RATHER_NOT: "Liever niet",
+  NEVER: "Nooit",
+} as const;
+
+const PERSONAL_STANCE_TONES = {
+  LIKED: "border-tag-green-ink bg-tag-green-bg text-tag-green-ink",
+  SOMETIMES: "border-tag-blue-ink bg-tag-blue-bg text-tag-blue-ink",
+  RATHER_NOT: "border-tag-amber-ink bg-tag-amber-bg text-tag-amber-ink",
+  NEVER: "border-red-500 bg-red-50 text-red-700",
+} as const;
+
+const PERSONAL_STANCES = ["LIKED", "SOMETIMES", "RATHER_NOT", "NEVER"] as const;
 
 export default async function Home() {
   const currentHousehold = await requireCurrentHousehold();
@@ -32,10 +49,26 @@ export default async function Home() {
 
   const weekStart = getCurrentWeekStart();
   await ensureMealPlan(household.id, weekStart);
-  const [mealPlan, reasons] = await Promise.all([
+  const [mealPlan, reasons, participantsByDay] = await Promise.all([
     getMealPlanForWeek(household.id, weekStart),
     getReasonsForPlan(household.id, weekStart),
+    getHouseholdMealParticipantsByDay(household.id),
   ]);
+  const mealVariantIds = mealPlan!.entries.map((entry) => entry.recipeVariantId);
+  const participantIds = [
+    ...new Set(DAY_KEYS.flatMap((dayKey) => participantsByDay[dayKey].map((person) => person.id))),
+  ];
+  const personalPreferences = await prisma.preference.findMany({
+    where: {
+      ownerType: "PERSON",
+      ownerId: { in: participantIds },
+      subjectType: "RECIPE_VARIANT",
+      subjectId: { in: mealVariantIds },
+    },
+  });
+  const personalPreferenceByPersonAndVariant = new Map(
+    personalPreferences.map((preference) => [`${preference.ownerId}:${preference.subjectId}`, preference.stance])
+  );
 
   const entryByDay = new Map(mealPlan!.entries.map((e) => [e.dayOfWeek, e]));
   const rhythm = (household.weeklyRhythm ?? {}) as Partial<Record<string, "busy" | "quiet">>;
@@ -98,6 +131,7 @@ export default async function Home() {
           const entry = entryByDay.get(DAY_ENUM[dayKey]);
           const recipe = entry?.recipeVariant.recipe;
           const reason = entry ? reasons.get(entry.recipeVariantId) : undefined;
+          const participants = participantsByDay[dayKey];
           const isNew =
             entry &&
             recipe &&
@@ -147,6 +181,47 @@ export default async function Home() {
 
               {reason && (
                 <p className="pl-14 text-xs text-ink-muted">{reason}</p>
+              )}
+
+              {entry && participants.length > 0 && (
+                <details className="ml-14 rounded-lg border border-line bg-surface-2 px-3 py-2">
+                  <summary className="cursor-pointer text-xs font-medium text-ink-muted">
+                    Persoonlijke voorkeuren
+                  </summary>
+                  <div className="mt-3 flex min-w-0 flex-col gap-3">
+                    {participants.map((person) => {
+                      const currentStance = personalPreferenceByPersonAndVariant.get(
+                        `${person.id}:${entry.recipeVariantId}`
+                      );
+                      return (
+                        <div key={person.id} className="min-w-0">
+                          <p className="mb-1.5 truncate text-xs font-medium text-ink">{person.name}</p>
+                          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                            {PERSONAL_STANCES.map((stance) => (
+                              <form key={stance} action={setPersonMealPreference}>
+                                <input type="hidden" name="householdId" value={household.id} />
+                                <input type="hidden" name="personId" value={person.id} />
+                                <input type="hidden" name="recipeVariantId" value={entry.recipeVariantId} />
+                                <input type="hidden" name="dayKey" value={dayKey} />
+                                <input type="hidden" name="stance" value={stance} />
+                                <button
+                                  type="submit"
+                                  className={`w-full rounded-md border px-2 py-1.5 text-[11px] font-medium ${
+                                    currentStance === stance
+                                      ? PERSONAL_STANCE_TONES[stance]
+                                      : "border-line bg-surface text-ink-muted hover:border-accent"
+                                  }`}
+                                >
+                                  {PERSONAL_STANCE_LABELS[stance]}
+                                </button>
+                              </form>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </details>
               )}
 
               {isNew && entry && (

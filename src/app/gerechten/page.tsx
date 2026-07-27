@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, SlidersHorizontal, Heart, Sparkles } from "l
 import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
-import { getHouseholdHardRestrictions } from "@/lib/household";
+import { getHouseholdHardRestrictions, getHouseholdMealParticipantsByDay } from "@/lib/household";
 import { recipeConflictsWithRestrictions } from "@/lib/dietaryRestrictions";
 import { DAY_KEYS, DAY_ENUM, DAY_LABELS, getCurrentWeekStart, type DayKey } from "@/lib/week";
 import { CATEGORY_GRADIENT, STATUS_LABELS, statusTone } from "@/lib/categoryStyle";
@@ -27,6 +27,16 @@ const VARIANT_INCLUDE = {
 type VariantWithRecipe = Awaited<
   ReturnType<typeof prisma.recipeVariant.findMany<{ include: typeof VARIANT_INCLUDE }>>
 >[number];
+
+function personalPreferenceScore(stances: string[]): number {
+  return stances.reduce((score, stance) => {
+    if (stance === "LIKED") return score + 1;
+    if (stance === "SOMETIMES") return score + 0.2;
+    if (stance === "RATHER_NOT") return score - 1.5;
+    if (stance === "NEVER") return score - 100;
+    return score;
+  }, 0);
+}
 
 export default async function GerechtenPage({
   searchParams,
@@ -59,10 +69,26 @@ export default async function GerechtenPage({
     preferences.filter((p) => p.subjectType === "RECIPE_VARIANT").map((p) => [p.subjectId, p.confidence])
   );
 
-  const [allVariants, hardRestrictions] = await Promise.all([
+  const [allVariants, hardRestrictions, participantsByDay] = await Promise.all([
     prisma.recipeVariant.findMany({ include: VARIANT_INCLUDE }),
     getHouseholdHardRestrictions(household.id, dayKey),
+    getHouseholdMealParticipantsByDay(household.id),
   ]);
+  const participants = participantsByDay[dayKey];
+  const personalPreferences = await prisma.preference.findMany({
+    where: {
+      ownerType: "PERSON",
+      ownerId: { in: participants.map((person) => person.id) },
+      subjectType: "RECIPE_VARIANT",
+      subjectId: { in: allVariants.map((variant) => variant.id) },
+    },
+  });
+  const personalStancesByVariantId = new Map<string, string[]>();
+  for (const preference of personalPreferences) {
+    const list = personalStancesByVariantId.get(preference.subjectId) ?? [];
+    list.push(preference.stance);
+    personalStancesByVariantId.set(preference.subjectId, list);
+  }
 
   // Een onveilig gerecht mag niet eens als suggestie zichtbaar zijn — niet
   // pas bij het bevestigen ervan (sectie 10 van de Blueprint).
@@ -74,7 +100,7 @@ export default async function GerechtenPage({
           restrictionTags: ri.ingredient.restrictionTags,
         })),
         hardRestrictions
-      )
+      ) && !(personalStancesByVariantId.get(v.id) ?? []).includes("NEVER")
   );
 
   let filtered = variants;
@@ -89,7 +115,12 @@ export default async function GerechtenPage({
   }
   filtered = filtered
     .filter((v) => v.id !== currentEntry?.recipeVariantId)
-    .sort((a, b) => (confidenceByVariantId.get(b.id) ?? 0.5) - (confidenceByVariantId.get(a.id) ?? 0.5))
+    .sort(
+      (a, b) =>
+        personalPreferenceScore(personalStancesByVariantId.get(b.id) ?? []) -
+          personalPreferenceScore(personalStancesByVariantId.get(a.id) ?? []) ||
+        (confidenceByVariantId.get(b.id) ?? 0.5) - (confidenceByVariantId.get(a.id) ?? 0.5)
+    )
     .slice(0, 12);
 
   const newSuggestions = filtered.filter(

@@ -94,6 +94,50 @@ test("negatieve variantvoorkeur verlaagt confidence en geeft een concrete reden"
   assert.ok(result.reasons.some((reason) => reason.includes("minder goed bevallen")));
 });
 
+test("persoonlijke favorieten wegen mee voor de aanwezige eters", () => {
+  const neutral = candidate({ id: "neutral", recipeTitle: "Gewone pasta" });
+  const favorite = candidate({ id: "favorite", recipeTitle: "Mila's favoriet" });
+
+  const result = chooseMealPlanCandidate({
+    candidates: [neutral, favorite],
+    dayKey: "monday",
+    busy: false,
+    preferredCategories: new Set(),
+    variantPreferences: new Map(),
+    personalVariantPreferences: new Map([
+      ["favorite", [{ personName: "Mila", stance: "LIKED", confidence: 1 }]],
+    ]),
+    lastPlannedByRecipeId: new Map(),
+    usedRecipeIds: new Set(),
+    targetDate: TARGET_DATE,
+  });
+
+  assert.equal(result.candidate.id, "favorite");
+  assert.ok(result.reasons.some((reason) => reason.includes("Mila vindt dit favoriet")));
+});
+
+test("persoonlijke sterke afkeur weegt zwaarder dan een lichte huishoudfavoriet", () => {
+  const disliked = candidate({ id: "disliked", recipeTitle: "Niet voor Sam" });
+  const fallback = candidate({ id: "fallback", recipeTitle: "Rustige keuze" });
+
+  const result = chooseMealPlanCandidate({
+    candidates: [disliked, fallback],
+    dayKey: "tuesday",
+    busy: false,
+    preferredCategories: new Set(["PASTA"]),
+    variantPreferences: new Map([["disliked", { stance: "LIKED", confidence: 0.5 }]]),
+    personalVariantPreferences: new Map([
+      ["disliked", [{ personName: "Sam", stance: "RATHER_NOT", confidence: 1 }]],
+    ]),
+    lastPlannedByRecipeId: new Map(),
+    usedRecipeIds: new Set(),
+    targetDate: TARGET_DATE,
+  });
+
+  assert.equal(result.candidate.id, "fallback");
+  assert.equal(result.confidence, "CERTAIN");
+});
+
 test("formatteert gebruikersuitleg zonder generieke willekeurtekst", () => {
   const result = chooseMealPlanCandidate({
     candidates: [
