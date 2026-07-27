@@ -37,13 +37,19 @@ export async function replaceMealPlanEntry(formData: FormData) {
     where: {
       ownerType: "PERSON",
       ownerId: { in: participantsByDay[dayKey].map((person) => person.id) },
-      subjectType: "RECIPE_VARIANT",
-      subjectId: recipeVariantId,
+      OR: [
+        { subjectType: "RECIPE_VARIANT", subjectId: recipeVariantId },
+        { subjectType: "RECIPE_CATEGORY", subjectId: variant.recipe.category },
+        {
+          subjectType: "INGREDIENT",
+          subjectId: { in: variant.recipe.ingredients.map((ri) => ri.ingredientId) },
+        },
+      ],
       stance: "NEVER",
     },
   });
   if (neverPreference) {
-    throw new Error("Dit gerecht staat voor iemand die deze dag mee-eet op 'nooit' en kan niet worden ingepland.");
+    throw new Error("Dit gerecht botst met een persoonlijke 'nooit'-voorkeur van iemand die deze dag mee-eet.");
   }
   const conflicts = recipeConflictsWithRestrictions(
     variant.recipe.ingredients.map((ri) => ({

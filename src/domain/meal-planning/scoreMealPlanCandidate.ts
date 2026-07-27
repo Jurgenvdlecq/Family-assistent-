@@ -12,6 +12,7 @@ export interface MealPlanCandidate {
   recipeCategory: string;
   recipeStatus: RecipeStatus;
   recipeProperties: string[];
+  ingredients: { id: string; name: string }[];
   variantType: VariantType;
   contextFit: string[];
 }
@@ -25,6 +26,11 @@ export interface PersonalRecipeVariantPreference extends RecipeVariantPreference
   personName: string;
 }
 
+export interface PersonalSubjectPreference extends RecipeVariantPreference {
+  personName: string;
+  subjectLabel: string;
+}
+
 export interface MealPlanScoringInput {
   candidates: MealPlanCandidate[];
   dayKey: DayKey;
@@ -32,6 +38,8 @@ export interface MealPlanScoringInput {
   preferredCategories: Set<string>;
   variantPreferences: Map<string, RecipeVariantPreference>;
   personalVariantPreferences?: Map<string, PersonalRecipeVariantPreference[]>;
+  personalCategoryPreferences?: Map<string, PersonalSubjectPreference[]>;
+  personalIngredientPreferences?: Map<string, PersonalSubjectPreference[]>;
   lastPlannedByRecipeId: Map<string, Date>;
   usedRecipeIds: Set<string>;
   targetDate: Date;
@@ -75,10 +83,48 @@ function daysBetween(from: Date, to: Date): number {
   return Math.floor((to.getTime() - from.getTime()) / dayMs);
 }
 
+function applyPersonalSignal(
+  signal: {
+    score: number;
+    hasDoubt: boolean;
+    reasons: string[];
+  },
+  preferences: PersonalSubjectPreference[],
+  label: string
+) {
+  const favorites = preferences.filter((preference) => preference.stance === "LIKED");
+  const lightOk = preferences.filter((preference) => preference.stance === "SOMETIMES");
+  const dislikes = preferences.filter((preference) => preference.stance === "RATHER_NOT");
+  const never = preferences.filter((preference) => preference.stance === "NEVER");
+
+  if (favorites.length > 0) {
+    signal.score += favorites.reduce((sum, preference) => sum + 10 * preference.confidence, 0);
+    signal.reasons.push(
+      `${favorites.map((preference) => preference.personName).join(", ")} houdt van ${label}`
+    );
+  }
+  if (lightOk.length > 0) {
+    signal.score += lightOk.reduce((sum, preference) => sum + 3 * preference.confidence, 0);
+  }
+  if (dislikes.length > 0) {
+    signal.score -= dislikes.reduce((sum, preference) => sum + 22 * Math.max(0.5, preference.confidence), 0);
+    signal.hasDoubt = true;
+    signal.reasons.push(
+      `${dislikes.map((preference) => preference.personName).join(", ")} eet ${label} liever niet`
+    );
+  }
+  if (never.length > 0) {
+    signal.score -= 100;
+    signal.hasDoubt = true;
+    signal.reasons.push(
+      `${never.map((preference) => preference.personName).join(", ")} wil ${label} nooit`
+    );
+  }
+}
+
 function scoreCandidate(input: MealPlanScoringInput, candidate: MealPlanCandidate): ScoredMealPlanCandidate {
   const reasons: string[] = [];
-  let score = 100;
-  let hasDoubt = false;
+  const signal = { score: 100, hasDoubt: false, reasons };
 
   const dayLabel = DAY_LABELS[input.dayKey];
   const busyFit = BUSY_VARIANT_TYPES.has(candidate.variantType) || candidate.contextFit.includes("drukke_dag");
@@ -89,39 +135,39 @@ function scoreCandidate(input: MealPlanScoringInput, candidate: MealPlanCandidat
 
   if (input.busy) {
     if (busyFit) {
-      score += 25;
+      signal.score += 25;
       reasons.push(`past bij jullie drukke ${dayLabel}`);
     } else {
-      score -= 25;
-      hasDoubt = true;
+      signal.score -= 25;
+      signal.hasDoubt = true;
       reasons.push(`is minder vanzelfsprekend op jullie drukke ${dayLabel}`);
     }
   } else if (candidate.variantType === "FRESH") {
-    score += 5;
+    signal.score += 5;
     reasons.push(`er is op ${dayLabel} ruimte voor vers koken`);
   }
 
   if (input.preferredCategories.size > 0) {
     if (preferred) {
-      score += 20;
+      signal.score += 20;
       reasons.push(`past bij jullie voorkeur voor ${labelCategory(candidate.recipeCategory)}`);
     } else {
-      score -= 8;
-      hasDoubt = true;
+      signal.score -= 8;
+      signal.hasDoubt = true;
       reasons.push(`valt niet in jullie favoriete categorieën`);
     }
   }
 
   if (variantPreference?.stance === "LIKED") {
-    score += 20 * variantPreference.confidence;
+    signal.score += 20 * variantPreference.confidence;
     reasons.push(`is eerder positief beoordeeld`);
   } else if (variantPreference?.stance === "RATHER_NOT") {
-    score -= 25 * Math.max(0.5, variantPreference.confidence);
-    hasDoubt = true;
+    signal.score -= 25 * Math.max(0.5, variantPreference.confidence);
+    signal.hasDoubt = true;
     reasons.push(`is eerder minder goed bevallen`);
   } else if (variantPreference?.stance === "NEVER") {
-    score -= 60;
-    hasDoubt = true;
+    signal.score -= 60;
+    signal.hasDoubt = true;
     reasons.push(`staat als te vermijden gerechtvariant geregistreerd`);
   }
 
@@ -132,62 +178,75 @@ function scoreCandidate(input: MealPlanScoringInput, candidate: MealPlanCandidat
 
   if (favorites.length > 0) {
     const boost = favorites.reduce((sum, preference) => sum + 14 * preference.confidence, 0);
-    score += boost;
+    signal.score += boost;
     reasons.push(`${favorites.map((preference) => preference.personName).join(", ")} vindt dit favoriet`);
   }
   if (lightOk.length > 0) {
-    score += lightOk.reduce((sum, preference) => sum + 4 * preference.confidence, 0);
+    signal.score += lightOk.reduce((sum, preference) => sum + 4 * preference.confidence, 0);
   }
   if (dislikes.length > 0) {
     const penalty = dislikes.reduce((sum, preference) => sum + 35 * Math.max(0.5, preference.confidence), 0);
-    score -= penalty;
-    hasDoubt = true;
+    signal.score -= penalty;
+    signal.hasDoubt = true;
     reasons.push(`${dislikes.map((preference) => preference.personName).join(", ")} eet dit liever niet`);
   }
   if (never.length > 0) {
-    score -= 120;
-    hasDoubt = true;
+    signal.score -= 120;
+    signal.hasDoubt = true;
     reasons.push(`${never.map((preference) => preference.personName).join(", ")} wil dit nooit eten`);
   }
 
+  applyPersonalSignal(
+    signal,
+    input.personalCategoryPreferences?.get(candidate.recipeCategory) ?? [],
+    labelCategory(candidate.recipeCategory)
+  );
+  for (const ingredient of candidate.ingredients) {
+    applyPersonalSignal(
+      signal,
+      input.personalIngredientPreferences?.get(ingredient.id) ?? [],
+      ingredient.name.toLowerCase()
+    );
+  }
+
   if (candidate.recipeStatus === "SAFE_CHOICE") {
-    score += 15;
+    signal.score += 15;
     reasons.push(`is al een veilige keuze voor jullie`);
   } else if (candidate.recipeStatus === "PROVEN") {
-    score += 10;
+    signal.score += 10;
     reasons.push(`heeft zich eerder bewezen`);
   }
 
   if (candidate.variantType === "KID_FRIENDLY" || candidate.contextFit.includes("kindvriendelijk")) {
-    score += 8;
+    signal.score += 8;
     reasons.push(`is kindvriendelijk`);
   }
 
   if (lastPlannedAt) {
     const daysAgo = daysBetween(lastPlannedAt, input.targetDate);
     if (daysAgo < 14) {
-      score -= 20;
-      hasDoubt = true;
+      signal.score -= 20;
+      signal.hasDoubt = true;
       reasons.push(`stond ${daysAgo} dagen geleden nog op de planning`);
     } else if (daysAgo >= 35) {
-      score += 8;
+      signal.score += 8;
       reasons.push(`is al langer niet gepland`);
     }
   } else {
-    score += 4;
+    signal.score += 4;
     reasons.push(`brengt afwisseling in de week`);
   }
 
   if (input.usedRecipeIds.has(candidate.recipeId)) {
-    score -= 50;
-    hasDoubt = true;
+    signal.score -= 50;
+    signal.hasDoubt = true;
     reasons.push(`dit recept staat deze week al een keer op tafel`);
   }
 
   return {
     candidate,
-    score,
-    confidence: hasDoubt ? "SLIGHT_DOUBT" : "CERTAIN",
+    score: signal.score,
+    confidence: signal.hasDoubt ? "SLIGHT_DOUBT" : "CERTAIN",
     reasons,
   };
 }

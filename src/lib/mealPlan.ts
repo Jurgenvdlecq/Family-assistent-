@@ -8,6 +8,7 @@ import {
   chooseMealPlanCandidate,
   formatMealPlanReason,
   type PersonalRecipeVariantPreference,
+  type PersonalSubjectPreference,
 } from "@/domain/meal-planning/scoreMealPlanCandidate";
 import type { ConfidenceLevel } from "@/generated/prisma/enums";
 
@@ -94,6 +95,12 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
     getHouseholdMealParticipantsByDay(householdId),
   ]);
   const allVariantIds = allVariants.map((variant) => variant.id);
+  const allRecipeCategories = [...new Set(allVariants.map((variant) => variant.recipe.category))];
+  const allIngredients = allVariants.flatMap((variant) =>
+    variant.recipe.ingredients.map((ri) => ({ id: ri.ingredientId, name: ri.ingredient.name }))
+  );
+  const allIngredientIds = [...new Set(allIngredients.map((ingredient) => ingredient.id))];
+  const ingredientNameById = new Map(allIngredients.map((ingredient) => [ingredient.id, ingredient.name]));
   const allPersonIds = [...new Set(DAY_KEYS.flatMap((dayKey) => participantsByDay[dayKey].map((person) => person.id)))];
   const personNamesById = new Map(
     DAY_KEYS.flatMap((dayKey) => participantsByDay[dayKey].map((person) => [person.id, person.name] as const))
@@ -102,21 +109,26 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
     where: {
       ownerType: "PERSON",
       ownerId: { in: allPersonIds },
-      subjectType: "RECIPE_VARIANT",
-      subjectId: { in: allVariantIds },
+      OR: [
+        { subjectType: "RECIPE_VARIANT", subjectId: { in: allVariantIds } },
+        { subjectType: "RECIPE_CATEGORY", subjectId: { in: allRecipeCategories } },
+        { subjectType: "INGREDIENT", subjectId: { in: allIngredientIds } },
+      ],
     },
   });
 
   const hardRestrictionsByDay = new Map<DayKey, string[]>(hardRestrictionsByDayEntries);
-  const personalPreferenceByPersonAndVariant = new Map(
-    personalPreferences.map((preference) => [`${preference.ownerId}:${preference.subjectId}`, preference])
+  const personalPreferenceByPersonSubject = new Map(
+    personalPreferences.map((preference) => [`${preference.ownerId}:${preference.subjectType}:${preference.subjectId}`, preference])
   );
   const personalPreferencesForDay = (dayKey: DayKey) => {
     const presentPersons = participantsByDay[dayKey];
     const byVariant = new Map<string, PersonalRecipeVariantPreference[]>();
+    const byCategory = new Map<string, PersonalSubjectPreference[]>();
+    const byIngredient = new Map<string, PersonalSubjectPreference[]>();
     for (const person of presentPersons) {
       for (const variantId of allVariantIds) {
-        const preference = personalPreferenceByPersonAndVariant.get(`${person.id}:${variantId}`);
+        const preference = personalPreferenceByPersonSubject.get(`${person.id}:RECIPE_VARIANT:${variantId}`);
         if (!preference) continue;
         const list = byVariant.get(variantId) ?? [];
         list.push({
@@ -126,9 +138,42 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
         });
         byVariant.set(variantId, list);
       }
+      for (const category of allRecipeCategories) {
+        const preference = personalPreferenceByPersonSubject.get(`${person.id}:RECIPE_CATEGORY:${category}`);
+        if (!preference) continue;
+        const list = byCategory.get(category) ?? [];
+        list.push({
+          personName: personNamesById.get(person.id) ?? person.name,
+          subjectLabel: category.toLowerCase().replaceAll("_", " "),
+          stance: preference.stance,
+          confidence: preference.confidence,
+        });
+        byCategory.set(category, list);
+      }
+      for (const ingredientId of allIngredientIds) {
+        const preference = personalPreferenceByPersonSubject.get(`${person.id}:INGREDIENT:${ingredientId}`);
+        if (!preference) continue;
+        const list = byIngredient.get(ingredientId) ?? [];
+        list.push({
+          personName: personNamesById.get(person.id) ?? person.name,
+          subjectLabel: ingredientNameById.get(ingredientId) ?? "ingrediënt",
+          stance: preference.stance,
+          confidence: preference.confidence,
+        });
+        byIngredient.set(ingredientId, list);
+      }
     }
-    return byVariant;
+    return { byVariant, byCategory, byIngredient };
   };
+  const candidateHasNeverPreference = (
+    variant: VariantWithRecipe,
+    personal: ReturnType<typeof personalPreferencesForDay>
+  ) =>
+    (personal.byVariant.get(variant.id) ?? []).some((preference) => preference.stance === "NEVER") ||
+    (personal.byCategory.get(variant.recipe.category) ?? []).some((preference) => preference.stance === "NEVER") ||
+    variant.recipe.ingredients.some((ri) =>
+      (personal.byIngredient.get(ri.ingredientId) ?? []).some((preference) => preference.stance === "NEVER")
+    );
   const safeVariantsForDay = (dayKey: DayKey) =>
     allVariants.filter(
       (v) =>
@@ -163,9 +208,9 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
 
   for (const dayKey of DAY_KEYS) {
     const busy = rhythm[dayKey] === "busy";
-    const personalVariantPreferences = personalPreferencesForDay(dayKey);
+    const personalPreferencesForPresentPersons = personalPreferencesForDay(dayKey);
     const variants = safeVariantsForDay(dayKey).filter(
-      (variant) => !(personalVariantPreferences.get(variant.id) ?? []).some((preference) => preference.stance === "NEVER")
+      (variant) => !candidateHasNeverPreference(variant, personalPreferencesForPresentPersons)
     );
     if (variants.length === 0) {
       throw new Error(
@@ -199,6 +244,10 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
         recipeCategory: candidate.recipe.category,
         recipeStatus: candidate.recipe.status,
         recipeProperties: candidate.recipe.properties,
+        ingredients: candidate.recipe.ingredients.map((ri) => ({
+          id: ri.ingredientId,
+          name: ri.ingredient.name,
+        })),
         variantType: candidate.variantType,
         contextFit: candidate.contextFit,
       })),
@@ -206,7 +255,9 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
       busy,
       preferredCategories,
       variantPreferences: variantPreferenceById,
-      personalVariantPreferences,
+      personalVariantPreferences: personalPreferencesForPresentPersons.byVariant,
+      personalCategoryPreferences: personalPreferencesForPresentPersons.byCategory,
+      personalIngredientPreferences: personalPreferencesForPresentPersons.byIngredient,
       lastPlannedByRecipeId,
       usedRecipeIds,
       targetDate: dateForDay(weekStart, dayKey),

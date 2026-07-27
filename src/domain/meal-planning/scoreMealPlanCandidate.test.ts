@@ -17,6 +17,7 @@ function candidate(overrides: Partial<MealPlanCandidate> & { id: string; recipeI
     recipeCategory: "PASTA",
     recipeStatus: "FOUND",
     recipeProperties: [],
+    ingredients: [],
     variantType: "FRESH",
     contextFit: [],
     ...rest,
@@ -136,6 +137,61 @@ test("persoonlijke sterke afkeur weegt zwaarder dan een lichte huishoudfavoriet"
 
   assert.equal(result.candidate.id, "fallback");
   assert.equal(result.confidence, "CERTAIN");
+});
+
+test("persoonlijke categorievoorkeur weegt mee in de uitleg", () => {
+  const veggie = candidate({
+    id: "veggie",
+    recipeTitle: "Groentecurry",
+    recipeCategory: "ALL_VEGGIE_DAY",
+  });
+  const pasta = candidate({ id: "pasta", recipeTitle: "Pasta" });
+
+  const result = chooseMealPlanCandidate({
+    candidates: [pasta, veggie],
+    dayKey: "wednesday",
+    busy: false,
+    preferredCategories: new Set(),
+    variantPreferences: new Map(),
+    personalCategoryPreferences: new Map([
+      ["ALL_VEGGIE_DAY", [{ personName: "Noor", subjectLabel: "vegetarische dagen", stance: "LIKED", confidence: 1 }]],
+    ]),
+    lastPlannedByRecipeId: new Map(),
+    usedRecipeIds: new Set(),
+    targetDate: TARGET_DATE,
+  });
+
+  assert.equal(result.candidate.id, "veggie");
+  assert.ok(result.reasons.some((reason) => reason.includes("Noor houdt van vegetarische dagen")));
+});
+
+test("persoonlijke ingrediëntafkeur duwt gerechten met dat ingrediënt omlaag", () => {
+  const mushroomPasta = candidate({
+    id: "mushroom",
+    recipeTitle: "Pasta champignons",
+    ingredients: [{ id: "champignons", name: "Champignons" }],
+  });
+  const tomatoPasta = candidate({
+    id: "tomato",
+    recipeTitle: "Pasta tomaat",
+    ingredients: [{ id: "tomaat", name: "Tomaat" }],
+  });
+
+  const result = chooseMealPlanCandidate({
+    candidates: [mushroomPasta, tomatoPasta],
+    dayKey: "thursday",
+    busy: false,
+    preferredCategories: new Set(),
+    variantPreferences: new Map(),
+    personalIngredientPreferences: new Map([
+      ["champignons", [{ personName: "Sem", subjectLabel: "Champignons", stance: "RATHER_NOT", confidence: 1 }]],
+    ]),
+    lastPlannedByRecipeId: new Map(),
+    usedRecipeIds: new Set(),
+    targetDate: TARGET_DATE,
+  });
+
+  assert.equal(result.candidate.id, "tomato");
 });
 
 test("formatteert gebruikersuitleg zonder generieke willekeurtekst", () => {

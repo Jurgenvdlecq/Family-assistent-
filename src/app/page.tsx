@@ -13,7 +13,14 @@ import {
   dateForDay,
   formatDayShort,
 } from "@/lib/week";
-import { CATEGORY_GRADIENT, VARIANT_LABELS, STATUS_LABELS, statusTone, variantTone } from "@/lib/categoryStyle";
+import {
+  CATEGORY_GRADIENT,
+  CATEGORY_LABELS,
+  VARIANT_LABELS,
+  STATUS_LABELS,
+  statusTone,
+  variantTone,
+} from "@/lib/categoryStyle";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
 import { setPersonMealPreference, submitMealFeedback } from "./actions";
@@ -40,6 +47,47 @@ const PERSONAL_STANCE_TONES = {
 
 const PERSONAL_STANCES = ["LIKED", "SOMETIMES", "RATHER_NOT", "NEVER"] as const;
 
+function PreferenceButtons({
+  householdId,
+  personId,
+  dayKey,
+  subjectType,
+  subjectId,
+  currentStance,
+}: {
+  householdId: string;
+  personId: string;
+  dayKey: string;
+  subjectType: "RECIPE_VARIANT" | "RECIPE_CATEGORY" | "INGREDIENT";
+  subjectId: string;
+  currentStance: string | undefined;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+      {PERSONAL_STANCES.map((stance) => (
+        <form key={stance} action={setPersonMealPreference}>
+          <input type="hidden" name="householdId" value={householdId} />
+          <input type="hidden" name="personId" value={personId} />
+          <input type="hidden" name="dayKey" value={dayKey} />
+          <input type="hidden" name="subjectType" value={subjectType} />
+          <input type="hidden" name="subjectId" value={subjectId} />
+          <input type="hidden" name="stance" value={stance} />
+          <button
+            type="submit"
+            className={`w-full rounded-md border px-2 py-1.5 text-[11px] font-medium ${
+              currentStance === stance
+                ? PERSONAL_STANCE_TONES[stance]
+                : "border-line bg-surface text-ink-muted hover:border-accent"
+            }`}
+          >
+            {PERSONAL_STANCE_LABELS[stance]}
+          </button>
+        </form>
+      ))}
+    </div>
+  );
+}
+
 export default async function Home() {
   const currentHousehold = await requireCurrentHousehold();
   const household = await prisma.household.findUniqueOrThrow({
@@ -55,6 +103,14 @@ export default async function Home() {
     getHouseholdMealParticipantsByDay(household.id),
   ]);
   const mealVariantIds = mealPlan!.entries.map((entry) => entry.recipeVariantId);
+  const mealCategoryIds = [...new Set(mealPlan!.entries.map((entry) => entry.recipeVariant.recipe.category))];
+  const mealIngredientIds = [
+    ...new Set(
+      mealPlan!.entries.flatMap((entry) =>
+        entry.recipeVariant.recipe.ingredients.map((ri) => ri.ingredientId)
+      )
+    ),
+  ];
   const participantIds = [
     ...new Set(DAY_KEYS.flatMap((dayKey) => participantsByDay[dayKey].map((person) => person.id))),
   ];
@@ -62,12 +118,18 @@ export default async function Home() {
     where: {
       ownerType: "PERSON",
       ownerId: { in: participantIds },
-      subjectType: "RECIPE_VARIANT",
-      subjectId: { in: mealVariantIds },
+      OR: [
+        { subjectType: "RECIPE_VARIANT", subjectId: { in: mealVariantIds } },
+        { subjectType: "RECIPE_CATEGORY", subjectId: { in: mealCategoryIds } },
+        { subjectType: "INGREDIENT", subjectId: { in: mealIngredientIds } },
+      ],
     },
   });
   const personalPreferenceByPersonAndVariant = new Map(
-    personalPreferences.map((preference) => [`${preference.ownerId}:${preference.subjectId}`, preference.stance])
+    personalPreferences.map((preference) => [
+      `${preference.ownerId}:${preference.subjectType}:${preference.subjectId}`,
+      preference.stance,
+    ])
   );
 
   const entryByDay = new Map(mealPlan!.entries.map((e) => [e.dayOfWeek, e]));
@@ -130,6 +192,10 @@ export default async function Home() {
         {DAY_KEYS.map((dayKey) => {
           const entry = entryByDay.get(DAY_ENUM[dayKey]);
           const recipe = entry?.recipeVariant.recipe;
+          const visibleIngredients =
+            recipe?.ingredients
+              .filter((ri, index, list) => list.findIndex((item) => item.ingredientId === ri.ingredientId) === index)
+              .slice(0, 4) ?? [];
           const reason = entry ? reasons.get(entry.recipeVariantId) : undefined;
           const participants = participantsByDay[dayKey];
           const isNew =
@@ -191,31 +257,61 @@ export default async function Home() {
                   <div className="mt-3 flex min-w-0 flex-col gap-3">
                     {participants.map((person) => {
                       const currentStance = personalPreferenceByPersonAndVariant.get(
-                        `${person.id}:${entry.recipeVariantId}`
+                        `${person.id}:RECIPE_VARIANT:${entry.recipeVariantId}`
+                      );
+                      const categoryStance = personalPreferenceByPersonAndVariant.get(
+                        `${person.id}:RECIPE_CATEGORY:${recipe?.category}`
                       );
                       return (
                         <div key={person.id} className="min-w-0">
                           <p className="mb-1.5 truncate text-xs font-medium text-ink">{person.name}</p>
-                          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-                            {PERSONAL_STANCES.map((stance) => (
-                              <form key={stance} action={setPersonMealPreference}>
-                                <input type="hidden" name="householdId" value={household.id} />
-                                <input type="hidden" name="personId" value={person.id} />
-                                <input type="hidden" name="recipeVariantId" value={entry.recipeVariantId} />
-                                <input type="hidden" name="dayKey" value={dayKey} />
-                                <input type="hidden" name="stance" value={stance} />
-                                <button
-                                  type="submit"
-                                  className={`w-full rounded-md border px-2 py-1.5 text-[11px] font-medium ${
-                                    currentStance === stance
-                                      ? PERSONAL_STANCE_TONES[stance]
-                                      : "border-line bg-surface text-ink-muted hover:border-accent"
-                                  }`}
-                                >
-                                  {PERSONAL_STANCE_LABELS[stance]}
-                                </button>
-                              </form>
-                            ))}
+                          <div className="flex min-w-0 flex-col gap-2">
+                            <div>
+                              <p className="mb-1 text-[11px] text-ink-faint">Dit gerecht</p>
+                              <PreferenceButtons
+                                householdId={household.id}
+                                personId={person.id}
+                                dayKey={dayKey}
+                                subjectType="RECIPE_VARIANT"
+                                subjectId={entry.recipeVariantId}
+                                currentStance={currentStance}
+                              />
+                            </div>
+                            {recipe && (
+                              <div>
+                                <p className="mb-1 text-[11px] text-ink-faint">
+                                  {CATEGORY_LABELS[recipe.category] ?? recipe.category}
+                                </p>
+                                <PreferenceButtons
+                                  householdId={household.id}
+                                  personId={person.id}
+                                  dayKey={dayKey}
+                                  subjectType="RECIPE_CATEGORY"
+                                  subjectId={recipe.category}
+                                  currentStance={categoryStance}
+                                />
+                              </div>
+                            )}
+                            {visibleIngredients.map((ri) => {
+                              const ingredientStance = personalPreferenceByPersonAndVariant.get(
+                                `${person.id}:INGREDIENT:${ri.ingredientId}`
+                              );
+                              return (
+                                <div key={ri.ingredientId}>
+                                  <p className="mb-1 truncate text-[11px] text-ink-faint">
+                                    {ri.ingredient.name}
+                                  </p>
+                                  <PreferenceButtons
+                                    householdId={household.id}
+                                    personId={person.id}
+                                    dayKey={dayKey}
+                                    subjectType="INGREDIENT"
+                                    subjectId={ri.ingredientId}
+                                    currentStance={ingredientStance}
+                                  />
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       );

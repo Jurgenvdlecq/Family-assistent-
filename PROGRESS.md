@@ -48,13 +48,15 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 | WP9 | Multi-household / authenticatie | `src/lib/auth.ts`, `/login`, `HouseholdSession` + toegangscode-hash — pagina's gebruiken het huidige huishouden uit een HttpOnly-sessiecookie en server actions valideren household-toegang voordat ze muteren. |
 | WP10 | Persoonlijke gezinslogica | `Person.portionMultiplier`, `PersonPresenceOverride`, `src/domain/household/presence.ts` en bewerkbare gezinsleden op `/ons-gezin` — weekplanning filtert harde beperkingen per dag, boodschappenhoeveelheden schalen relatief op wie die dag mee-eet. |
 | WP11 | Persoonsvoorkeuren per gerecht | Persoonlijke voorkeuren worden opgeslagen via bestaande `Preference(ownerType=PERSON, subjectType=RECIPE_VARIANT)` — op `/` kan per aanwezige eter favoriet/oké/liever niet/nooit worden gekozen; planning en `/gerechten` wegen dit per dag mee en sluiten persoonlijke `NEVER` uit. Geen nieuwe migratie nodig. |
+| WP12 | Persoonsvoorkeuren per categorie/ingrediënt | De weekplanning kan per aanwezige eter nu ook voorkeuren voor receptcategorieën en ingrediënten vastleggen via dezelfde `Preference`-tabel. Planning en `/gerechten` wegen `RECIPE_CATEGORY` en `INGREDIENT` mee; persoonlijke `NEVER` sluit ook categorieën/ingrediënten uit. Geen nieuwe migratie nodig. |
 
 ## Nog te doen (roadmap, nog niet gestart)
 
-- **WP12 — Persoonsvoorkeuren verdiepen naar ingrediënten/categorieën.** WP11
-  dekt gerechtvarianten. Logische vervolgstap: per-persoon voorkeuren voor
-  ingrediënten en categorieën toevoegen, plus duidelijkere uitleg in de UI
-  wanneer een gerecht door iemands voorkeur omhoog/omlaag scoort.
+- **WP13 — Voorkeurenbeheer overzichtelijk maken.** WP11/WP12 leggen veel
+  voorkeuren vast vanuit de weekplanning. Logische vervolgstap: een beheer-
+  of overzichtssectie op `/ons-gezin` waar je persoonsvoorkeuren kunt zien,
+  corrigeren en verwijderen zonder te wachten tot het gerecht weer op het
+  weekmenu staat.
 
 ## Niet-voor-de-hand-liggende operationele kennis
 
