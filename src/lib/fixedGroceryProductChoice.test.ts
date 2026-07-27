@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { inferFixedProductOrderQuantity, parseBulkFixedGroceryInput } from "./fixedGroceryProductChoice";
+import {
+  inferFixedProductOrderQuantity,
+  parseBulkFixedGroceryInput,
+  removeBulkFixedGroceryLine,
+} from "./fixedGroceryProductChoice";
 
 test("parseBulkFixedGroceryInput splitst regels en komma's", () => {
   const lines = parseBulkFixedGroceryInput("2 pakken magere melk, drinkyoghurt framboos\nbananen; appels");
@@ -25,4 +29,13 @@ test("parseBulkFixedGroceryInput behoudt aantal zonder verpakkingswoord", () => 
 test("inferFixedProductOrderQuantity gebruikt verpakkingen als bestelaantal", () => {
   assert.deepEqual(inferFixedProductOrderQuantity(), { quantity: 1, unit: "PIECE" });
   assert.deepEqual(inferFixedProductOrderQuantity(2), { quantity: 2, unit: "PIECE" });
+});
+
+test("removeBulkFixedGroceryLine verwijdert alleen de gekozen regel uit de bulkpreview", () => {
+  const remaining = removeBulkFixedGroceryLine(
+    "2 pakken magere melk, drinkyoghurt framboos\nbananen",
+    "drinkyoghurt framboos"
+  );
+
+  assert.equal(remaining, "2 pakken magere melk\nbananen");
 });

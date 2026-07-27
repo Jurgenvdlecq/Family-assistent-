@@ -82,6 +82,21 @@ export function parseBulkFixedGroceryInput(input: string): ParsedBulkFixedGrocer
     });
 }
 
+export function removeBulkFixedGroceryLine(input: string, rawLineToRemove: string) {
+  const normalizedRawLine = rawLineToRemove.trim().replace(/\s+/g, " ");
+  let removed = false;
+  return parseBulkFixedGroceryInput(input)
+    .filter((line) => {
+      if (!removed && line.raw === normalizedRawLine) {
+        removed = true;
+        return false;
+      }
+      return true;
+    })
+    .map((line) => line.raw)
+    .join("\n");
+}
+
 export function inferIngredientCategory(searchTerm: string): IngredientCategory {
   const normalized = searchTerm.toLowerCase();
   if (/(appel|appels|banaan|bananen|peer|peren|fruit|druif|druiven|sinaasappel)/.test(normalized)) return "FRUIT";
