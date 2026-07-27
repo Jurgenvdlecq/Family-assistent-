@@ -149,6 +149,7 @@ export async function addFixedPicnicProduct(formData: FormData) {
   await assertCurrentHousehold(householdId);
 
   const shoppingListId = String(formData.get("shoppingListId") ?? "");
+  const replaceLineId = String(formData.get("replaceLineId") ?? "").trim();
   const searchTerm = String(formData.get("searchTerm") ?? "").trim();
   const productName = String(formData.get("productName") ?? "").trim();
   const externalRef = String(formData.get("externalRef") ?? "").trim();
@@ -160,6 +161,11 @@ export async function addFixedPicnicProduct(formData: FormData) {
 
   if (!productName || !externalRef) {
     throw new Error("Kies een geldig Picnic-product.");
+  }
+
+  const replacement = replaceLineId ? await loadFixedLine(replaceLineId) : null;
+  if (replacement && replacement.householdId !== householdId) {
+    throw new Error("Deze vaste boodschap hoort niet bij dit huishouden.");
   }
 
   const ingredientName = titleCaseSearchTerm(searchTerm || productName);
@@ -196,22 +202,51 @@ export async function addFixedPicnicProduct(formData: FormData) {
   await upsertFixedGrocery(householdId, ingredient.id, quantity, unit);
   await recordProductChosen(householdId, ingredient.id, product.id, "MANUAL");
 
+  const lineData = {
+    ingredientId: ingredient.id,
+    productId: product.id,
+    quantity,
+    unit,
+    source: "FIXED" as const,
+    needsReview: false,
+    matchStatus: "MANUALLY_SELECTED" as const,
+    matchConfidence: 1,
+    matchReasons: ["Handmatig als vaste boodschap gekozen en onthouden."],
+  };
+
+  if (replacement) {
+    const targetShoppingListId = replacement.line.shoppingListId;
+    if (replacement.line.ingredientId !== ingredient.id) {
+      await removeFixedGrocery(householdId, replacement.line.ingredientId);
+      await prisma.shoppingListLine.deleteMany({
+        where: {
+          shoppingListId: targetShoppingListId,
+          ingredientId: ingredient.id,
+          source: "FIXED",
+          NOT: { id: replacement.line.id },
+        },
+      });
+    }
+
+    await prisma.shoppingListLine.update({
+      where: { id: replacement.line.id },
+      data: lineData,
+    });
+
+    revalidatePath("/boodschappen");
+    revalidatePath("/controle");
+    redirect(
+      `/boodschappen?fixedLine=${encodeURIComponent(replacement.line.id)}#fixed-line-${encodeURIComponent(
+        replacement.line.id
+      )}`
+    );
+  }
+
   if (shoppingListId) {
     const existingLine = await prisma.shoppingListLine.findFirst({
       where: { shoppingListId, ingredientId: ingredient.id, source: "FIXED" },
       select: { id: true },
     });
-    const lineData = {
-      ingredientId: ingredient.id,
-      productId: product.id,
-      quantity,
-      unit,
-      source: "FIXED" as const,
-      needsReview: false,
-      matchStatus: "MANUALLY_SELECTED" as const,
-      matchConfidence: 1,
-      matchReasons: ["Handmatig als vaste boodschap gekozen en onthouden."],
-    };
     let lineId: string | null = null;
     if (existingLine) {
       await prisma.shoppingListLine.update({ where: { id: existingLine.id }, data: lineData });
