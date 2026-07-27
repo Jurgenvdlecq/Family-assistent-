@@ -20,6 +20,12 @@ async function loadLineForCurrentHousehold(lineId: string) {
   return { line, householdId: line.shoppingList.mealPlan.householdId };
 }
 
+function refreshControle() {
+  revalidatePath("/controle");
+  revalidatePath("/boodschappen");
+  redirect("/controle");
+}
+
 export async function confirmProductChoice(formData: FormData) {
   const lineId = String(formData.get("lineId"));
   const productId = String(formData.get("productId"));
@@ -62,8 +68,7 @@ export async function confirmProductChoice(formData: FormData) {
   // (productkeuze-prioriteitsregel #1 uit sectie 10 van de Blueprint).
   await recordProductChosen(householdId, line.ingredientId, productId, "MANUAL");
 
-  revalidatePath("/controle");
-  revalidatePath("/boodschappen");
+  refreshControle();
 }
 
 /**
@@ -102,8 +107,7 @@ export async function rejectProductChoice(formData: FormData) {
     },
   });
 
-  revalidatePath("/controle");
-  revalidatePath("/boodschappen");
+  refreshControle();
 }
 
 /**
@@ -149,8 +153,7 @@ export async function useProductThisWeekOnly(formData: FormData) {
     context: { source: "controle_screen", onceOnly: true },
   });
 
-  revalidatePath("/controle");
-  revalidatePath("/boodschappen");
+  refreshControle();
 }
 
 /** Past de hoeveelheid van deze ene regel aan (bv. een twijfelgeval bleek toch meer of minder nodig te hebben). */
@@ -163,8 +166,7 @@ export async function adjustLineQuantity(formData: FormData) {
   }
 
   await prisma.shoppingListLine.update({ where: { id: lineId }, data: { quantity } });
-  revalidatePath("/controle");
-  revalidatePath("/boodschappen");
+  refreshControle();
 }
 
 export async function searchPicnicProductsForLine(formData: FormData) {
@@ -229,7 +231,7 @@ export async function searchPicnicProductsForLine(formData: FormData) {
     },
   });
 
-  revalidatePath("/controle");
+  refreshControle();
 }
 
 async function persistRefreshedToken(client: PicnicClient, householdId: string, previousToken: string | null) {
@@ -247,8 +249,7 @@ export async function removeLineFromList(formData: FormData) {
   const lineId = String(formData.get("lineId"));
   await loadLineForCurrentHousehold(lineId);
   await prisma.shoppingListLine.delete({ where: { id: lineId } });
-  revalidatePath("/controle");
-  revalidatePath("/boodschappen");
+  refreshControle();
 }
 
 export async function skipReview(formData: FormData) {
@@ -258,8 +259,7 @@ export async function skipReview(formData: FormData) {
     where: { id: lineId },
     data: { needsReview: false },
   });
-  revalidatePath("/controle");
-  revalidatePath("/boodschappen");
+  refreshControle();
 }
 
 export async function confirmShoppingList(formData: FormData) {
