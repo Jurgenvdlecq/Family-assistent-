@@ -23,7 +23,7 @@ import {
 } from "@/lib/categoryStyle";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
-import { setPersonMealPreference, submitMealFeedback } from "./actions";
+import { regenerateCurrentWeekPlan, setPersonMealPreference, submitMealFeedback } from "./actions";
 
 // Deze pagina schrijft (idempotent) naar de database bij elk bezoek
 // (ensureMealPlan) — nooit statisch prerenderen tijdens de build, dat
@@ -185,6 +185,26 @@ export default async function Home() {
               {avgDayCount} AVG-{avgDayCount === 1 ? "dag" : "dagen"}
             </span>
           </div>
+          <details className="mt-4 rounded-lg border border-line bg-surface-2 px-3 py-2">
+            <summary className="cursor-pointer text-xs font-medium text-ink-muted">
+              Week opnieuw plannen
+            </summary>
+            <div className="mt-3 flex min-w-0 flex-col gap-3">
+              <p className="text-xs text-ink-muted">
+                Maakt deze week opnieuw met de nieuwste voorkeuren. De huidige boodschappenlijst
+                wordt opnieuw opgebouwd.
+              </p>
+              <form action={regenerateCurrentWeekPlan}>
+                <input type="hidden" name="householdId" value={household.id} />
+                <button
+                  type="submit"
+                  className="rounded-lg border border-line bg-surface px-3 py-2 text-xs font-medium text-ink hover:border-accent hover:text-accent"
+                >
+                  Opnieuw plannen
+                </button>
+              </form>
+            </div>
+          </details>
         </div>
       </div>
 
