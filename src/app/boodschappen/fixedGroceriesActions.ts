@@ -191,13 +191,11 @@ export async function addFixedPicnicProduct(formData: FormData) {
     price,
     lastSeenAvailable: new Date(),
   };
-  const existingProduct = await prisma.product.findFirst({
-    where: { ingredientId: ingredient.id, externalRef },
-    select: { id: true },
+  const product = await prisma.product.upsert({
+    where: { ingredientId_externalRef: { ingredientId: ingredient.id, externalRef } },
+    update: productData,
+    create: productData,
   });
-  const product = existingProduct
-    ? await prisma.product.update({ where: { id: existingProduct.id }, data: productData })
-    : await prisma.product.create({ data: productData });
 
   await upsertFixedGrocery(householdId, ingredient.id, quantity, unit);
   await recordProductChosen(householdId, ingredient.id, product.id, "MANUAL");

@@ -188,10 +188,11 @@ export async function searchPicnicProductsForLine(formData: FormData) {
   const client = new PicnicClient(household.picnicAuthToken);
   const results = await client.search(searchTerm);
 
-  let savedCount = 0;
-  for (const item of results.slice(0, 12)) {
+  const seenRefs = new Set<string>();
+  const productsToSave = results.slice(0, 12).flatMap((item) => {
     const externalRef = picnicProductRef(item);
-    if (!externalRef || !item.name) continue;
+    if (!externalRef || !item.name || seenRefs.has(externalRef)) return [];
+    seenRefs.add(externalRef);
 
     const packageSize = item.unit_quantity ?? null;
     const data = {
@@ -204,18 +205,23 @@ export async function searchPicnicProductsForLine(formData: FormData) {
       price: picnicPriceToEuros(item.display_price ?? item.price),
       lastSeenAvailable: new Date(),
     };
+    return [data];
+  });
 
-    const existing = await prisma.product.findFirst({
-      where: { ingredientId: line.ingredientId, externalRef },
-      select: { id: true },
-    });
-    if (existing) {
-      await prisma.product.update({ where: { id: existing.id }, data });
-    } else {
-      await prisma.product.create({ data });
-    }
-    savedCount += 1;
-  }
+  await Promise.all(
+    productsToSave.map((data) =>
+      prisma.product.upsert({
+        where: {
+          ingredientId_externalRef: {
+            ingredientId: data.ingredientId,
+            externalRef: data.externalRef,
+          },
+        },
+        update: data,
+        create: data,
+      })
+    )
+  );
 
   await persistRefreshedToken(client, householdId, household.picnicAuthToken);
 
@@ -226,8 +232,8 @@ export async function searchPicnicProductsForLine(formData: FormData) {
       matchStatus: "MATCHED_REVIEW_REQUIRED",
       matchConfidence: 0.5,
       matchReasons:
-        savedCount > 0
-          ? [`${savedCount} live Picnic-producten gevonden voor "${searchTerm}". Kies het juiste product.`]
+        productsToSave.length > 0
+          ? [`${productsToSave.length} live Picnic-producten gevonden voor "${searchTerm}". Kies het juiste product.`]
           : [`Geen live Picnic-producten gevonden voor "${searchTerm}". Probeer een andere zoekterm.`],
     },
   });
