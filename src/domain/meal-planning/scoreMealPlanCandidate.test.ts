@@ -77,6 +77,46 @@ test("recente planning weegt negatief zodat er meer variatie ontstaat", () => {
   assert.equal(result.confidence, "CERTAIN");
 });
 
+test("veilige planningsstijl geeft bewezen gerechten voorrang", () => {
+  const unknown = candidate({ id: "unknown", recipeStatus: "FOUND", recipeTitle: "Nieuwe curry" });
+  const proven = candidate({ id: "proven", recipeStatus: "PROVEN", recipeTitle: "Bewezen pasta" });
+
+  const result = chooseMealPlanCandidate({
+    candidates: [unknown, proven],
+    dayKey: "monday",
+    busy: false,
+    preferredCategories: new Set(),
+    variantPreferences: new Map(),
+    planningStyle: "SAFE",
+    lastPlannedByRecipeId: new Map(),
+    usedRecipeIds: new Set(),
+    targetDate: TARGET_DATE,
+  });
+
+  assert.equal(result.candidate.id, "proven");
+  assert.ok(result.reasons.some((reason) => reason.includes("veilig beginnen")));
+});
+
+test("nieuwsgierige planningsstijl geeft nieuwe suggesties ruimte", () => {
+  const proven = candidate({ id: "proven", recipeStatus: "PROVEN", recipeTitle: "Bewezen pasta" });
+  const fresh = candidate({ id: "fresh", recipeStatus: "FOUND", recipeTitle: "Nieuwe curry" });
+
+  const result = chooseMealPlanCandidate({
+    candidates: [proven, fresh],
+    dayKey: "monday",
+    busy: false,
+    preferredCategories: new Set(),
+    variantPreferences: new Map(),
+    planningStyle: "ADVENTUROUS",
+    lastPlannedByRecipeId: new Map(),
+    usedRecipeIds: new Set(),
+    targetDate: TARGET_DATE,
+  });
+
+  assert.equal(result.candidate.id, "fresh");
+  assert.ok(result.reasons.some((reason) => reason.includes("nieuwe suggesties")));
+});
+
 test("negatieve variantvoorkeur verlaagt confidence en geeft een concrete reden", () => {
   const disliked = candidate({ id: "disliked", recipeTitle: "Minder favoriet" });
   const result = chooseMealPlanCandidate({

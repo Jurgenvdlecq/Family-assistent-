@@ -31,13 +31,21 @@ const ROLE_LABELS: Record<OnboardingPersonInput["role"], string> = {
   OTHER: "Anders",
 };
 
-const TOTAL_STEPS = 6;
-
 type Rhythm = Record<string, "busy" | "quiet">;
+type OnboardingMode = "QUICK" | "DETAILED";
+type PlanningStyle = "SAFE" | "BALANCED" | "ADVENTUROUS";
+
+const PLANNING_STYLES: { value: PlanningStyle; label: string; description: string }[] = [
+  { value: "SAFE", label: "Veilig", description: "Meer bekende en bewezen gerechten." },
+  { value: "BALANCED", label: "Gebalanceerd", description: "Bekend genoeg, met af en toe iets nieuws." },
+  { value: "ADVENTUROUS", label: "Nieuwsgierig", description: "Meer ruimte voor proberen en variatie." },
+];
 
 export default function OnboardingWizard() {
   const router = useRouter();
   const [step, setStep] = useState(1);
+  const [onboardingMode, setOnboardingMode] = useState<OnboardingMode>("QUICK");
+  const [planningStyle, setPlanningStyle] = useState<PlanningStyle>("BALANCED");
   const [householdName, setHouseholdName] = useState("");
   const [persons, setPersons] = useState<OnboardingPersonInput[]>([
     { name: "", role: "PARENT", hardRestrictions: [] },
@@ -49,6 +57,8 @@ export default function OnboardingWizard() {
   const [accessCode, setAccessCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const totalSteps = onboardingMode === "DETAILED" ? 7 : 5;
+  const finalStep = totalSteps;
 
   function updatePerson(index: number, patch: Partial<OnboardingPersonInput>) {
     setPersons((prev) => prev.map((p, i) => (i === index ? { ...p, ...patch } : p)));
@@ -71,7 +81,7 @@ export default function OnboardingWizard() {
   function canGoNext(): boolean {
     if (step === 2) return householdName.trim().length > 0;
     if (step === 3) return persons.some((p) => p.name.trim().length > 0);
-    if (step === 6) return accessCode.trim().length >= 6;
+    if (step === finalStep) return accessCode.trim().length >= 6;
     return true;
   }
 
@@ -81,7 +91,7 @@ export default function OnboardingWizard() {
       setError("Vul dit veld in om verder te gaan.");
       return;
     }
-    setStep((s) => Math.min(s + 1, TOTAL_STEPS));
+    setStep((s) => Math.min(s + 1, totalSteps));
   }
 
   function goBack() {
@@ -95,9 +105,11 @@ export default function OnboardingWizard() {
       try {
         await completeOnboarding({
           householdName,
+          onboardingMode,
+          planningStyle,
           persons,
           weeklyRhythm: rhythm,
-          preferredCategories: categories,
+          preferredCategories: onboardingMode === "DETAILED" ? categories : [],
           accessCode,
         });
         router.push("/");
@@ -111,12 +123,12 @@ export default function OnboardingWizard() {
     <div className="mx-auto flex min-h-screen w-full min-w-0 max-w-xl flex-col justify-center px-6 py-12">
       <div className="mb-8">
         <p className="mb-2 font-mono text-xs uppercase tracking-wide text-accent">
-          Stap {step} van {TOTAL_STEPS}
+          Stap {step} van {totalSteps}
         </p>
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-line">
           <div
             className="h-full rounded-full bg-accent transition-all"
-            style={{ width: `${(step / TOTAL_STEPS) * 100}%` }}
+            style={{ width: `${(step / totalSteps) * 100}%` }}
           />
         </div>
       </div>
@@ -125,21 +137,34 @@ export default function OnboardingWizard() {
         <div>
           <h1 className="mb-2 text-3xl font-semibold text-ink">Welkom bij Family Assistant</h1>
           <p className="mb-8 text-ink-muted">
-            Een assistent die jullie helpt met maaltijden en boodschappen.
+            Kies hoe veel je nu wilt invullen. Kort starten betekent dat de app meer leert uit jullie eerste weken.
           </p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3">
             {[
-              "Bedenk wat jullie eten",
-              "Houd rekening met drukke dagen",
-              "Boodschappen voorbereiden",
-              "Leer wat bij jullie past",
-            ].map((label) => (
-              <div
-                key={label}
-                className="rounded-xl border border-line bg-surface p-4 text-sm font-medium text-ink"
+              {
+                value: "QUICK" as const,
+                label: "Snel starten",
+                description: "Een paar basisvragen, daarna maakt de app een veilige eerste week.",
+              },
+              {
+                value: "DETAILED" as const,
+                label: "Beter afstemmen",
+                description: "Iets meer smaak en ritme invullen, zodat de eerste planning minder correctie nodig heeft.",
+              },
+            ].map((mode) => (
+              <button
+                key={mode.value}
+                type="button"
+                onClick={() => setOnboardingMode(mode.value)}
+                className={`rounded-xl border p-4 text-left transition-colors ${
+                  onboardingMode === mode.value
+                    ? "border-accent bg-accent-soft text-accent"
+                    : "border-line bg-surface text-ink hover:border-ink-faint"
+                }`}
               >
-                {label}
-              </div>
+                <span className="block font-semibold">{mode.label}</span>
+                <span className="mt-1 block text-sm text-ink-muted">{mode.description}</span>
+              </button>
             ))}
           </div>
         </div>
@@ -262,7 +287,7 @@ export default function OnboardingWizard() {
         </div>
       )}
 
-      {step === 5 && (
+      {onboardingMode === "DETAILED" && step === 5 && (
         <div>
           <h2 className="mb-2 text-2xl font-semibold text-ink">Waar houden jullie van?</h2>
           <p className="mb-6 text-ink-muted">Kies wat vaak bij jullie op tafel komt.</p>
@@ -288,7 +313,36 @@ export default function OnboardingWizard() {
         </div>
       )}
 
-      {step === 6 && (
+      {onboardingMode === "DETAILED" && step === 6 && (
+        <div>
+          <h2 className="mb-2 text-2xl font-semibold text-ink">Hoe mag de app beginnen?</h2>
+          <p className="mb-6 text-ink-muted">
+            Dit is geen harde regel. De app gebruikt het als startpunt en leert daarna bij.
+          </p>
+          <div className="grid gap-3">
+            {PLANNING_STYLES.map((style) => {
+              const selected = planningStyle === style.value;
+              return (
+                <button
+                  key={style.value}
+                  type="button"
+                  onClick={() => setPlanningStyle(style.value)}
+                  className={`rounded-xl border p-4 text-left transition-colors ${
+                    selected
+                      ? "border-accent bg-accent-soft text-accent"
+                      : "border-line bg-surface text-ink hover:border-ink-faint"
+                  }`}
+                >
+                  <span className="block font-semibold">{style.label}</span>
+                  <span className="mt-1 block text-sm text-ink-muted">{style.description}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {step === finalStep && (
         <div>
           <h2 className="mb-2 text-2xl font-semibold text-ink">Klaar om te beginnen</h2>
           <p className="mb-6 text-ink-muted">
@@ -313,11 +367,17 @@ export default function OnboardingWizard() {
             </p>
             <p className="text-ink">
               <span className="font-medium">Voorkeuren:</span>{" "}
-              {categories.length > 0
+              {onboardingMode === "DETAILED" && categories.length > 0
                 ? categories
                     .map((c) => CATEGORIES.find((cat) => cat.value === c)?.label)
                     .join(", ")
-                : "geen gekozen"}
+                : onboardingMode === "QUICK"
+                  ? "snel starten"
+                  : "geen gekozen"}
+            </p>
+            <p className="mt-1 text-ink">
+              <span className="font-medium">Startstijl:</span>{" "}
+              {PLANNING_STYLES.find((style) => style.value === planningStyle)?.label}
             </p>
           </div>
           <div className="min-w-0 rounded-xl border border-tag-green-ink/25 bg-tag-green-bg p-4">
@@ -338,7 +398,7 @@ export default function OnboardingWizard() {
 
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
-      {step < TOTAL_STEPS && (
+      {step < finalStep && (
         <div className="mt-8 flex justify-between">
           <button
             type="button"
