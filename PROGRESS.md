@@ -64,13 +64,13 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 | WP23 | Afgeleide patronen en leervragen | `LearnedPattern` en `LearningPrompt` leggen herhaalde gedragssignalen vast zonder meteen harde conclusies te trekken. Bij drie vervangingen van dezelfde receptcategorie op dezelfde dag ontstaat een pending leervraag. `/` toont maximaal twee slimme vragen tegelijk en antwoorden bevestigen of verwerpen het patroon. Migratie nodig: `20260727113000_learning_patterns`. |
 | WP24 | Onboardingprofiel met snel/beter afstemmen | Onboarding heeft nu twee routes: `QUICK` voor snel starten en `DETAILED` voor meer afstemming. `Household.onboardingMode`, `planningStyle` en `maxSmartQuestionsPerSession` leggen het startprofiel vast. De planner gebruikt `planningStyle` als zachte score: veilig starten geeft bewezen/veilige gerechten voorrang, nieuwsgierig geeft nieuwe suggesties meer ruimte. Migratie nodig: `20260727133000_onboarding_profile`. |
 | WP25 | Hoofdflow als assistent | `/` opent nu met een compacte assistentkaart die de eerstvolgende logische stap toont: leervraag beantwoorden, boodschappen voorbereiden, productkeuzes controleren of bevestigen. Weekstatistieken zijn compacter, leervragen gebruiken `maxSmartQuestionsPerSession`, en "Week opnieuw plannen" staat onder rustige meer-acties in plaats van bovenin als beheeractie. Geen nieuwe migratie nodig. |
+| WP26 | Aanvullen en controle versimpelen | `/controle` toont nu eerst alleen uitzonderingen en onzekerheden; vertrouwde keuzes staan ingeklapt maar blijven bewerkbaar. `/boodschappen` toont vaste boodschappen en voorraadcheck als samenvattende uitklapsecties in plaats van grote open beheerblokken. Geen nieuwe migratie nodig. |
 
 ## Nog te doen (roadmap, nog niet gestart)
 
-- **Volgende WP nog kiezen.** Logische vervolgstappen: aanvullingen en
-  controle verder versimpelen (vertrouwd rustig, uitzonderingen prominent),
-  of MealPlanEntry-context vastleggen voor beter leren uit stil accepteren.
-  Zie `PRODUCT_VISION.md` "Hoofdflow" en `DATAMODEL_AUDIT.md`.
+- **Volgende WP nog kiezen.** Logische vervolgstap: `MealPlanEntry`-context
+  vastleggen voor beter leren uit stil accepteren en handmatige wijzigingen.
+  Zie `DATAMODEL_AUDIT.md` punt 6.
 
 ## Niet-voor-de-hand-liggende operationele kennis
 

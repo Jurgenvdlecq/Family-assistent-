@@ -120,8 +120,12 @@ export default async function BoodschappenPage() {
           ))}
         </div>
 
-        <h2 className="mb-3 mt-8 text-sm font-semibold text-ink">Vaste boodschappen</h2>
-        <div className="flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
+        <details className="mt-8 rounded-xl border border-line bg-surface p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-ink">
+            {activeFixedLines.length + inactiveFixedItems.length} vaste boodschap
+            {activeFixedLines.length + inactiveFixedItems.length === 1 ? "" : "pen"}
+          </summary>
+          <div className="mt-3 flex min-w-0 flex-col divide-y divide-line">
           {activeFixedLines.length === 0 && inactiveFixedItems.length === 0 && (
             <p className="p-4 text-sm text-ink-muted">
               Nog geen vaste boodschappen ingesteld — voeg hieronder je eerste toe.
@@ -186,7 +190,8 @@ export default async function BoodschappenPage() {
               </div>
             </div>
           ))}
-        </div>
+          </div>
+        </details>
 
         <details className="mt-4 rounded-xl border border-line bg-surface p-4">
           <summary className="cursor-pointer text-sm font-medium text-ink">
@@ -244,11 +249,14 @@ export default async function BoodschappenPage() {
           )}
         </details>
 
-        <h2 className="mb-3 mt-8 text-sm font-semibold text-ink">Voorraadcontrole</h2>
-        <p className="mb-3 text-sm text-ink-muted">
-          Hoe staat het met deze basisproducten? Ik onthoud je antwoord voor volgende keren.
-        </p>
-        <div className="flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
+        <details className="mt-6 rounded-xl border border-line bg-surface p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-ink">
+            Voorraadcheck voor {inventoryChecklist.length} basisproducten
+          </summary>
+          <p className="mt-2 text-sm text-ink-muted">
+            Hoe staat het met deze basisproducten? Ik onthoud je antwoord voor volgende keren.
+          </p>
+          <div className="mt-3 flex min-w-0 flex-col divide-y divide-line">
           {inventoryChecklist.map((item) => (
             <div
               key={item.ingredientId}
@@ -276,7 +284,8 @@ export default async function BoodschappenPage() {
               </div>
             </div>
           ))}
-        </div>
+          </div>
+        </details>
 
         <details className="mt-6 rounded-xl border border-line bg-surface p-4">
           <summary className="cursor-pointer font-medium text-ink">Per maaltijd bekijken</summary>
