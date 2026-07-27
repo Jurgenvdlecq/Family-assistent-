@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { after } from "next/server";
-import { ChevronLeft, ShoppingCart, CheckCircle2, Utensils, ChevronRight, Search, ClipboardList } from "lucide-react";
+import { ChevronLeft, ShoppingCart, CheckCircle2, Utensils, ChevronRight, Search, ClipboardList, Minus, Plus, X } from "lucide-react";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { DAY_KEY_BY_ENUM, DAY_LABELS, getCurrentWeekStart } from "@/lib/week";
-import { describeLinePackaging, ensureShoppingList } from "@/lib/shoppingList";
+import { describeLinePackaging, ensureShoppingList, getShoppingListCandidatesByIngredient } from "@/lib/shoppingList";
 import { prisma } from "@/lib/prisma";
 import { getHouseholdPortionScaleByDay } from "@/lib/household";
 import { getFixedGroceries } from "@/lib/fixedGroceries";
@@ -16,8 +16,14 @@ import { PicnicClient } from "@/lib/picnic/client";
 import type { PicnicSearchResultItem } from "@/lib/picnic/searchResults";
 import { inferFixedProductOrderQuantity, parseBulkFixedGroceryInput } from "@/lib/fixedGroceryProductChoice";
 import NavBar from "@/components/NavBar";
+import PendingSubmitButton from "@/components/PendingSubmitButton";
 import PicnicTransfer from "./PicnicTransfer";
 import AddToPicnicCart from "./AddToPicnicCart";
+import {
+  adjustBoodschappenLineQuantity,
+  chooseBoodschappenProduct,
+  removeBoodschappenLineThisWeek,
+} from "./actions";
 import {
   removeFixedLineThisWeek,
   restoreFixedLineThisWeek,
@@ -29,6 +35,14 @@ import {
 import { updateInventoryStatus } from "./inventoryActions";
 
 const UNIT_LABELS: Record<string, string> = { GRAM: "gram", ML: "ml", PIECE: "stuks" };
+const ACTION_BUTTON_FOCUS =
+  "shadow-sm transition-all duration-150 hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:translate-y-0 active:scale-[0.98]";
+
+const STATUS_MESSAGES: Record<string, string> = {
+  remembered: "Opgeslagen en onthouden voor volgende keer.",
+  "week-only": "Gekozen voor deze week.",
+  quantity: "Weekaantal bijgewerkt.",
+};
 
 const INVENTORY_STATUS_OPTIONS = [
   { value: "SUFFICIENT", label: "Genoeg" },
@@ -60,6 +74,47 @@ function formatOrderQuantity(line: {
   );
   if (packaging.status === "OK") return `${packaging.packagesToBuy}x`;
   return formatQuantity(line.quantity, line.unit);
+}
+
+function formatPrice(price: unknown) {
+  if (price === null || price === undefined) return null;
+  return `€ ${Number(price).toFixed(2)}`;
+}
+
+function linePackageCount(line: {
+  quantity: number;
+  unit: string;
+  source: string;
+  product: { packageQuantity: number | null } | null;
+}) {
+  if (line.source === "FIXED" && line.unit === "PIECE") return line.quantity;
+  const packaging = describeLinePackaging(
+    { quantity: line.quantity, unit: line.unit as "GRAM" | "ML" | "PIECE" },
+    line.product
+  );
+  return packaging.status === "OK" ? packaging.packagesToBuy : 1;
+}
+
+function estimatedLineCost(line: {
+  quantity: number;
+  unit: string;
+  source: string;
+  product: { packageQuantity: number | null; price: unknown } | null;
+}) {
+  if (!line.product?.price) return 0;
+  return linePackageCount(line) * Number(line.product.price);
+}
+
+function estimatedDayIngredientCost(
+  need: { quantity: number; unit: string },
+  product: { packageQuantity: number | null; price: unknown } | null | undefined
+) {
+  if (!product?.price) return 0;
+  const packaging = describeLinePackaging(
+    { quantity: need.quantity, unit: need.unit as "GRAM" | "ML" | "PIECE" },
+    product
+  );
+  return (packaging.status === "OK" ? packaging.packagesToBuy : 1) * Number(product.price);
 }
 
 function fixedLineEditQuantity(line: {
@@ -106,6 +161,72 @@ function ProductImage({
       aria-label={product?.name ?? label}
     >
       {!imageUrl && <ShoppingCart size={16} />}
+    </div>
+  );
+}
+
+type DayProduct = {
+  id: string;
+  name: string;
+  brand: string | null;
+  packageSize: string | null;
+  packageQuantity: number | null;
+  price: unknown;
+  picnicImageId: string | null;
+};
+
+function DayProductChoice({
+  line,
+  product,
+  selected = false,
+}: {
+  line: { id: string; product: DayProduct | null };
+  product: DayProduct;
+  selected?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-lg border p-2 transition-colors ${
+        selected ? "border-accent/50 bg-accent-soft" : "border-line bg-surface hover:border-accent/60 hover:bg-surface-2"
+      }`}
+    >
+      <div className="flex min-w-0 gap-2">
+        <ProductImage product={product} label={product.name} />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="line-clamp-2 text-xs font-medium text-ink">{product.name}</p>
+              <p className="text-[11px] text-ink-faint">
+                {[product.brand, product.packageSize].filter(Boolean).join(" · ") || "Verpakking onbekend"}
+              </p>
+            </div>
+            <span className="shrink-0 text-xs font-semibold text-ink">{formatPrice(product.price) ?? "?"}</span>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <form action={chooseBoodschappenProduct}>
+              <input type="hidden" name="lineId" value={line.id} />
+              <input type="hidden" name="productId" value={product.id} />
+              <PendingSubmitButton
+                pendingText="Kiezen..."
+                className={`rounded-md border border-line bg-surface px-2 py-1 text-[11px] font-medium text-ink hover:border-accent/70 hover:bg-white ${ACTION_BUTTON_FOCUS}`}
+              >
+                Alleen deze week
+              </PendingSubmitButton>
+            </form>
+            <form action={chooseBoodschappenProduct}>
+              <input type="hidden" name="lineId" value={line.id} />
+              <input type="hidden" name="productId" value={product.id} />
+              <input type="hidden" name="remember" value="true" />
+              <PendingSubmitButton
+                pendingText="Opslaan..."
+                className={`rounded-md bg-accent px-2 py-1 text-[11px] font-medium text-accent-ink hover:bg-accent/90 ${ACTION_BUTTON_FOCUS}`}
+              >
+                Onthouden
+              </PendingSubmitButton>
+            </form>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -223,7 +344,14 @@ function FixedProductImage({ item }: { item: { image_id?: string; name?: string 
 export default async function BoodschappenPage({
   searchParams,
 }: {
-  searchParams: Promise<{ fixedQ?: string; fixedLine?: string; fixedReplaceLineId?: string; bulkFixed?: string }>;
+  searchParams: Promise<{
+    fixedQ?: string;
+    fixedLine?: string;
+    fixedReplaceLineId?: string;
+    bulkFixed?: string;
+    focusLine?: string;
+    status?: string;
+  }>;
 }) {
   const params = await searchParams;
   const household = await requireCurrentHousehold();
@@ -231,6 +359,7 @@ export default async function BoodschappenPage({
   const bulkFixedText = String(params.bulkFixed ?? "").trim();
   const focusedFixedLineId = String(params.fixedLine ?? "").trim();
   const fixedReplaceLineId = String(params.fixedReplaceLineId ?? "").trim();
+  const focusedLineId = String(params.focusLine ?? "").trim();
 
   const weekStart = getCurrentWeekStart();
   const mealPlan = await getMealPlanForWeek(household.id, weekStart);
@@ -253,7 +382,7 @@ export default async function BoodschappenPage({
     status: shoppingList.status,
   };
 
-  const [fixedGroceries, inventoryChecklist, fixedProductResults, bulkFixedPreviewLines, portionScaleByDay] = await Promise.all([
+  const [fixedGroceries, inventoryChecklist, fixedProductResults, bulkFixedPreviewLines, portionScaleByDay, candidatesByIngredient] = await Promise.all([
     getFixedGroceries(household.id),
     getInventoryChecklist(household.id),
     fixedSearchQuery && household.picnicAuthToken
@@ -263,10 +392,12 @@ export default async function BoodschappenPage({
       ? searchBulkFixedProductResults(household.id, household.picnicAuthToken, bulkFixedText)
       : Promise.resolve([]),
     getHouseholdPortionScaleByDay(household.id),
+    getShoppingListCandidatesByIngredient(household.id, mealLines.map((line) => line.ingredientId)),
   ]);
   const activeIngredientIds = new Set(activeFixedLines.map((l) => l.ingredientId));
   const inactiveFixedItems = fixedGroceries.filter((f) => !activeIngredientIds.has(f.ingredientId));
   const mealLineByIngredientId = new Map(mealLines.map((line) => [line.ingredientId, line]));
+  const mealTotalCost = mealLines.reduce((total, line) => total + estimatedLineCost(line), 0);
   const mealReviewIds = new Set(mealLines.filter((line) => line.needsReview).map((line) => line.ingredientId));
   const dayReviewCounts = new Map(
     mealPlan.entries.map((entry) => [
@@ -310,13 +441,20 @@ export default async function BoodschappenPage({
       </div>
 
       <div className="min-w-0 px-6">
-        <section className="mb-8 min-w-0">
+        <section id="daily-review" className="mb-8 min-w-0 scroll-mt-6">
           <h2 className="mb-3 text-sm font-semibold text-ink">Per dag controleren</h2>
           <div className="grid gap-4">
             {mealPlan.entries.map((entry) => {
               const dayKey = DAY_KEY_BY_ENUM[entry.dayOfWeek];
               const scale = portionScaleByDay[dayKey]?.scale ?? 1;
               const dayReviewCount = dayReviewCounts.get(entry.id) ?? 0;
+              const dayCost = entry.recipeVariant.recipe.ingredients.reduce((total, ri) => {
+                const line = mealLineByIngredientId.get(ri.ingredientId);
+                return total + estimatedDayIngredientCost(
+                  { quantity: ri.quantity * scale, unit: ri.unit },
+                  line?.product
+                );
+              }, 0);
               return (
                 <article key={entry.id} className="rounded-xl border border-line bg-surface p-4">
                   <div className="mb-3 flex min-w-0 items-start justify-between gap-3">
@@ -327,6 +465,9 @@ export default async function BoodschappenPage({
                       </h3>
                       <p className="mt-1 text-xs text-ink-faint">
                         {scale === 1 ? "Normale porties" : `${Math.round(scale * 100)}% van normale porties`}
+                      </p>
+                      <p className="mt-1 text-xs font-medium text-ink-muted">
+                        Daginschatting: {dayCost > 0 ? `€ ${dayCost.toFixed(2)}` : "prijs onbekend"}
                       </p>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-2">
@@ -351,11 +492,23 @@ export default async function BoodschappenPage({
                     {entry.recipeVariant.recipe.ingredients.map((ri) => {
                       const line = mealLineByIngredientId.get(ri.ingredientId);
                       const scaledNeed = { quantity: ri.quantity * scale, unit: ri.unit };
+                      const candidates = line ? candidatesByIngredient.get(line.ingredientId) ?? [] : [];
+                      const alternatives = candidates.filter((candidate) => candidate.id !== line?.product?.id).slice(0, 5);
+                      const statusMessage =
+                        line?.id === focusedLineId && params.status ? STATUS_MESSAGES[params.status] : undefined;
                       return (
                         <div
                           key={ri.id}
-                          className="rounded-lg border border-line bg-surface-2 p-3"
+                          id={line ? `day-line-${line.id}` : undefined}
+                          className={`scroll-mt-6 rounded-lg border bg-surface-2 p-3 transition-colors ${
+                            line?.id === focusedLineId ? "border-accent ring-2 ring-accent/20" : "border-line"
+                          }`}
                         >
+                          {statusMessage && (
+                            <p className="mb-2 rounded-md border border-tag-green-ink/20 bg-tag-green-bg px-2.5 py-1.5 text-xs font-medium text-tag-green-ink">
+                              {statusMessage}
+                            </p>
+                          )}
                           <div className="flex min-w-0 items-center justify-between gap-3">
                             <div className="flex min-w-0 items-center gap-3">
                               <ProductImage product={line?.product} label={ri.ingredient.name} />
@@ -369,6 +522,11 @@ export default async function BoodschappenPage({
                                 <p className="mt-0.5 text-[11px] text-ink-faint">
                                   Voor dit gerecht: {formatQuantity(scaledNeed.quantity, scaledNeed.unit)}
                                 </p>
+                                {line?.product?.price && (
+                                  <p className="mt-0.5 text-[11px] font-medium text-ink-muted">
+                                    Dagkosten: € {estimatedDayIngredientCost(scaledNeed, line.product).toFixed(2)}
+                                  </p>
+                                )}
                                 {line?.needsReview && (
                                   <p className="mt-1 text-xs font-medium text-tag-amber-ink">Nog te bevestigen</p>
                                 )}
@@ -376,6 +534,9 @@ export default async function BoodschappenPage({
                             </div>
                             <div className="shrink-0 text-right">
                               <p className="font-semibold text-ink">{line ? formatOrderQuantity(line) : "?"}</p>
+                              {line && (
+                                <p className="text-[11px] text-ink-faint">weekaantal</p>
+                              )}
                               {line ? (
                                 <Link
                                   href={`/controle?focus=${line.id}#line-${line.id}`}
@@ -393,6 +554,60 @@ export default async function BoodschappenPage({
                               )}
                             </div>
                           </div>
+                          {line && (
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              <form action={adjustBoodschappenLineQuantity}>
+                                <input type="hidden" name="lineId" value={line.id} />
+                                <input type="hidden" name="direction" value="decrease" />
+                                <PendingSubmitButton
+                                  pendingText="..."
+                                  ariaLabel="Minder bestellen"
+                                  title="Minder bestellen"
+                                  className={`flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink hover:border-accent/70 hover:bg-white ${ACTION_BUTTON_FOCUS}`}
+                                >
+                                  <Minus size={14} />
+                                </PendingSubmitButton>
+                              </form>
+                              <form action={adjustBoodschappenLineQuantity}>
+                                <input type="hidden" name="lineId" value={line.id} />
+                                <input type="hidden" name="direction" value="increase" />
+                                <PendingSubmitButton
+                                  pendingText="..."
+                                  ariaLabel="Meer bestellen"
+                                  title="Meer bestellen"
+                                  className={`flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink hover:border-accent/70 hover:bg-white ${ACTION_BUTTON_FOCUS}`}
+                                >
+                                  <Plus size={14} />
+                                </PendingSubmitButton>
+                              </form>
+                              <form action={removeBoodschappenLineThisWeek}>
+                                <input type="hidden" name="lineId" value={line.id} />
+                                <PendingSubmitButton
+                                  pendingText="..."
+                                  ariaLabel="Deze week verwijderen"
+                                  title="Deze week verwijderen"
+                                  className={`flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink-faint hover:border-red-300 hover:bg-red-50 hover:text-red-600 ${ACTION_BUTTON_FOCUS}`}
+                                >
+                                  <X size={14} />
+                                </PendingSubmitButton>
+                              </form>
+                              {line.product && (
+                                <DayProductChoice line={line} product={line.product} selected />
+                              )}
+                            </div>
+                          )}
+                          {line && alternatives.length > 0 && (
+                            <details className="mt-3 rounded-lg border border-line bg-surface p-2">
+                              <summary className="cursor-pointer text-xs font-medium text-ink">
+                                {alternatives.length} alternatief{alternatives.length === 1 ? "" : "ven"}
+                              </summary>
+                              <div className="mt-2 grid gap-2">
+                                {alternatives.map((candidate) => (
+                                  <DayProductChoice key={candidate.id} line={line} product={candidate} />
+                                ))}
+                              </div>
+                            </details>
+                          )}
                         </div>
                       );
                     })}
@@ -403,7 +618,12 @@ export default async function BoodschappenPage({
           </div>
         </section>
 
-        <h2 className="mb-3 text-sm font-semibold text-ink">Totaalbestelling</h2>
+        <div className="mb-3 flex items-baseline justify-between gap-3">
+          <h2 className="text-sm font-semibold text-ink">Totaalbestelling</h2>
+          <span className="text-xs font-medium text-ink-muted">
+            {mealTotalCost > 0 ? `Maaltijden: € ${mealTotalCost.toFixed(2)}` : "Maaltijdprijzen onbekend"}
+          </span>
+        </div>
         <div className="flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
           {mealLines.map((line) => (
             <div key={line.id} className="flex min-w-0 items-center justify-between gap-4 p-4">

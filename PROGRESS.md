@@ -88,11 +88,12 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 | WP42 | Bestellen in verpakkingen tonen | Vaste boodschappen gebruiken nieuwe productkeuzes voortaan als aantal verpakkingen (`1x pak melk`, `1x doos eieren`) in plaats van inhoudshoeveelheid (`1000 ml`, `10 stuks`). Bestaande vaste regels met bekende productverpakking worden in de UI omgerekend naar verpakkingen. De weeklijst toont bij receptproducten nu het aantal te bestellen verpakkingen (`4x aardappeltjes`) terwijl productnaam/verpakking zichtbaar blijft. Picnic-mandje gebruikt vaste `PIECE`-regels ook als pakket-aantal. Geen nieuwe migratie nodig. |
 | WP43 | Per-dag boodschappencontrole | `/boodschappen` toont nu vóór de totaalbestelling een per-dag controleweergave: dag + gerecht, status compleet/controleren, producten met foto, verpakking, behoefte voor dat gerecht, totaal te bestellen verpakkingen en snelle links naar productcontrole of ander gerecht. De oude losse "Per maaltijd bekijken"-sectie is verwijderd zodat de route rustiger wordt. Geen nieuwe migratie nodig. |
 | WP44 | Gekozen bulkregel verdwijnt | In de bulk vaste-boodschappen-preview verdwijnt een regel nu zodra de gebruiker daar een product voor opslaat. De originele lijst wordt automatisch zonder die regel opnieuw geopend, zodat alleen de nog te kiezen producten overblijven. Geen nieuwe migratie nodig. |
+| WP45 | Dagcontrole met acties en kosten | `/boodschappen` toont per maaltijd nu een daginschatting van de kosten en per product de productkosten voor die maaltijd. Dagregels hebben directe acties voor weekaantal `+/-`, deze week verwijderen, huidige keuze opnieuw bevestigen, alleen deze week kiezen en product onthouden. Bekende alternatieven staan direct onder dezelfde dagregel en acties keren terug naar dezelfde plek met een zichtbare statusmelding. Geen nieuwe migratie nodig. |
 
 ## Nog te doen (roadmap, nog niet gestart)
 
 - **Nieuwe hoofdflow is leidend:** `Week kiezen → Aanvullen → Per dag controleren → Totaalbestelling controleren → Naar Picnic`.
-- **Volgende WP:** verfijn de per-dag productregels met directe acties voor hoeveelheid plus/min, ander product, verwijderen/parkeren, alleen deze keer en onthouden. De samengevoegde totaalbestelling blijft daarna de eindcheck.
+- **Volgende WP:** maak de hoofdflow explicieter als stap-voor-stap assistent (`Week kiezen`, `Aanvullen`, `Per dag controleren`, `Totaalbestelling`, `Naar Picnic`) zodat de gebruiker minder hoeft te zoeken tussen losse secties.
 - Daarna pas verder met `MealPlanEntry`-context voor beter leren uit stil accepteren en handmatige wijzigingen (zie `DATAMODEL_AUDIT.md` punt 6).
 
 ## Niet-voor-de-hand-liggende operationele kennis
