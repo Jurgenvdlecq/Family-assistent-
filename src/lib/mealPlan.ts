@@ -4,6 +4,7 @@ import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "./scorin
 import { DAY_KEYS, DAY_ENUM, dateForDay, type DayKey } from "./week";
 import { getHouseholdHardRestrictions, getHouseholdMealParticipantsByDay } from "./household";
 import { recipeConflictsWithRestrictions } from "./dietaryRestrictions";
+import { accessibleRecipeWhere } from "./recipeScope";
 import {
   chooseMealPlanCandidate,
   formatMealPlanReason,
@@ -89,6 +90,7 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
       orderBy: { targetSlot: "desc" },
     }),
     prisma.recipeVariant.findMany({
+      where: { recipe: accessibleRecipeWhere(householdId) },
       include: { recipe: { include: { ingredients: { include: { ingredient: true } } } } },
     }),
     Promise.all(DAY_KEYS.map(async (dayKey) => [dayKey, await getHouseholdHardRestrictions(householdId, dayKey)] as const)),

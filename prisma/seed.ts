@@ -31,11 +31,18 @@ async function main() {
   for (const recipe of RECIPES) {
     const { ingredients, variants, ...recipeFields } = recipe;
 
-    const savedRecipe = await prisma.recipe.upsert({
-      where: { title: recipe.title },
-      update: recipeFields,
-      create: recipeFields,
+    const existingRecipe = await prisma.recipe.findFirst({
+      where: { title: recipe.title, scope: "GLOBAL" },
+      select: { id: true },
     });
+    const savedRecipe = existingRecipe
+      ? await prisma.recipe.update({
+          where: { id: existingRecipe.id },
+          data: { ...recipeFields, scope: "GLOBAL", householdId: null, originHouseholdId: null },
+        })
+      : await prisma.recipe.create({
+          data: { ...recipeFields, scope: "GLOBAL" },
+        });
 
     // Ingrediënten van dit recept opnieuw opbouwen (idempotent)
     await prisma.recipeIngredient.deleteMany({ where: { recipeId: savedRecipe.id } });

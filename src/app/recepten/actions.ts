@@ -2,8 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/generated/prisma/client";
 import { assertCurrentHousehold } from "@/lib/auth";
 import { parsePackageQuantity } from "@/lib/quantity/parsePackageSize";
+import { accessibleRecipeWhere, editableRecipeWhere } from "@/lib/recipeScope";
 import { recordProductChosen, recordProductRejected } from "@/domain/product-matching/repository";
 
 const RECIPE_CATEGORIES = [
@@ -37,6 +39,28 @@ async function requireRecipeEditor(formData: FormData) {
   const householdId = String(formData.get("householdId"));
   await assertCurrentHousehold(householdId);
   return householdId;
+}
+
+async function assertEditableRecipe(householdId: string, recipeId: string) {
+  const recipe = await prisma.recipe.findFirst({
+    where: editableRecipeWhere(householdId, recipeId),
+    select: { id: true },
+  });
+  if (!recipe) {
+    throw new Error("Dit is een basisrecept. Maak eerst een eigen kopie voordat je het aanpast.");
+  }
+}
+
+async function assertRecipeTitleAvailableForHousehold(householdId: string, title: string, exceptRecipeId?: string) {
+  const existing = await prisma.recipe.findFirst({
+    where: {
+      householdId,
+      title,
+      ...(exceptRecipeId ? { NOT: { id: exceptRecipeId } } : {}),
+    },
+    select: { id: true },
+  });
+  if (existing) throw new Error("Er bestaat al een eigen recept met deze titel.");
 }
 
 async function invalidateCurrentShoppingList(householdId: string) {
@@ -96,7 +120,7 @@ async function parseRecipeIngredientRows(formData: FormData) {
 }
 
 export async function createRecipe(formData: FormData) {
-  await requireRecipeEditor(formData);
+  const householdId = await requireRecipeEditor(formData);
   const title = String(formData.get("title") ?? "").trim();
   const category = parseEnum(formData.get("category"), RECIPE_CATEGORIES, "OTHER");
   const variantType = parseEnum(formData.get("variantType"), VARIANT_TYPES, "FRESH");
@@ -107,8 +131,7 @@ export async function createRecipe(formData: FormData) {
 
   if (!title) throw new Error("Titel is verplicht.");
 
-  const existing = await prisma.recipe.findUnique({ where: { title }, select: { id: true } });
-  if (existing) throw new Error("Er bestaat al een recept met deze titel.");
+  await assertRecipeTitleAvailableForHousehold(householdId, title);
 
   const ingredientRows = await parseRecipeIngredientRows(formData);
 
@@ -120,6 +143,9 @@ export async function createRecipe(formData: FormData) {
       properties,
       instructions,
       status: "FOUND",
+      scope: "HOUSEHOLD",
+      householdId,
+      originHouseholdId: householdId,
       ingredients: {
         create: ingredientRows.map((row) => ({
           ingredientId: row.ingredientId,
@@ -140,7 +166,7 @@ export async function createRecipe(formData: FormData) {
 }
 
 export async function updateRecipeDetails(formData: FormData) {
-  await requireRecipeEditor(formData);
+  const householdId = await requireRecipeEditor(formData);
   const recipeId = String(formData.get("recipeId"));
   const title = String(formData.get("title") ?? "").trim();
   const source = String(formData.get("source") ?? "").trim() || null;
@@ -151,10 +177,8 @@ export async function updateRecipeDetails(formData: FormData) {
 
   if (!title) throw new Error("Titel is verplicht.");
 
-  const existing = await prisma.recipe.findUnique({ where: { title }, select: { id: true } });
-  if (existing && existing.id !== recipeId) {
-    throw new Error("Er bestaat al een ander recept met deze titel.");
-  }
+  await assertEditableRecipe(householdId, recipeId);
+  await assertRecipeTitleAvailableForHousehold(householdId, title, recipeId);
 
   await prisma.recipe.update({
     where: { id: recipeId },
@@ -169,7 +193,7 @@ export async function updateRecipeIngredients(formData: FormData) {
   const recipeId = String(formData.get("recipeId"));
   const ingredientRows = await parseRecipeIngredientRows(formData);
 
-  await prisma.recipe.findUniqueOrThrow({ where: { id: recipeId }, select: { id: true } });
+  await assertEditableRecipe(householdId, recipeId);
 
   await prisma.$transaction([
     prisma.recipeIngredient.deleteMany({ where: { recipeId } }),
@@ -183,9 +207,15 @@ export async function updateRecipeIngredients(formData: FormData) {
 }
 
 export async function updateRecipeVariant(formData: FormData) {
-  await requireRecipeEditor(formData);
+  const householdId = await requireRecipeEditor(formData);
   const variantId = String(formData.get("variantId"));
   const contextFit = parseList(formData.get("contextFit"));
+
+  const variant = await prisma.recipeVariant.findUniqueOrThrow({
+    where: { id: variantId },
+    select: { recipeId: true },
+  });
+  await assertEditableRecipe(householdId, variant.recipeId);
 
   await prisma.recipeVariant.update({
     where: { id: variantId },
@@ -196,13 +226,12 @@ export async function updateRecipeVariant(formData: FormData) {
 }
 
 export async function createRecipeVariant(formData: FormData) {
-  await requireRecipeEditor(formData);
+  const householdId = await requireRecipeEditor(formData);
   const recipeId = String(formData.get("recipeId"));
   const variantType = parseEnum(formData.get("variantType"), VARIANT_TYPES, "FRESH");
   const contextFit = parseList(formData.get("contextFit"));
 
-  const recipe = await prisma.recipe.findUnique({ where: { id: recipeId }, select: { id: true } });
-  if (!recipe) throw new Error("Dit recept bestaat niet meer.");
+  await assertEditableRecipe(householdId, recipeId);
 
   const existing = await prisma.recipeVariant.findUnique({
     where: { recipeId_variantType: { recipeId, variantType } },
@@ -216,6 +245,53 @@ export async function createRecipeVariant(formData: FormData) {
     data: { recipeId, variantType, contextFit },
   });
 
+  revalidateRecipeManagementPaths();
+}
+
+export async function copyRecipeToHousehold(formData: FormData) {
+  const householdId = await requireRecipeEditor(formData);
+  const recipeId = String(formData.get("recipeId"));
+
+  const recipe = await prisma.recipe.findFirst({
+    where: { id: recipeId, ...accessibleRecipeWhere(householdId), householdId: null },
+    include: {
+      ingredients: true,
+      variants: true,
+    },
+  });
+  if (!recipe) throw new Error("Dit basisrecept bestaat niet meer of is al van jullie.");
+
+  await assertRecipeTitleAvailableForHousehold(householdId, recipe.title);
+
+  await prisma.recipe.create({
+    data: {
+      title: recipe.title,
+      category: recipe.category,
+      source: recipe.source,
+      properties: recipe.properties,
+      instructions: recipe.instructions,
+      status: "ADAPTED",
+      scope: "HOUSEHOLD",
+      householdId,
+      originHouseholdId: householdId,
+      ingredients: {
+        create: recipe.ingredients.map((ingredient) => ({
+          ingredientId: ingredient.ingredientId,
+          quantity: ingredient.quantity,
+          unit: ingredient.unit,
+        })),
+      },
+      variants: {
+        create: recipe.variants.map((variant) => ({
+          variantType: variant.variantType,
+          contextFit: variant.contextFit,
+          ingredientOverrides: variant.ingredientOverrides as Prisma.InputJsonValue,
+        })),
+      },
+    },
+  });
+
+  await invalidateCurrentShoppingList(householdId);
   revalidateRecipeManagementPaths();
 }
 

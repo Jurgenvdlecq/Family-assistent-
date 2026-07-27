@@ -5,6 +5,7 @@ import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { getHouseholdHardRestrictions, getHouseholdMealParticipantsByDay } from "@/lib/household";
 import { recipeConflictsWithRestrictions } from "@/lib/dietaryRestrictions";
+import { accessibleRecipeWhere } from "@/lib/recipeScope";
 import { DAY_KEYS, DAY_ENUM, DAY_LABELS, getCurrentWeekStart, type DayKey } from "@/lib/week";
 import { CATEGORY_GRADIENT, STATUS_LABELS, statusTone } from "@/lib/categoryStyle";
 import NavBar from "@/components/NavBar";
@@ -76,7 +77,10 @@ export default async function GerechtenPage({
   );
 
   const [allVariants, hardRestrictions, participantsByDay] = await Promise.all([
-    prisma.recipeVariant.findMany({ include: VARIANT_INCLUDE }),
+    prisma.recipeVariant.findMany({
+      where: { recipe: accessibleRecipeWhere(household.id) },
+      include: VARIANT_INCLUDE,
+    }),
     getHouseholdHardRestrictions(household.id, dayKey),
     getHouseholdMealParticipantsByDay(household.id),
   ]);

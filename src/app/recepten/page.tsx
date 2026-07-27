@@ -3,9 +3,11 @@ import { ChevronLeft, BookOpen, Plus } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { CATEGORY_LABELS, STATUS_LABELS, VARIANT_LABELS } from "@/lib/categoryStyle";
+import { accessibleRecipeWhere } from "@/lib/recipeScope";
 import NavBar from "@/components/NavBar";
 import {
   allowProductForIngredient,
+  copyRecipeToHousehold,
   createIngredient,
   createIngredientProduct,
   createRecipe,
@@ -96,11 +98,12 @@ export default async function ReceptenPage() {
   const household = await requireCurrentHousehold();
   const [recipes, ingredients] = await Promise.all([
     prisma.recipe.findMany({
+      where: accessibleRecipeWhere(household.id),
       include: {
         ingredients: { include: { ingredient: true }, orderBy: { ingredient: { name: "asc" } } },
         variants: { orderBy: { createdAt: "asc" } },
       },
-      orderBy: { title: "asc" },
+      orderBy: [{ householdId: "desc" }, { title: "asc" }],
     }),
     prisma.ingredient.findMany({
       include: {
@@ -395,10 +398,21 @@ export default async function ReceptenPage() {
 
         <div className="mb-8 grid gap-3">
           {recipes.map((recipe) => {
+            const editable = recipe.householdId === household.id;
+            const scopeLabel = editable
+              ? "Eigen recept"
+              : recipe.scope === "COMMUNITY_APPROVED"
+                ? "Gedeeld basisrecept"
+                : "Basisrecept";
             return (
               <article key={recipe.id} className="min-w-0 rounded-xl border border-line bg-surface p-4">
                 <div className="mb-3 min-w-0">
-                  <h2 className="truncate font-semibold text-ink">{recipe.title}</h2>
+                  <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
+                    <h2 className="truncate font-semibold text-ink">{recipe.title}</h2>
+                    <span className="shrink-0 rounded-md bg-tag-blue-bg px-2 py-1 text-[11px] font-medium text-tag-blue-ink">
+                      {scopeLabel}
+                    </span>
+                  </div>
                   <p className="text-xs text-ink-faint">
                     {recipe.ingredients.length} ingrediënten · {recipe.variants.length} varianten
                   </p>
@@ -409,69 +423,81 @@ export default async function ReceptenPage() {
                     .map((ri) => `${ri.ingredient.name} ${ri.quantity}${UNIT_LABELS[ri.unit] ?? ri.unit}`)
                     .join(", ")}
                 </p>
-                <form action={updateRecipeDetails} className="grid gap-2">
-                  <input type="hidden" name="householdId" value={household.id} />
-                  <input type="hidden" name="recipeId" value={recipe.id} />
-                  <input
-                    name="title"
-                    defaultValue={recipe.title}
-                    required
-                    className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-                  />
-                  <div className="grid grid-cols-2 gap-2">
-                    <select name="category" defaultValue={recipe.category} className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink">
-                      {CATEGORY_OPTIONS.map(([value, label]) => (
-                        <option key={value} value={value}>{label}</option>
-                      ))}
-                    </select>
-                    <select name="status" defaultValue={recipe.status} className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink">
-                      {STATUS_OPTIONS.map(([value, label]) => (
-                        <option key={value} value={value}>{label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <input
-                    name="source"
-                    defaultValue={recipe.source ?? ""}
-                    placeholder="Bron of notitie"
-                    className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-                  />
-                  <textarea
-                    name="properties"
-                    rows={2}
-                    defaultValue={recipe.properties.join(", ")}
-                    placeholder="Eigenschappen"
-                    className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-                  />
-                  <textarea
-                    name="instructions"
-                    rows={3}
-                    defaultValue={recipe.instructions.join("\n")}
-                    placeholder="Bereiding"
-                    className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-                  />
-                  <button type="submit" className="w-fit rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
-                    Recept opslaan
-                  </button>
-                </form>
-
-                <div className="mt-4 grid gap-2 border-t border-line pt-4">
-                  <h3 className="text-xs font-semibold text-ink-faint">Ingrediënten</h3>
-                  <form action={updateRecipeIngredients} className="grid gap-2">
+                {editable ? (
+                  <form action={updateRecipeDetails} className="grid gap-2">
                     <input type="hidden" name="householdId" value={household.id} />
                     <input type="hidden" name="recipeId" value={recipe.id} />
-                    <IngredientRows
-                      ingredients={ingredients}
-                      recipeIngredients={recipe.ingredients.map((ri) => ({ ingredientId: ri.ingredientId, quantity: ri.quantity }))}
-                      minRows={recipe.ingredients.length}
+                    <input
+                      name="title"
+                      defaultValue={recipe.title}
+                      required
+                      className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <select name="category" defaultValue={recipe.category} className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink">
+                        {CATEGORY_OPTIONS.map(([value, label]) => (
+                          <option key={value} value={value}>{label}</option>
+                        ))}
+                      </select>
+                      <select name="status" defaultValue={recipe.status} className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink">
+                        {STATUS_OPTIONS.map(([value, label]) => (
+                          <option key={value} value={value}>{label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <input
+                      name="source"
+                      defaultValue={recipe.source ?? ""}
+                      placeholder="Bron of notitie"
+                      className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                    />
+                    <textarea
+                      name="properties"
+                      rows={2}
+                      defaultValue={recipe.properties.join(", ")}
+                      placeholder="Eigenschappen"
+                      className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                    />
+                    <textarea
+                      name="instructions"
+                      rows={3}
+                      defaultValue={recipe.instructions.join("\n")}
+                      placeholder="Bereiding"
+                      className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
                     />
                     <button type="submit" className="w-fit rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
-                      Ingrediënten opslaan
+                      Recept opslaan
                     </button>
                   </form>
-                </div>
+                ) : (
+                  <form action={copyRecipeToHousehold}>
+                    <input type="hidden" name="householdId" value={household.id} />
+                    <input type="hidden" name="recipeId" value={recipe.id} />
+                    <button type="submit" className="rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
+                      Maak eigen kopie
+                    </button>
+                  </form>
+                )}
 
-                <div className="mt-4 grid gap-2 border-t border-line pt-4">
+                {editable && (
+                  <div className="mt-4 grid gap-2 border-t border-line pt-4">
+                    <h3 className="text-xs font-semibold text-ink-faint">Ingrediënten</h3>
+                    <form action={updateRecipeIngredients} className="grid gap-2">
+                      <input type="hidden" name="householdId" value={household.id} />
+                      <input type="hidden" name="recipeId" value={recipe.id} />
+                      <IngredientRows
+                        ingredients={ingredients}
+                        recipeIngredients={recipe.ingredients.map((ri) => ({ ingredientId: ri.ingredientId, quantity: ri.quantity }))}
+                        minRows={recipe.ingredients.length}
+                      />
+                      <button type="submit" className="w-fit rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
+                        Ingrediënten opslaan
+                      </button>
+                    </form>
+                  </div>
+                )}
+
+                {editable && <div className="mt-4 grid gap-2 border-t border-line pt-4">
                   <h3 className="text-xs font-semibold text-ink-faint">Varianten</h3>
                   {recipe.variants.map((variant) => (
                     <form key={variant.id} action={updateRecipeVariant} className="grid gap-2">
@@ -513,7 +539,7 @@ export default async function ReceptenPage() {
                       </button>
                     </form>
                   </details>
-                </div>
+                </div>}
               </article>
             );
           })}

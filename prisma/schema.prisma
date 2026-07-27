@@ -39,6 +39,8 @@ model Household {
   productPreferences     HouseholdProductPreference[]
   rejectedProductMatches RejectedProductMatch[]
   sessions               HouseholdSession[]
+  recipes                Recipe[]                     @relation("HouseholdRecipes")
+  originatedRecipes      Recipe[]                     @relation("OriginatedRecipes")
 
   @@map("households")
 }
@@ -156,19 +158,35 @@ enum PersonRole {
 // ── Recipe & RecipeVariant ──────────────────────────────────────────────
 
 model Recipe {
-  id           String         @id @default(uuid())
-  title        String         @unique
-  category     RecipeCategory
-  source       String?
-  properties   String[]       @default([])
-  instructions String[]       @default([])
-  status       RecipeStatus   @default(FOUND)
-  createdAt    DateTime       @default(now()) @map("created_at")
+  id                String         @id @default(uuid())
+  title             String
+  category          RecipeCategory
+  source            String?
+  properties        String[]       @default([])
+  instructions      String[]       @default([])
+  status            RecipeStatus   @default(FOUND)
+  scope             RecipeScope    @default(GLOBAL)
+  householdId       String?        @map("household_id")
+  originHouseholdId String?        @map("origin_household_id")
+  promotedAt        DateTime?      @map("promoted_at")
+  createdAt         DateTime       @default(now()) @map("created_at")
 
-  ingredients RecipeIngredient[]
-  variants    RecipeVariant[]
+  household       Household? @relation("HouseholdRecipes", fields: [householdId], references: [id], onDelete: Cascade)
+  originHousehold Household? @relation("OriginatedRecipes", fields: [originHouseholdId], references: [id], onDelete: SetNull)
+  ingredients     RecipeIngredient[]
+  variants        RecipeVariant[]
 
+  @@index([scope, householdId, title])
   @@map("recipes")
+}
+
+enum RecipeScope {
+  GLOBAL
+  HOUSEHOLD
+  COMMUNITY_CANDIDATE
+  COMMUNITY_APPROVED
+
+  @@map("recipe_scope")
 }
 
 enum RecipeCategory {
