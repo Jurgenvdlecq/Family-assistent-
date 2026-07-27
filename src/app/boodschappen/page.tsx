@@ -472,6 +472,7 @@ export default async function BoodschappenPage({
                               <input type="hidden" name="packageSize" value={item.unit_quantity ?? ""} />
                               <input type="hidden" name="picnicImageId" value={item.image_id ?? ""} />
                               <input type="hidden" name="price" value={picnicPriceToEuros(item.display_price ?? item.price) ?? ""} />
+                              <input type="hidden" name="bulkFixed" value={bulkFixedText} />
                               <div className="flex min-w-0 gap-3">
                                 <FixedProductImage item={item} />
                                 <div className="min-w-0 flex-1">
