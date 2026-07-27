@@ -321,10 +321,11 @@ export default async function ControlePage() {
 
   const trustedLines = shoppingList.lines.filter((l) => !l.needsReview);
   const reviewLines = shoppingList.lines.filter((l) => l.needsReview);
-  const lines = [...shoppingList.lines].sort((a, b) => a.ingredient.name.localeCompare(b.ingredient.name));
+  const sortedReviewLines = [...reviewLines].sort((a, b) => a.ingredient.name.localeCompare(b.ingredient.name));
+  const sortedTrustedLines = [...trustedLines].sort((a, b) => a.ingredient.name.localeCompare(b.ingredient.name));
 
   const candidatesByLine = new Map<string, Awaited<ReturnType<typeof getShoppingListCandidates>>>();
-  for (const line of lines) {
+  for (const line of [...sortedReviewLines, ...sortedTrustedLines]) {
     candidatesByLine.set(line.id, await getShoppingListCandidates(household.id, line.ingredientId));
   }
 
@@ -350,7 +351,7 @@ export default async function ControlePage() {
           <CheckCircle2 size={22} className="shrink-0 text-tag-green-ink" />
         </h1>
         <p className="mb-5 text-[15px] text-ink-muted">
-          Ik heb {shoppingList.lines.length} producten voorbereid op basis van jullie weekplanning.
+          Ik laat vooral zien waar ik onzeker ben. Vertrouwde keuzes staan onderaan rustig bij elkaar.
         </p>
 
         <div className="mb-7 flex flex-wrap gap-2">
@@ -366,16 +367,43 @@ export default async function ControlePage() {
           </div>
         )}
 
-        <div className="mb-8 grid gap-4">
-          {lines.map((line) => (
-            <LineControlCard
-              key={line.id}
-              line={line}
-              candidates={candidatesByLine.get(line.id) ?? []}
-              householdId={household.id}
-            />
-          ))}
-        </div>
+        {reviewLines.length > 0 ? (
+          <div className="mb-8 grid gap-4">
+            {sortedReviewLines.map((line) => (
+              <LineControlCard
+                key={line.id}
+                line={line}
+                candidates={candidatesByLine.get(line.id) ?? []}
+                householdId={household.id}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="mb-6 rounded-xl border border-tag-green-ink/25 bg-tag-green-bg p-4">
+            <p className="font-medium text-tag-green-ink">Geen uitzonderingen gevonden</p>
+            <p className="mt-1 text-sm text-ink-muted">
+              Producten, verpakkingen en hoeveelheden zijn bekend genoeg om te bevestigen.
+            </p>
+          </div>
+        )}
+
+        {trustedLines.length > 0 && (
+          <details className="mb-8 rounded-xl border border-line bg-surface p-4">
+            <summary className="cursor-pointer text-sm font-medium text-ink">
+              {trustedLines.length} vertrouwde keuze{trustedLines.length === 1 ? "" : "s"} bekijken
+            </summary>
+            <div className="mt-3 grid gap-3">
+              {sortedTrustedLines.map((line) => (
+                <LineControlCard
+                  key={line.id}
+                  line={line}
+                  candidates={candidatesByLine.get(line.id) ?? []}
+                  householdId={household.id}
+                />
+              ))}
+            </div>
+          </details>
+        )}
 
         <form action={confirmShoppingList}>
           <input type="hidden" name="shoppingListId" value={shoppingList.id} />
