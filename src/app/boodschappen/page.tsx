@@ -23,6 +23,7 @@ import {
   adjustBoodschappenLineQuantity,
   chooseBoodschappenProduct,
   removeBoodschappenLineThisWeek,
+  setBoodschappenLinePackageCount,
 } from "./actions";
 import {
   removeFixedLineThisWeek,
@@ -76,6 +77,21 @@ function formatOrderQuantity(line: {
   return formatQuantity(line.quantity, line.unit);
 }
 
+function orderPackageCount(line: {
+  quantity: number;
+  unit: string;
+  source: string;
+  product: { packageQuantity: number | null; packageSize: string | null } | null;
+}) {
+  if (line.source === "FIXED" && line.unit === "PIECE") return line.quantity;
+  const packaging = describeLinePackaging(
+    { quantity: line.quantity, unit: line.unit as "GRAM" | "ML" | "PIECE" },
+    line.product
+  );
+  if (packaging.status === "OK") return packaging.packagesToBuy;
+  return line.quantity;
+}
+
 function formatPrice(price: unknown) {
   if (price === null || price === undefined) return null;
   return `€ ${Number(price).toFixed(2)}`;
@@ -106,15 +122,14 @@ function estimatedLineCost(line: {
 }
 
 function estimatedDayIngredientCost(
-  need: { quantity: number; unit: string },
-  product: { packageQuantity: number | null; price: unknown } | null | undefined
+  line: {
+    quantity: number;
+    unit: string;
+    source: string;
+    product: { packageQuantity: number | null; price: unknown } | null;
+  } | null | undefined
 ) {
-  if (!product?.price) return 0;
-  const packaging = describeLinePackaging(
-    { quantity: need.quantity, unit: need.unit as "GRAM" | "ML" | "PIECE" },
-    product
-  );
-  return (packaging.status === "OK" ? packaging.packagesToBuy : 1) * Number(product.price);
+  return line ? estimatedLineCost(line) : 0;
 }
 
 function fixedLineEditQuantity(line: {
@@ -450,10 +465,7 @@ export default async function BoodschappenPage({
               const dayReviewCount = dayReviewCounts.get(entry.id) ?? 0;
               const dayCost = entry.recipeVariant.recipe.ingredients.reduce((total, ri) => {
                 const line = mealLineByIngredientId.get(ri.ingredientId);
-                return total + estimatedDayIngredientCost(
-                  { quantity: ri.quantity * scale, unit: ri.unit },
-                  line?.product
-                );
+                return total + estimatedDayIngredientCost(line);
               }, 0);
               return (
                 <article key={entry.id} className="rounded-xl border border-line bg-surface p-4">
@@ -524,7 +536,7 @@ export default async function BoodschappenPage({
                                 </p>
                                 {line?.product?.price && (
                                   <p className="mt-0.5 text-[11px] font-medium text-ink-muted">
-                                    Dagkosten: € {estimatedDayIngredientCost(scaledNeed, line.product).toFixed(2)}
+                                    Bestelling: € {estimatedDayIngredientCost(line).toFixed(2)}
                                   </p>
                                 )}
                                 {line?.needsReview && (
@@ -591,7 +603,26 @@ export default async function BoodschappenPage({
                                   <X size={14} />
                                 </PendingSubmitButton>
                               </form>
-                              {line.product && (
+                              <form action={setBoodschappenLinePackageCount} className="flex items-center gap-1 rounded-md border border-line bg-surface px-2 py-1">
+                                <input type="hidden" name="lineId" value={line.id} />
+                                <input
+                                  type="number"
+                                  name="packageCount"
+                                  defaultValue={orderPackageCount(line)}
+                                  min="0.01"
+                                  step="any"
+                                  aria-label="Aantal verpakkingen"
+                                  className="w-14 bg-transparent text-sm font-medium text-ink outline-none"
+                                />
+                                <span className="text-[11px] text-ink-faint">x</span>
+                                <PendingSubmitButton
+                                  pendingText="..."
+                                  className={`rounded px-1.5 py-0.5 text-[11px] font-medium text-accent hover:bg-accent-soft ${ACTION_BUTTON_FOCUS}`}
+                                >
+                                  OK
+                                </PendingSubmitButton>
+                              </form>
+                              {line.product && line.needsReview && (
                                 <DayProductChoice line={line} product={line.product} selected />
                               )}
                             </div>
