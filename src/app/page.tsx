@@ -13,7 +13,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { getHouseholdMealParticipantsByDay } from "@/lib/household";
-import { ensureMealPlan, getMealPlanForWeek, getReasonsForPlan } from "@/lib/mealPlan";
+import { ensureMealPlan, getReasonsForPlan } from "@/lib/mealPlan";
 import {
   getCurrentWeekStart,
   formatWeekRange,
@@ -166,22 +166,27 @@ export default async function Home() {
   });
 
   const weekStart = getCurrentWeekStart();
-  await ensureMealPlan(household.id, weekStart);
-  const [mealPlan, reasons, participantsByDay, learningPrompts] = await Promise.all([
-    getMealPlanForWeek(household.id, weekStart),
+  const mealPlan = await ensureMealPlan(household.id, weekStart);
+  if (!mealPlan) {
+    throw new Error("Weekplanning kon niet worden geladen.");
+  }
+  const [reasons, participantsByDay, learningPrompts] = await Promise.all([
     getReasonsForPlan(household.id, weekStart),
     getHouseholdMealParticipantsByDay(household.id),
     getPendingLearningPrompts(household.id, household.maxSmartQuestionsPerSession),
   ]);
   const shoppingList = await prisma.shoppingList.findUnique({
-    where: { mealPlanId: mealPlan!.id },
-    include: { lines: { select: { needsReview: true } } },
+    where: { mealPlanId: mealPlan.id },
+    select: { id: true, status: true },
   });
-  const mealVariantIds = mealPlan!.entries.map((entry) => entry.recipeVariantId);
-  const mealCategoryIds = [...new Set(mealPlan!.entries.map((entry) => entry.recipeVariant.recipe.category))];
+  const reviewCount = shoppingList
+    ? await prisma.shoppingListLine.count({ where: { shoppingListId: shoppingList.id, needsReview: true } })
+    : 0;
+  const mealVariantIds = mealPlan.entries.map((entry) => entry.recipeVariantId);
+  const mealCategoryIds = [...new Set(mealPlan.entries.map((entry) => entry.recipeVariant.recipe.category))];
   const mealIngredientIds = [
     ...new Set(
-      mealPlan!.entries.flatMap((entry) =>
+      mealPlan.entries.flatMap((entry) =>
         entry.recipeVariant.recipe.ingredients.map((ri) => ri.ingredientId)
       )
     ),
@@ -207,14 +212,13 @@ export default async function Home() {
     ])
   );
 
-  const entryByDay = new Map(mealPlan!.entries.map((e) => [e.dayOfWeek, e]));
+  const entryByDay = new Map(mealPlan.entries.map((e) => [e.dayOfWeek, e]));
   const rhythm = (household.weeklyRhythm ?? {}) as Partial<Record<string, "busy" | "quiet">>;
   const busyDayCount = DAY_KEYS.filter((k) => rhythm[k] === "busy").length;
-  const avgDayCount = mealPlan!.entries.filter(
+  const avgDayCount = mealPlan.entries.filter(
     (e) => e.recipeVariant.recipe.category === "ALL_VEGGIE_DAY"
   ).length;
   const greetingName = household.persons[0]?.name ?? household.name;
-  const reviewCount = shoppingList?.lines.filter((line) => line.needsReview).length ?? 0;
   const nextStep = nextStepCopy({
     learningPromptCount: learningPrompts.length,
     hasShoppingList: Boolean(shoppingList),
@@ -227,7 +231,7 @@ export default async function Home() {
     where: {
       householdId: household.id,
       subjectType: "RECIPE_VARIANT",
-      subjectId: { in: mealPlan!.entries.map((e) => e.recipeVariantId) },
+      subjectId: { in: mealPlan.entries.map((e) => e.recipeVariantId) },
       eventType: "EXPLICIT_FEEDBACK",
     },
     select: { subjectId: true },
