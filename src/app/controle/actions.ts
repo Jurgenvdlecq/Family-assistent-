@@ -7,6 +7,9 @@ import { assertCurrentHousehold } from "@/lib/auth";
 import { logFeedbackEvent } from "@/lib/feedback";
 import { recordProductChosen, recordProductRejected } from "@/domain/product-matching/repository";
 import { matchProductForIngredient } from "@/domain/product-matching/matchIngredient";
+import { PicnicClient } from "@/lib/picnic/client";
+import { picnicPriceToEuros, picnicProductRef } from "@/lib/picnic/products";
+import { parsePackageQuantity } from "@/lib/quantity/parsePackageSize";
 
 async function loadLineForCurrentHousehold(lineId: string) {
   const line = await prisma.shoppingListLine.findUniqueOrThrow({
@@ -162,6 +165,81 @@ export async function adjustLineQuantity(formData: FormData) {
   await prisma.shoppingListLine.update({ where: { id: lineId }, data: { quantity } });
   revalidatePath("/controle");
   revalidatePath("/boodschappen");
+}
+
+export async function searchPicnicProductsForLine(formData: FormData) {
+  const lineId = String(formData.get("lineId"));
+  const query = String(formData.get("query") ?? "").trim();
+  const { line, householdId } = await loadLineForCurrentHousehold(lineId);
+
+  const household = await prisma.household.findUniqueOrThrow({ where: { id: householdId } });
+  if (!household.picnicAuthToken) {
+    throw new Error("Koppel eerst je Picnic-account voordat ik live Picnic-producten kan zoeken.");
+  }
+
+  const ingredient = await prisma.ingredient.findUniqueOrThrow({
+    where: { id: line.ingredientId },
+    select: { name: true, unit: true },
+  });
+  const searchTerm = query || ingredient.name;
+  const client = new PicnicClient(household.picnicAuthToken);
+  const results = await client.search(searchTerm);
+
+  let savedCount = 0;
+  for (const item of results.slice(0, 12)) {
+    const externalRef = picnicProductRef(item);
+    if (!externalRef || !item.name) continue;
+
+    const packageSize = item.unit_quantity ?? null;
+    const data = {
+      ingredientId: line.ingredientId,
+      externalRef,
+      picnicImageId: item.image_id ?? null,
+      name: item.name,
+      packageSize,
+      packageQuantity: parsePackageQuantity(packageSize, ingredient.unit),
+      price: picnicPriceToEuros(item.display_price ?? item.price),
+      lastSeenAvailable: new Date(),
+    };
+
+    const existing = await prisma.product.findFirst({
+      where: { ingredientId: line.ingredientId, externalRef },
+      select: { id: true },
+    });
+    if (existing) {
+      await prisma.product.update({ where: { id: existing.id }, data });
+    } else {
+      await prisma.product.create({ data });
+    }
+    savedCount += 1;
+  }
+
+  await persistRefreshedToken(client, householdId, household.picnicAuthToken);
+
+  await prisma.shoppingListLine.update({
+    where: { id: lineId },
+    data: {
+      needsReview: true,
+      matchStatus: "MATCHED_REVIEW_REQUIRED",
+      matchConfidence: 0.5,
+      matchReasons:
+        savedCount > 0
+          ? [`${savedCount} live Picnic-producten gevonden voor "${searchTerm}". Kies het juiste product.`]
+          : [`Geen live Picnic-producten gevonden voor "${searchTerm}". Probeer een andere zoekterm.`],
+    },
+  });
+
+  revalidatePath("/controle");
+}
+
+async function persistRefreshedToken(client: PicnicClient, householdId: string, previousToken: string | null) {
+  const refreshedToken = client.getAuthToken();
+  if (refreshedToken && refreshedToken !== previousToken) {
+    await prisma.household.update({
+      where: { id: householdId },
+      data: { picnicAuthToken: refreshedToken, picnicTokenUpdatedAt: new Date() },
+    });
+  }
 }
 
 /** Verwijdert een regel volledig van de lijst — voor producten die niet gevonden zijn en niet nodig blijken. */

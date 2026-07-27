@@ -10,6 +10,7 @@ export interface ConfirmationLineInput {
   ingredientName: string;
   matchStatus: "MATCHED_TRUSTED" | "MATCHED_REVIEW_REQUIRED" | "NOT_FOUND" | "MANUALLY_SELECTED" | "UNAVAILABLE";
   transferredToPicnicAt: Date | null;
+  packageCount?: number;
   product: {
     name: string;
     price: number | null;
@@ -42,7 +43,7 @@ export function buildConfirmationSummary(lines: ConfirmationLineInput[]): Confir
     if (price === null) {
       unknownPriceCount += 1;
     } else {
-      expectedTotalPrice += price;
+      expectedTotalPrice += price * (line.packageCount ?? 1);
     }
 
     const seenAt = line.product?.lastSeenAvailable ?? null;
@@ -55,7 +56,7 @@ export function buildConfirmationSummary(lines: ConfirmationLineInput[]): Confir
     productCount: lines.length,
     alreadyTransferredCount: lines.length - toTransfer.length,
     toTransferCount: toTransfer.length,
-    expectedTotalPrice,
+    expectedTotalPrice: Math.round(expectedTotalPrice * 100) / 100,
     unknownPriceCount,
     manuallySelected: toTransfer
       .filter((line) => line.matchStatus === "MANUALLY_SELECTED")

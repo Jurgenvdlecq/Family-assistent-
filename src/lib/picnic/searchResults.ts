@@ -54,8 +54,11 @@ export interface PicnicSearchResultItem {
   id?: string;
   name?: string;
   display_price?: number;
+  price?: number;
   unit_quantity?: string;
+  unit_quantity_sub?: string;
   image_id?: string;
+  max_count?: number;
   sole_article_id?: string | null;
 }
 

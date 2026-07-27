@@ -385,6 +385,7 @@ model Product {
   id                String    @id @default(uuid())
   ingredientId      String?   @map("ingredient_id")
   externalRef       String?   @map("external_ref")
+  picnicImageId     String?   @map("picnic_image_id")
   name              String
   brand             String?
   packageSize       String?   @map("package_size")

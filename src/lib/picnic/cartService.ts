@@ -1,10 +1,9 @@
 import { prisma } from "../prisma";
 import { PicnicClient, PicnicAuthError, PicnicNetworkError } from "./client";
-import { fuzzyScore, searchTermVariants } from "./matching";
-import type { PicnicSearchResultItem } from "./searchResults";
+import { describeLinePackaging } from "../shoppingList";
 
 export interface PicnicCartResult {
-  added: { ingredientName: string; picnicName: string }[];
+  added: { ingredientName: string; picnicName: string; count: number }[];
   skipped: { ingredientName: string }[];
   notFound: string[];
   errors: { ingredientName: string; message: string }[];
@@ -53,33 +52,25 @@ export async function addShoppingListToPicnicCart(
 
     const searchLabel = line.product?.name ?? line.ingredient.name;
     try {
-      let picnicProductId = line.product?.externalRef ?? null;
-      let picnicName = searchLabel;
+      const picnicProductId = line.product?.externalRef ?? null;
+      const picnicName = searchLabel;
 
       if (!picnicProductId) {
-        const match = await findBestMatch(client, searchLabel);
-        if (!match?.id) {
-          result.notFound.push(searchLabel);
-          continue;
-        }
-        picnicProductId = match.id;
-        picnicName = match.name ?? searchLabel;
+        result.errors.push({
+          ingredientName: line.ingredient.name,
+          message: "Geen bevestigd Picnic-product. Zoek en kies dit product eerst op het Controle-scherm.",
+        });
+        continue;
       }
 
-      await client.addProduct(picnicProductId);
-      result.added.push({ ingredientName: line.ingredient.name, picnicName });
+      const packageCount = getPackageCountForLine(line);
+      await client.addProduct(picnicProductId, packageCount);
+      result.added.push({ ingredientName: line.ingredient.name, picnicName, count: packageCount });
 
       await prisma.shoppingListLine.update({
         where: { id: line.id },
         data: { transferredToPicnicAt: new Date() },
       });
-
-      if (line.productId && !line.product?.externalRef) {
-        await prisma.product.update({
-          where: { id: line.productId },
-          data: { externalRef: picnicProductId },
-        });
-      }
     } catch (err) {
       if (err instanceof PicnicAuthError || err instanceof PicnicNetworkError) {
         result.errors.push({
@@ -138,17 +129,13 @@ async function persistRefreshedToken(client: PicnicClient, householdId: string, 
   }
 }
 
-async function findBestMatch(
-  client: PicnicClient,
-  searchLabel: string
-): Promise<PicnicSearchResultItem | null> {
-  for (const term of searchTermVariants(searchLabel)) {
-    const results = await client.search(term);
-    const scored = results
-      .filter((r) => r.id)
-      .map((r) => ({ item: r, score: fuzzyScore(searchLabel, r.name ?? "") }))
-      .sort((a, b) => b.score - a.score);
-    if (scored.length > 0) return scored[0].item;
-  }
-  return null;
+function getPackageCountForLine(line: {
+  quantity: number;
+  unit: "GRAM" | "ML" | "PIECE";
+  product: { packageQuantity: number | null } | null;
+}) {
+  const packaging = describeLinePackaging(line, line.product);
+  if (packaging.status === "OK") return packaging.packagesToBuy;
+  if (line.unit === "PIECE") return Math.max(1, Math.ceil(line.quantity));
+  return 1;
 }

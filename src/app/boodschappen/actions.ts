@@ -10,6 +10,7 @@ import {
   type PicnicCartResult,
 } from "@/lib/picnic/cartService";
 import { buildConfirmationSummary, type ConfirmationSummary } from "@/lib/picnic/confirmationSummary";
+import { describeLinePackaging } from "@/lib/shoppingList";
 
 export async function confirmTransfer(formData: FormData) {
   const shoppingListId = String(formData.get("shoppingListId"));
@@ -42,6 +43,15 @@ export async function getPicnicConfirmationSummary(
       ingredientName: line.ingredient.name,
       matchStatus: line.matchStatus,
       transferredToPicnicAt: line.transferredToPicnicAt,
+      packageCount: line.product
+        ? Math.max(
+            1,
+            describeLinePackaging(
+              { quantity: line.quantity, unit: line.unit },
+              { packageQuantity: line.product.packageQuantity }
+            ).packagesToBuy || 1
+          )
+        : 1,
       product: line.product
         ? {
             name: line.product.name,
