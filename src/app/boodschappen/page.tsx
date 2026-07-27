@@ -754,6 +754,17 @@ export default async function BoodschappenPage({
                       Deze week niet nodig
                     </button>
                   </form>
+                  <form action={removeFixedGroceryPermanently}>
+                    <input type="hidden" name="householdId" value={household.id} />
+                    <input type="hidden" name="ingredientId" value={line.ingredientId} />
+                    <input type="hidden" name="lineId" value={line.id} />
+                    <button
+                      type="submit"
+                      className="shrink-0 text-xs font-medium text-ink-faint transition-colors hover:text-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:scale-[0.98]"
+                    >
+                      Verwijder voorgoed
+                    </button>
+                  </form>
                 </div>
               </div>
               <form action={updateFixedLineQuantity} className="flex flex-wrap items-center gap-2">
