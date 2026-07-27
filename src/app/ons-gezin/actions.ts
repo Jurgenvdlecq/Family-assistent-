@@ -8,10 +8,18 @@ import { defaultPortionMultiplierForRole } from "@/domain/household/presence";
 import { DAY_ENUM, DAY_KEYS, getCurrentWeekStart, type DayKey } from "@/lib/week";
 
 const ROLES = ["PARENT", "CHILD", "OTHER"] as const;
+const STANCES = ["LIKED", "SOMETIMES", "RATHER_NOT", "NEVER", "UNKNOWN"] as const;
 
 function parseRole(value: FormDataEntryValue | null): (typeof ROLES)[number] {
   const role = String(value ?? "OTHER");
   return ROLES.includes(role as (typeof ROLES)[number]) ? (role as (typeof ROLES)[number]) : "OTHER";
+}
+
+function parseStance(value: FormDataEntryValue | null): (typeof STANCES)[number] {
+  const stance = String(value ?? "UNKNOWN");
+  return STANCES.includes(stance as (typeof STANCES)[number])
+    ? (stance as (typeof STANCES)[number])
+    : "UNKNOWN";
 }
 
 function parseHardRestrictions(value: FormDataEntryValue | null): string[] {
@@ -131,6 +139,48 @@ export async function updateWeeklyRhythm(formData: FormData) {
 
   revalidatePath("/ons-gezin");
   revalidatePath("/");
+}
+
+async function loadPersonalPreferenceForCurrentHousehold(preferenceId: string, householdId: string) {
+  const preference = await prisma.preference.findUniqueOrThrow({ where: { id: preferenceId } });
+  if (preference.ownerType !== "PERSON") {
+    throw new Error("Alleen persoonlijke voorkeuren kunnen hier worden aangepast.");
+  }
+  await prisma.person.findUniqueOrThrow({
+    where: { id: preference.ownerId, householdId },
+    select: { id: true },
+  });
+  return preference;
+}
+
+export async function updatePersonalPreference(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const preferenceId = String(formData.get("preferenceId"));
+  const stance = parseStance(formData.get("stance"));
+
+  await loadPersonalPreferenceForCurrentHousehold(preferenceId, householdId);
+  await prisma.preference.update({
+    where: { id: preferenceId },
+    data: { stance, source: "EXPLICIT", confidence: stance === "UNKNOWN" ? 0 : 1 },
+  });
+
+  revalidatePath("/ons-gezin");
+  revalidatePath("/");
+  revalidatePath("/gerechten");
+}
+
+export async function deletePersonalPreference(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const preferenceId = String(formData.get("preferenceId"));
+
+  await loadPersonalPreferenceForCurrentHousehold(preferenceId, householdId);
+  await prisma.preference.delete({ where: { id: preferenceId } });
+
+  revalidatePath("/ons-gezin");
+  revalidatePath("/");
+  revalidatePath("/gerechten");
 }
 
 export async function updateAccessCode(formData: FormData) {

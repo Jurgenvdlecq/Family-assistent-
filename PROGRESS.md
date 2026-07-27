@@ -49,14 +49,15 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 | WP10 | Persoonlijke gezinslogica | `Person.portionMultiplier`, `PersonPresenceOverride`, `src/domain/household/presence.ts` en bewerkbare gezinsleden op `/ons-gezin` — weekplanning filtert harde beperkingen per dag, boodschappenhoeveelheden schalen relatief op wie die dag mee-eet. |
 | WP11 | Persoonsvoorkeuren per gerecht | Persoonlijke voorkeuren worden opgeslagen via bestaande `Preference(ownerType=PERSON, subjectType=RECIPE_VARIANT)` — op `/` kan per aanwezige eter favoriet/oké/liever niet/nooit worden gekozen; planning en `/gerechten` wegen dit per dag mee en sluiten persoonlijke `NEVER` uit. Geen nieuwe migratie nodig. |
 | WP12 | Persoonsvoorkeuren per categorie/ingrediënt | De weekplanning kan per aanwezige eter nu ook voorkeuren voor receptcategorieën en ingrediënten vastleggen via dezelfde `Preference`-tabel. Planning en `/gerechten` wegen `RECIPE_CATEGORY` en `INGREDIENT` mee; persoonlijke `NEVER` sluit ook categorieën/ingrediënten uit. Geen nieuwe migratie nodig. |
+| WP13 | Voorkeurenbeheer op Ons gezin | `/ons-gezin` toont nu een beheerblok voor alle persoonlijke voorkeuren per gezinslid, met leesbare labels voor gerecht/categorie/ingrediënt. Voorkeuren kunnen daar worden aangepast of verwijderd, met household-validatie in server actions. Geen nieuwe migratie nodig. |
 
 ## Nog te doen (roadmap, nog niet gestart)
 
-- **WP13 — Voorkeurenbeheer overzichtelijk maken.** WP11/WP12 leggen veel
-  voorkeuren vast vanuit de weekplanning. Logische vervolgstap: een beheer-
-  of overzichtssectie op `/ons-gezin` waar je persoonsvoorkeuren kunt zien,
-  corrigeren en verwijderen zonder te wachten tot het gerecht weer op het
-  weekmenu staat.
+- **WP14 — Weekplanning regenereren / voorkeuren direct toepassen.** WP11-WP13
+  leggen voorkeuren vast en beheren ze, maar een bestaande weekplanning blijft
+  bewust staan. Logische vervolgstap: een veilige actie om de huidige week
+  opnieuw te laten plannen nadat voorkeuren zijn aangepast, inclusief
+  boodschappenlijst-invalidering en duidelijke bevestiging.
 
 ## Niet-voor-de-hand-liggende operationele kennis
 
