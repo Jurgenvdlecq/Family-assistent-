@@ -38,6 +38,7 @@ import {
   dismissSmartLearningPrompt,
   regenerateCurrentWeekPlan,
   setPersonMealPreference,
+  setLooseMealForDay,
   submitMealFeedback,
 } from "./actions";
 
@@ -408,6 +409,35 @@ export default async function Home() {
                   <p className="mt-2 text-xs text-ink-muted">{reason}</p>
                 </details>
               )}
+
+              <details className="ml-14 rounded-lg border border-line bg-surface-2 px-3 py-2">
+                <summary className="cursor-pointer text-xs font-medium text-ink-muted">
+                  Losse maaltijd invullen
+                </summary>
+                <form action={setLooseMealForDay} className="mt-3 grid gap-2">
+                  <input type="hidden" name="householdId" value={household.id} />
+                  <input type="hidden" name="dayKey" value={dayKey} />
+                  <input
+                    name="title"
+                    defaultValue={recipe?.properties.includes("losse_maaltijd") ? recipe.title : ""}
+                    placeholder="Bijv. Airfryeravond"
+                    className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                  />
+                  <textarea
+                    name="lineText"
+                    rows={5}
+                    defaultValue={recipe?.properties.includes("losse_maaltijd") ? recipe.instructions.join("\n") : ""}
+                    placeholder={"Patatjes\nKai: frikandel\nLynn: kaasstengels\nJurgen en Ellen: Carrero\nEllen: mini kaassouffle"}
+                    className="min-h-28 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                  />
+                  <button
+                    type="submit"
+                    className="w-fit rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-ink transition-all duration-150 hover:-translate-y-0.5 hover:bg-accent/90 active:translate-y-0 active:scale-[0.98]"
+                  >
+                    Zet op deze dag
+                  </button>
+                </form>
+              </details>
 
               {entry && participants.length > 0 && (
                 <details className="ml-14 rounded-lg border border-line bg-surface-2 px-3 py-2">

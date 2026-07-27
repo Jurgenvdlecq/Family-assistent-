@@ -36,3 +36,17 @@ test("parseRecipeIngredientText haalt verpakkingswoorden uit de zoeknaam", () =>
     ]
   );
 });
+
+test("parseRecipeIngredientText negeert persoon-prefixen bij losse maaltijden", () => {
+  const parsed = parseRecipeIngredientText("Kai: frikandel\nLynn: kaasstengels\nEllen: Carrero, mini kaassouffle");
+
+  assert.deepEqual(
+    parsed.map((line) => ({ name: line.name, quantity: line.quantity, unit: line.unit })),
+    [
+      { name: "Frikandel", quantity: 1, unit: "PIECE" },
+      { name: "Kaasstengels", quantity: 1, unit: "PIECE" },
+      { name: "Carrero", quantity: 1, unit: "PIECE" },
+      { name: "Mini Kaassouffle", quantity: 1, unit: "PIECE" },
+    ]
+  );
+});

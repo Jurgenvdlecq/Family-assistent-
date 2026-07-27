@@ -71,11 +71,15 @@ function stripPackagingWord(value: string) {
   return value;
 }
 
+function stripPersonPrefix(value: string) {
+  return value.replace(/^[^:]{1,32}:\s*/, "");
+}
+
 export function parseRecipeIngredientText(input: string): ParsedRecipeIngredientLine[] {
   const combined = new Map<string, ParsedRecipeIngredientLine>();
 
   for (const rawLine of input.split(/\n|,|;/)) {
-    const raw = rawLine.trim().replace(/\s+/g, " ");
+    const raw = stripPersonPrefix(rawLine.trim().replace(/\s+/g, " "));
     if (!raw) continue;
 
     const compactMatch = raw.match(/^(\d+(?:[,.]\d+)?)(kg|kilo|kilogram|g|gr|gram|l|liter|ml|x|stuk|stuks)\s+(.+)$/i);

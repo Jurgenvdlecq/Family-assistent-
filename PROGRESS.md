@@ -92,11 +92,12 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 | WP46 | Recept snel toevoegen | `/recepten` heeft nu bovenaan een snelle invoer met alleen receptnaam en een vrij tekstveld voor ingrediënten/hoeveelheden (`400g kipfilet`, `300 gram rijst`, `2 paprika`). De parser maakt of hergebruikt ingrediënten, combineert dubbele regels en zoekt bij gekoppelde Picnic-accounts automatisch productkandidaten met foto, prijs en verpakking zodat de boodschappencontrole daarna direct bruikbaar is. Het oude uitgebreide receptformulier staat onder geavanceerd. Geen nieuwe migratie nodig. |
 | WP47 | Dagcontrole sluit beantwoorde keuzes | Op `/boodschappen` verdwijnt de huidige-product-keuzekaart zodra een product met `Onthouden` of `Alleen deze week` is bevestigd; alleen de statusmelding blijft staan. Productregels hebben naast `+/-` nu ook een direct invoerveld voor het aantal te bestellen verpakkingen/stuks, en de zichtbare bestelprijs rekent mee met het actuele weekaantal. Geen nieuwe migratie nodig. |
 | WP48 | Zoeken overrulet gerecht-suggesties | `/gerechten` zoekt nu ook expliciet op recepttitel. Een zoekopdracht zoals `kofta` toont een eigen recept met die naam bovenaan, ook als er geen bekende tag of ingrediëntmatch is. Dieetrestricties en persoonlijke `nooit`-voorkeuren blijven wel harde filters. Geen nieuwe migratie nodig. |
+| WP49 | Losse maaltijd per dag | Op `/` kan per dag nu een losse maaltijd worden ingevuld met naam en vrije productregels, bijvoorbeeld `Airfryeravond` met `Kai: frikandel` en `Ellen: mini kaassouffle`. Persoon-prefixen worden niet onderdeel van het ingrediënt, de app maakt/hergebruikt ingrediënten, zoekt bij gekoppelde Picnic-accounts productkandidaten en plant de losse maaltijd direct op die dag in. De boodschappenlijst wordt daarna opnieuw opgebouwd. Geen nieuwe migratie nodig. |
 
 ## Nog te doen (roadmap, nog niet gestart)
 
 - **Nieuwe hoofdflow is leidend:** `Week kiezen → Aanvullen → Per dag controleren → Totaalbestelling controleren → Naar Picnic`.
-- **Volgende WP:** maak de hoofdflow explicieter als stap-voor-stap assistent (`Week kiezen`, `Aanvullen`, `Per dag controleren`, `Totaalbestelling`, `Naar Picnic`) zodat de gebruiker minder hoeft te zoeken tussen losse secties.
+- **Volgende WP:** vaste daggewoontes bovenop losse maaltijden: een losse maaltijd kunnen onthouden als terugkerende routine voor een dag, eerst expliciet door de gebruiker en later via leervragen bij herhaling.
 - Daarna pas verder met `MealPlanEntry`-context voor beter leren uit stil accepteren en handmatige wijzigingen (zie `DATAMODEL_AUDIT.md` punt 6).
 
 ## Niet-voor-de-hand-liggende operationele kennis
