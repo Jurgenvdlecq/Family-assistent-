@@ -8,7 +8,12 @@ import { matchProductForIngredient } from "@/domain/product-matching/matchIngred
 import { recordProductChosen } from "@/domain/product-matching/repository";
 import { upsertFixedGrocery, removeFixedGrocery } from "@/lib/fixedGroceries";
 import { Unit } from "@/generated/prisma/enums";
-import { inferFixedGroceryQuantity, inferIngredientCategory, titleCaseSearchTerm } from "@/lib/fixedGroceryProductChoice";
+import {
+  inferFixedGroceryQuantity,
+  inferIngredientCategory,
+  removeBulkFixedGroceryLine,
+  titleCaseSearchTerm,
+} from "@/lib/fixedGroceryProductChoice";
 import { parsePackageQuantity } from "@/lib/quantity/parsePackageSize";
 
 interface FixedPicnicProductInput {
@@ -254,6 +259,7 @@ export async function addFixedPicnicProduct(formData: FormData) {
   const packageSize = String(formData.get("packageSize") ?? "").trim() || null;
   const picnicImageId = String(formData.get("picnicImageId") ?? "").trim() || null;
   const bulkFixed = String(formData.get("bulkFixed") ?? "").trim();
+  const bulkFixedRaw = String(formData.get("bulkFixedRaw") ?? "").trim();
   const quantity = parseQuantity(formData.get("quantity"));
   const unit = parseUnit(formData.get("unit"));
   const price = parseOptionalPrice(formData.get("price"));
@@ -333,8 +339,11 @@ export async function addFixedPicnicProduct(formData: FormData) {
     revalidatePath("/boodschappen");
     revalidatePath("/controle");
     if (bulkFixed) {
-      const params = new URLSearchParams({ bulkFixed, fixedLine: lineId });
-      redirect(`/boodschappen?${params.toString()}#bulk-fixed-groceries`);
+      const remainingBulkFixed = bulkFixedRaw ? removeBulkFixedGroceryLine(bulkFixed, bulkFixedRaw) : bulkFixed;
+      if (remainingBulkFixed) {
+        const params = new URLSearchParams({ bulkFixed: remainingBulkFixed, fixedLine: lineId });
+        redirect(`/boodschappen?${params.toString()}#bulk-fixed-groceries`);
+      }
     }
     redirect(`/boodschappen?fixedLine=${encodeURIComponent(lineId)}#fixed-line-${encodeURIComponent(lineId)}`);
   }
