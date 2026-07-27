@@ -6,6 +6,7 @@ import type { DayKey } from "@/lib/week";
 import { CATEGORY_LABELS } from "@/lib/categoryStyle";
 import NavBar from "@/components/NavBar";
 import AddPersonForm from "./AddPersonForm";
+import PersonalPreferencesManager, { labelPersonalPreferenceSubject } from "./PersonalPreferencesManager";
 import PersonPreferencesCard from "./PersonPreferencesCard";
 import WeeklyRhythmEditor from "./WeeklyRhythmEditor";
 import { logout, updateAccessCode } from "./actions";
@@ -36,6 +37,55 @@ export default async function OnsGezinPage() {
   const preferences = await prisma.preference.findMany({
     where: { ownerType: "HOUSEHOLD", ownerId: household.id },
   });
+  const personIds = household.persons.map((person) => person.id);
+  const personalPreferences = await prisma.preference.findMany({
+    where: {
+      ownerType: "PERSON",
+      ownerId: { in: personIds },
+      subjectType: { in: ["RECIPE_VARIANT", "RECIPE_CATEGORY", "INGREDIENT"] },
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+  const [personalVariants, personalIngredients] = await Promise.all([
+    prisma.recipeVariant.findMany({
+      where: {
+        id: {
+          in: personalPreferences
+            .filter((preference) => preference.subjectType === "RECIPE_VARIANT")
+            .map((preference) => preference.subjectId),
+        },
+      },
+      include: { recipe: true },
+    }),
+    prisma.ingredient.findMany({
+      where: {
+        id: {
+          in: personalPreferences
+            .filter((preference) => preference.subjectType === "INGREDIENT")
+            .map((preference) => preference.subjectId),
+        },
+      },
+    }),
+  ]);
+  const personNameById = new Map(household.persons.map((person) => [person.id, person.name]));
+  const personalVariantLabelById = new Map(
+    personalVariants.map((variant) => [variant.id, variant.recipe.title])
+  );
+  const personalIngredientLabelById = new Map(
+    personalIngredients.map((ingredient) => [ingredient.id, ingredient.name])
+  );
+  const personalPreferenceItems = personalPreferences.map((preference) => ({
+    id: preference.id,
+    personId: preference.ownerId,
+    personName: personNameById.get(preference.ownerId) ?? "Onbekend gezinslid",
+    subjectType: preference.subjectType,
+    subjectId: preference.subjectId,
+    subjectLabel: labelPersonalPreferenceSubject(preference, {
+      variants: personalVariantLabelById,
+      ingredients: personalIngredientLabelById,
+    }),
+    stance: preference.stance,
+  }));
 
   const likedCategories = preferences
     .filter((p) => p.subjectType === "RECIPE_CATEGORY" && p.stance === "LIKED")
@@ -100,6 +150,8 @@ export default async function OnsGezinPage() {
           ))}
           <AddPersonForm householdId={household.id} />
         </div>
+
+        <PersonalPreferencesManager householdId={household.id} preferences={personalPreferenceItems} />
 
         <h2 className="mb-3 text-sm font-semibold text-ink">Jullie weekritme</h2>
         <div className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
