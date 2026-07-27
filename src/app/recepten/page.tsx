@@ -12,6 +12,7 @@ import {
   copyRecipeToHousehold,
   createIngredient,
   createIngredientProduct,
+  createQuickRecipe,
   createRecipe,
   createRecipeVariant,
   rejectProductForIngredient,
@@ -366,10 +367,36 @@ export default async function ReceptenPage() {
           </div>
         </details>
 
+        <section className="order-1 mb-5 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <div className="mb-4 flex items-center gap-2 font-medium text-ink">
+            <Plus size={16} className="text-accent" />
+            Nieuw recept snel toevoegen
+          </div>
+          <form action={createQuickRecipe} className="grid min-w-0 gap-3">
+            <input type="hidden" name="householdId" value={household.id} />
+            <input
+              name="title"
+              required
+              placeholder="Bijv. Kip met rijst en paprika"
+              className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+            />
+            <textarea
+              name="ingredientText"
+              required
+              rows={7}
+              placeholder={"400g kipfilet\n300 gram rijst\n2 paprika\n1 ui\n250 ml kookroom"}
+              className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+            />
+            <button type="submit" className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90">
+              Recept opslaan en producten zoeken
+            </button>
+          </form>
+        </section>
+
         <details className="order-1 mb-5 min-w-0 rounded-xl border border-line bg-surface p-4">
           <summary className="flex cursor-pointer items-center gap-2 font-medium text-ink">
             <Plus size={16} className="text-accent" />
-            Nieuw recept
+            Geavanceerd recept toevoegen
           </summary>
           <form action={createRecipe} className="mt-4 grid min-w-0 gap-3">
             <input type="hidden" name="householdId" value={household.id} />

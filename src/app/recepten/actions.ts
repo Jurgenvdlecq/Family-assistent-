@@ -7,6 +7,9 @@ import { assertCurrentHousehold } from "@/lib/auth";
 import { parsePackageQuantity } from "@/lib/quantity/parsePackageSize";
 import { accessibleRecipeWhere, editableRecipeWhere } from "@/lib/recipeScope";
 import { recordProductChosen, recordProductRejected } from "@/domain/product-matching/repository";
+import { parseRecipeIngredientText } from "@/lib/recipeIngredientText";
+import { PicnicClient } from "@/lib/picnic/client";
+import { picnicPriceToEuros, picnicProductRef } from "@/lib/picnic/products";
 
 const RECIPE_CATEGORIES = [
   "PASTA",
@@ -129,6 +132,133 @@ async function parseRecipeIngredientRows(formData: FormData) {
     quantity: row.quantity,
     unit: unitByIngredientId.get(row.ingredientId)!,
   }));
+}
+
+async function upsertParsedRecipeIngredients(lines: ReturnType<typeof parseRecipeIngredientText>) {
+  const rows = [];
+  for (const line of lines) {
+    const ingredient = await prisma.ingredient.upsert({
+      where: { name: line.name },
+      update: {},
+      create: {
+        name: line.name,
+        unit: line.unit,
+        category: line.category,
+      },
+    });
+    rows.push({
+      ingredientId: ingredient.id,
+      quantity: line.quantity,
+      unit: ingredient.unit,
+      ingredientName: ingredient.name,
+    });
+  }
+  return rows;
+}
+
+async function savePicnicCandidatesForIngredients(householdId: string, rows: Awaited<ReturnType<typeof upsertParsedRecipeIngredients>>) {
+  const household = await prisma.household.findUniqueOrThrow({
+    where: { id: householdId },
+    select: { picnicAuthToken: true },
+  });
+  if (!household.picnicAuthToken) return;
+
+  const client = new PicnicClient(household.picnicAuthToken);
+  try {
+    for (const row of rows.slice(0, 12)) {
+      const results = await client.search(row.ingredientName);
+      const seenRefs = new Set<string>();
+      const candidates = results
+        .map((item) => {
+          const externalRef = picnicProductRef(item);
+          if (!externalRef || !item.name || seenRefs.has(externalRef)) return null;
+          seenRefs.add(externalRef);
+          const packageSize = item.unit_quantity ?? null;
+          return {
+            ingredientId: row.ingredientId,
+            externalRef,
+            picnicImageId: item.image_id ?? null,
+            name: item.name,
+            packageSize,
+            packageQuantity: packageSize ? parsePackageQuantity(packageSize, row.unit) : null,
+            price: picnicPriceToEuros(item.display_price ?? item.price),
+            lastSeenAvailable: new Date(),
+          };
+        })
+        .filter((item) => item !== null)
+        .slice(0, 3);
+
+      await Promise.all(
+        candidates.map((candidate) =>
+          prisma.product.upsert({
+            where: {
+              ingredientId_externalRef: {
+                ingredientId: candidate.ingredientId,
+                externalRef: candidate.externalRef,
+              },
+            },
+            update: candidate,
+            create: candidate,
+          })
+        )
+      );
+    }
+  } finally {
+    const refreshedToken = client.getAuthToken();
+    if (refreshedToken && refreshedToken !== household.picnicAuthToken) {
+      await prisma.household.update({
+        where: { id: householdId },
+        data: { picnicAuthToken: refreshedToken, picnicTokenUpdatedAt: new Date() },
+      });
+    }
+  }
+}
+
+export async function createQuickRecipe(formData: FormData) {
+  const householdId = await requireRecipeEditor(formData);
+  const title = String(formData.get("title") ?? "").trim();
+  const ingredientText = String(formData.get("ingredientText") ?? "").trim();
+
+  if (!title) throw new Error("Naam van het recept is verplicht.");
+  if (!ingredientText) throw new Error("Vul de ingrediënten en hoeveelheden in.");
+
+  await assertRecipeTitleAvailableForHousehold(householdId, title);
+
+  const parsedLines = parseRecipeIngredientText(ingredientText);
+  if (parsedLines.length === 0) {
+    throw new Error("Ik kon geen ingrediënten herkennen. Gebruik bijvoorbeeld: 400g kipfilet, 300g rijst, 2 paprika.");
+  }
+
+  const ingredientRows = await upsertParsedRecipeIngredients(parsedLines);
+
+  await prisma.recipe.create({
+    data: {
+      title,
+      category: "OTHER",
+      status: "FOUND",
+      scope: "HOUSEHOLD",
+      householdId,
+      originHouseholdId: householdId,
+      source: "Snel toegevoegd",
+      ingredients: {
+        create: ingredientRows.map((row) => ({
+          ingredientId: row.ingredientId,
+          quantity: row.quantity,
+          unit: row.unit,
+        })),
+      },
+      variants: {
+        create: {
+          variantType: "FRESH",
+          contextFit: [],
+        },
+      },
+    },
+  });
+
+  await savePicnicCandidatesForIngredients(householdId, ingredientRows);
+  await invalidateCurrentShoppingList(householdId);
+  revalidateRecipeManagementPaths();
 }
 
 export async function createRecipe(formData: FormData) {
