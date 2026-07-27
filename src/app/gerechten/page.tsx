@@ -9,6 +9,7 @@ import { accessibleRecipeWhere } from "@/lib/recipeScope";
 import { DAY_KEYS, DAY_ENUM, DAY_LABELS, getCurrentWeekStart, type DayKey } from "@/lib/week";
 import { CATEGORY_GRADIENT, STATUS_LABELS, statusTone } from "@/lib/categoryStyle";
 import { parseMealWish, scoreMealWish } from "@/domain/meal-tags/mealTags";
+import { MEAL_REPLACEMENT_REASONS } from "@/domain/learning/feedbackReasons";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
 import { replaceMealPlanEntry } from "./actions";
@@ -343,29 +344,48 @@ function RecipeSection({
               <input type="hidden" name="dayKey" value={dayKey} />
               <input type="hidden" name="recipeVariantId" value={variant.id} />
               <input type="hidden" name="weekStart" value={weekStart.toISOString()} />
-              <button
-                type="submit"
-                className="flex w-full min-w-0 items-center gap-3 rounded-xl border border-line bg-surface p-3 text-left transition-colors hover:border-accent/50"
-              >
-                <div className={`h-14 w-14 shrink-0 rounded-lg bg-gradient-to-br ${gradient}`} aria-hidden />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-ink">{variant.recipe.title}</p>
-                  <div className="mt-1 flex flex-wrap gap-1.5">
-                    {statusLabel && <Tag tone={statusTone(variant.recipe.status)}>{statusLabel}</Tag>}
-                    {variant.recipe.properties.slice(0, 2).map((p) => (
-                      <span key={p} className="text-[11px] whitespace-nowrap text-ink-faint">
-                        {p.replace(/_/g, " ")}
-                      </span>
-                    ))}
+              <div className="rounded-xl border border-line bg-surface p-3 transition-colors hover:border-accent/50">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className={`h-14 w-14 shrink-0 rounded-lg bg-gradient-to-br ${gradient}`} aria-hidden />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-ink">{variant.recipe.title}</p>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {statusLabel && <Tag tone={statusTone(variant.recipe.status)}>{statusLabel}</Tag>}
+                      {variant.recipe.properties.slice(0, 2).map((p) => (
+                        <span key={p} className="text-[11px] whitespace-nowrap text-ink-faint">
+                          {p.replace(/_/g, " ")}
+                        </span>
+                      ))}
+                    </div>
+                    {wishScore && wishScore.score > 0 && (
+                      <p className="mt-1 truncate text-[11px] text-accent">
+                        Past bij {wishScore.reasons.slice(0, 3).join(", ")}
+                      </p>
+                    )}
                   </div>
-                  {wishScore && wishScore.score > 0 && (
-                    <p className="mt-1 truncate text-[11px] text-accent">
-                      Past bij {wishScore.reasons.slice(0, 3).join(", ")}
-                    </p>
-                  )}
+                  <ChevronRight size={18} className="shrink-0 text-ink-faint" />
                 </div>
-                <ChevronRight size={18} className="shrink-0 text-ink-faint" />
-              </button>
+                <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+                  <select
+                    name="replacementReason"
+                    defaultValue="ONLY_THIS_TIME"
+                    aria-label="Waarom wil je wisselen?"
+                    className="min-w-0 rounded-lg border border-line bg-surface px-2 py-2 text-xs text-ink-muted"
+                  >
+                    {MEAL_REPLACEMENT_REASONS.map((reason) => (
+                      <option key={reason.value} value={reason.value}>
+                        {reason.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="submit"
+                    className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-ink"
+                  >
+                    Kies
+                  </button>
+                </div>
+              </div>
             </form>
           );
         })}

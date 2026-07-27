@@ -536,6 +536,7 @@ model FeedbackEvent {
   subjectType FeedbackSubjectType @map("subject_type")
   subjectId   String              @map("subject_id")
   eventType   FeedbackEventType   @map("event_type")
+  reason      FeedbackReason?
   explicit    Boolean             @default(false)
   context     Json                @default("{}")
   createdAt   DateTime            @default(now()) @map("created_at")
@@ -563,6 +564,22 @@ enum FeedbackEventType {
   EXPLICIT_FEEDBACK
 
   @@map("feedback_event_type")
+}
+
+enum FeedbackReason {
+  NOT_TASTY
+  NO_APPETITE_NOW
+  TOO_MUCH_EFFORT
+  TOO_REPETITIVE
+  WRONG_DAY
+  WRONG_PARTICIPANTS
+  PRODUCT_WRONG
+  ONLY_THIS_TIME
+  ALWAYS_USE
+  NEVER_USE
+  COINCIDENCE
+
+  @@map("feedback_reason")
 }
 
 // ── Preference ───────────────────────────────────────────────────────────

@@ -11,6 +11,7 @@ import { getHouseholdHardRestrictions, getHouseholdMealParticipantsByDay } from 
 import { recipeConflictsWithRestrictions } from "@/lib/dietaryRestrictions";
 import { accessibleRecipeWhere } from "@/lib/recipeScope";
 import { DAY_ENUM, DAY_KEYS, type DayKey } from "@/lib/week";
+import { parseFeedbackReason, labelFeedbackReason } from "@/domain/learning/feedbackReasons";
 
 export async function replaceMealPlanEntry(formData: FormData) {
   const householdId = String(formData.get("householdId"));
@@ -21,6 +22,7 @@ export async function replaceMealPlanEntry(formData: FormData) {
   }
   const recipeVariantId = String(formData.get("recipeVariantId"));
   const weekStart = new Date(String(formData.get("weekStart")));
+  const replacementReason = parseFeedbackReason(formData.get("replacementReason")) ?? "ONLY_THIS_TIME";
 
   // Server actions zijn een publiek bereikbaar POST-endpoint (elke
   // aanroeper kan hetzelfde form-veld met een andere id versturen) — de UI
@@ -82,8 +84,9 @@ export async function replaceMealPlanEntry(formData: FormData) {
       subjectType: "RECIPE_VARIANT",
       subjectId: currentEntry.recipeVariantId,
       eventType: "REPLACED",
+      reason: replacementReason,
       explicit: true,
-      context: { dayOfWeek: dayEnum },
+      context: { dayOfWeek: dayEnum, reasonLabel: labelFeedbackReason(replacementReason) },
     });
     await recalculateVariantConfidence(householdId, currentEntry.recipeVariantId);
     await prisma.mealPlanEntry.update({
@@ -102,7 +105,7 @@ export async function replaceMealPlanEntry(formData: FormData) {
     subjectId: recipeVariantId,
     eventType: "CHOSEN",
     explicit: true,
-    context: { dayOfWeek: dayEnum, source: "manual_replace" },
+    context: { dayOfWeek: dayEnum, source: "manual_replace", replacementReason },
   });
   await recalculateVariantConfidence(householdId, recipeVariantId);
   await maybePromoteRecipeStatus(recipeVariantId, householdId);
