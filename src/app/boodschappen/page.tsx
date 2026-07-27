@@ -77,6 +77,18 @@ function formatOrderQuantity(line: {
   return formatQuantity(line.quantity, line.unit);
 }
 
+function formatNeededOrderQuantity(
+  need: { quantity: number; unit: string },
+  product: { packageQuantity: number | null; packageSize: string | null } | null | undefined
+) {
+  const packaging = describeLinePackaging(
+    { quantity: need.quantity, unit: need.unit as "GRAM" | "ML" | "PIECE" },
+    product
+  );
+  if (packaging.status === "OK") return `${packaging.packagesToBuy}x`;
+  return formatQuantity(need.quantity, need.unit);
+}
+
 function orderPackageCount(line: {
   quantity: number;
   unit: string;
@@ -122,14 +134,16 @@ function estimatedLineCost(line: {
 }
 
 function estimatedDayIngredientCost(
-  line: {
-    quantity: number;
-    unit: string;
-    source: string;
-    product: { packageQuantity: number | null; price: unknown } | null;
-  } | null | undefined
+  need: { quantity: number; unit: string },
+  product: { packageQuantity: number | null; price: unknown } | null | undefined
 ) {
-  return line ? estimatedLineCost(line) : 0;
+  if (!product?.price) return 0;
+  const packaging = describeLinePackaging(
+    { quantity: need.quantity, unit: need.unit as "GRAM" | "ML" | "PIECE" },
+    product
+  );
+  const packageCount = packaging.status === "OK" ? packaging.packagesToBuy : 1;
+  return packageCount * Number(product.price);
 }
 
 function fixedLineEditQuantity(line: {
@@ -465,7 +479,8 @@ export default async function BoodschappenPage({
               const dayReviewCount = dayReviewCounts.get(entry.id) ?? 0;
               const dayCost = entry.recipeVariant.recipe.ingredients.reduce((total, ri) => {
                 const line = mealLineByIngredientId.get(ri.ingredientId);
-                return total + estimatedDayIngredientCost(line);
+                const scaledNeed = { quantity: ri.quantity * scale, unit: ri.unit };
+                return total + estimatedDayIngredientCost(scaledNeed, line?.product);
               }, 0);
               return (
                 <article key={entry.id} className="rounded-xl border border-line bg-surface p-4">
@@ -536,7 +551,7 @@ export default async function BoodschappenPage({
                                 </p>
                                 {line?.product?.price && (
                                   <p className="mt-0.5 text-[11px] font-medium text-ink-muted">
-                                    Bestelling: € {estimatedDayIngredientCost(line).toFixed(2)}
+                                    Maaltijdkosten: € {estimatedDayIngredientCost(scaledNeed, line.product).toFixed(2)}
                                   </p>
                                 )}
                                 {line?.needsReview && (
@@ -545,9 +560,11 @@ export default async function BoodschappenPage({
                               </div>
                             </div>
                             <div className="shrink-0 text-right">
-                              <p className="font-semibold text-ink">{line ? formatOrderQuantity(line) : "?"}</p>
+                              <p className="font-semibold text-ink">
+                                {formatNeededOrderQuantity(scaledNeed, line?.product)}
+                              </p>
                               {line && (
-                                <p className="text-[11px] text-ink-faint">weekaantal</p>
+                                <p className="text-[11px] text-ink-faint">voor deze maaltijd</p>
                               )}
                               {line ? (
                                 <Link
@@ -567,61 +584,68 @@ export default async function BoodschappenPage({
                             </div>
                           </div>
                           {line && (
-                            <div className="mt-3 flex flex-wrap items-center gap-2">
-                              <form action={adjustBoodschappenLineQuantity}>
-                                <input type="hidden" name="lineId" value={line.id} />
-                                <input type="hidden" name="direction" value="decrease" />
-                                <PendingSubmitButton
-                                  pendingText="..."
-                                  ariaLabel="Minder bestellen"
-                                  title="Minder bestellen"
-                                  className={`flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink hover:border-accent/70 hover:bg-white ${ACTION_BUTTON_FOCUS}`}
-                                >
-                                  <Minus size={14} />
-                                </PendingSubmitButton>
-                              </form>
-                              <form action={adjustBoodschappenLineQuantity}>
-                                <input type="hidden" name="lineId" value={line.id} />
-                                <input type="hidden" name="direction" value="increase" />
-                                <PendingSubmitButton
-                                  pendingText="..."
-                                  ariaLabel="Meer bestellen"
-                                  title="Meer bestellen"
-                                  className={`flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink hover:border-accent/70 hover:bg-white ${ACTION_BUTTON_FOCUS}`}
-                                >
-                                  <Plus size={14} />
-                                </PendingSubmitButton>
-                              </form>
-                              <form action={removeBoodschappenLineThisWeek}>
-                                <input type="hidden" name="lineId" value={line.id} />
-                                <PendingSubmitButton
-                                  pendingText="..."
-                                  ariaLabel="Deze week verwijderen"
-                                  title="Deze week verwijderen"
-                                  className={`flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink-faint hover:border-red-300 hover:bg-red-50 hover:text-red-600 ${ACTION_BUTTON_FOCUS}`}
-                                >
-                                  <X size={14} />
-                                </PendingSubmitButton>
-                              </form>
-                              <form action={setBoodschappenLinePackageCount} className="flex items-center gap-1 rounded-md border border-line bg-surface px-2 py-1">
-                                <input type="hidden" name="lineId" value={line.id} />
-                                <input
-                                  type="number"
-                                  name="packageCount"
-                                  defaultValue={orderPackageCount(line)}
-                                  min="0.01"
-                                  step="any"
-                                  aria-label="Aantal verpakkingen"
-                                  className="w-14 bg-transparent text-sm font-medium text-ink outline-none"
-                                />
-                                <span className="text-[11px] text-ink-faint">x</span>
-                                <PendingSubmitButton
-                                  pendingText="..."
-                                  className={`rounded px-1.5 py-0.5 text-[11px] font-medium text-accent hover:bg-accent-soft ${ACTION_BUTTON_FOCUS}`}
-                                >
-                                  OK
-                                </PendingSubmitButton>
-                              </form>
+                            <div className="mt-3 grid gap-2">
+                              <details className="rounded-lg border border-line bg-surface p-2">
+                                <summary className="cursor-pointer text-xs font-medium text-ink">
+                                  Weektotaal aanpassen: {formatOrderQuantity(line)}
+                                </summary>
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <form action={adjustBoodschappenLineQuantity}>
+                                    <input type="hidden" name="lineId" value={line.id} />
+                                    <input type="hidden" name="direction" value="decrease" />
+                                    <PendingSubmitButton
+                                      pendingText="..."
+                                      ariaLabel="Minder voor de week bestellen"
+                                      title="Minder voor de week bestellen"
+                                      className={`flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink hover:border-accent/70 hover:bg-white ${ACTION_BUTTON_FOCUS}`}
+                                    >
+                                      <Minus size={14} />
+                                    </PendingSubmitButton>
+                                  </form>
+                                  <form action={adjustBoodschappenLineQuantity}>
+                                    <input type="hidden" name="lineId" value={line.id} />
+                                    <input type="hidden" name="direction" value="increase" />
+                                    <PendingSubmitButton
+                                      pendingText="..."
+                                      ariaLabel="Meer voor de week bestellen"
+                                      title="Meer voor de week bestellen"
+                                      className={`flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink hover:border-accent/70 hover:bg-white ${ACTION_BUTTON_FOCUS}`}
+                                    >
+                                      <Plus size={14} />
+                                    </PendingSubmitButton>
+                                  </form>
+                                  <form action={removeBoodschappenLineThisWeek}>
+                                    <input type="hidden" name="lineId" value={line.id} />
+                                    <PendingSubmitButton
+                                      pendingText="..."
+                                      ariaLabel="Uit de hele weeklijst verwijderen"
+                                      title="Uit de hele weeklijst verwijderen"
+                                      className={`flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink-faint hover:border-red-300 hover:bg-red-50 hover:text-red-600 ${ACTION_BUTTON_FOCUS}`}
+                                    >
+                                      <X size={14} />
+                                    </PendingSubmitButton>
+                                  </form>
+                                  <form action={setBoodschappenLinePackageCount} className="flex items-center gap-1 rounded-md border border-line bg-surface px-2 py-1">
+                                    <input type="hidden" name="lineId" value={line.id} />
+                                    <input
+                                      type="number"
+                                      name="packageCount"
+                                      defaultValue={orderPackageCount(line)}
+                                      min="0.01"
+                                      step="any"
+                                      aria-label="Aantal verpakkingen voor de week"
+                                      className="w-14 bg-transparent text-sm font-medium text-ink outline-none"
+                                    />
+                                    <span className="text-[11px] text-ink-faint">x per week</span>
+                                    <PendingSubmitButton
+                                      pendingText="..."
+                                      className={`rounded px-1.5 py-0.5 text-[11px] font-medium text-accent hover:bg-accent-soft ${ACTION_BUTTON_FOCUS}`}
+                                    >
+                                      OK
+                                    </PendingSubmitButton>
+                                  </form>
+                                </div>
+                              </details>
                               {line.product && line.needsReview && (
                                 <DayProductChoice line={line} product={line.product} selected />
                               )}
