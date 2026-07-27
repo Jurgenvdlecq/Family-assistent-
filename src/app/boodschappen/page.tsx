@@ -4,9 +4,10 @@ import { after } from "next/server";
 import { ChevronLeft, ShoppingCart, CheckCircle2, Utensils, ChevronRight, Search, ClipboardList } from "lucide-react";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
-import { getCurrentWeekStart } from "@/lib/week";
+import { DAY_KEY_BY_ENUM, DAY_LABELS, getCurrentWeekStart } from "@/lib/week";
 import { describeLinePackaging, ensureShoppingList } from "@/lib/shoppingList";
 import { prisma } from "@/lib/prisma";
+import { getHouseholdPortionScaleByDay } from "@/lib/household";
 import { getFixedGroceries } from "@/lib/fixedGroceries";
 import { getInventoryChecklist } from "@/lib/inventory";
 import { enrichShoppingListProductImages } from "@/lib/picnic/productEnrichment";
@@ -90,6 +91,25 @@ function ProductThumb({
   );
 }
 
+function ProductImage({
+  product,
+  label,
+}: {
+  product: { name: string; picnicImageId: string | null } | null | undefined;
+  label: string;
+}) {
+  const imageUrl = picnicImageUrl(product?.picnicImageId, "small");
+  return (
+    <div
+      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-line bg-white bg-contain bg-center bg-no-repeat text-ink-faint"
+      style={imageUrl ? { backgroundImage: `url(${imageUrl})` } : undefined}
+      aria-label={product?.name ?? label}
+    >
+      {!imageUrl && <ShoppingCart size={16} />}
+    </div>
+  );
+}
+
 type FixedProductResult = PicnicSearchResultItem & {
   externalRef: string;
   fixedQuantity: number;
@@ -118,6 +138,10 @@ function preparePicnicTransferText(lines: Array<{
       return `- ${label}${detail}`;
     })
     .join("\n");
+}
+
+function describePackage(product: { packageSize: string | null } | null | undefined) {
+  return product?.packageSize ?? "Verpakking onbekend";
 }
 
 async function searchFixedProductResults(householdId: string, token: string, query: string) {
@@ -229,7 +253,7 @@ export default async function BoodschappenPage({
     status: shoppingList.status,
   };
 
-  const [fixedGroceries, inventoryChecklist, fixedProductResults, bulkFixedPreviewLines] = await Promise.all([
+  const [fixedGroceries, inventoryChecklist, fixedProductResults, bulkFixedPreviewLines, portionScaleByDay] = await Promise.all([
     getFixedGroceries(household.id),
     getInventoryChecklist(household.id),
     fixedSearchQuery && household.picnicAuthToken
@@ -238,9 +262,18 @@ export default async function BoodschappenPage({
     bulkFixedText && household.picnicAuthToken
       ? searchBulkFixedProductResults(household.id, household.picnicAuthToken, bulkFixedText)
       : Promise.resolve([]),
+    getHouseholdPortionScaleByDay(household.id),
   ]);
   const activeIngredientIds = new Set(activeFixedLines.map((l) => l.ingredientId));
   const inactiveFixedItems = fixedGroceries.filter((f) => !activeIngredientIds.has(f.ingredientId));
+  const mealLineByIngredientId = new Map(mealLines.map((line) => [line.ingredientId, line]));
+  const mealReviewIds = new Set(mealLines.filter((line) => line.needsReview).map((line) => line.ingredientId));
+  const dayReviewCounts = new Map(
+    mealPlan.entries.map((entry) => [
+      entry.id,
+      entry.recipeVariant.recipe.ingredients.filter((ri) => mealReviewIds.has(ri.ingredientId)).length,
+    ])
+  );
 
   return (
     <div className="mx-auto flex min-h-screen w-full min-w-0 max-w-2xl flex-col pb-24">
@@ -277,7 +310,100 @@ export default async function BoodschappenPage({
       </div>
 
       <div className="min-w-0 px-6">
-        <h2 className="mb-3 text-sm font-semibold text-ink">Deze week nodig</h2>
+        <section className="mb-8 min-w-0">
+          <h2 className="mb-3 text-sm font-semibold text-ink">Per dag controleren</h2>
+          <div className="grid gap-4">
+            {mealPlan.entries.map((entry) => {
+              const dayKey = DAY_KEY_BY_ENUM[entry.dayOfWeek];
+              const scale = portionScaleByDay[dayKey]?.scale ?? 1;
+              const dayReviewCount = dayReviewCounts.get(entry.id) ?? 0;
+              return (
+                <article key={entry.id} className="rounded-xl border border-line bg-surface p-4">
+                  <div className="mb-3 flex min-w-0 items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium uppercase tracking-wide text-accent">{DAY_LABELS[dayKey]}</p>
+                      <h3 className="mt-0.5 line-clamp-2 font-semibold text-ink">
+                        {entry.recipeVariant.recipe.title}
+                      </h3>
+                      <p className="mt-1 text-xs text-ink-faint">
+                        {scale === 1 ? "Normale porties" : `${Math.round(scale * 100)}% van normale porties`}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                          dayReviewCount > 0
+                            ? "bg-tag-amber-bg text-tag-amber-ink"
+                            : "bg-tag-green-bg text-tag-green-ink"
+                        }`}
+                      >
+                        {dayReviewCount > 0 ? `${dayReviewCount} controleren` : "Compleet"}
+                      </span>
+                      <Link
+                        href={`/gerechten?day=${dayKey}`}
+                        className="text-xs font-medium text-accent underline decoration-dotted"
+                      >
+                        Ander gerecht
+                      </Link>
+                    </div>
+                  </div>
+                  <div className="grid gap-2">
+                    {entry.recipeVariant.recipe.ingredients.map((ri) => {
+                      const line = mealLineByIngredientId.get(ri.ingredientId);
+                      const scaledNeed = { quantity: ri.quantity * scale, unit: ri.unit };
+                      return (
+                        <div
+                          key={ri.id}
+                          className="rounded-lg border border-line bg-surface-2 p-3"
+                        >
+                          <div className="flex min-w-0 items-center justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <ProductImage product={line?.product} label={ri.ingredient.name} />
+                              <div className="min-w-0">
+                                <p className="line-clamp-2 text-sm font-medium text-ink">
+                                  {line?.product?.name ?? ri.ingredient.name}
+                                </p>
+                                <p className="mt-0.5 text-xs text-ink-faint">
+                                  {describePackage(line?.product)}
+                                </p>
+                                <p className="mt-0.5 text-[11px] text-ink-faint">
+                                  Voor dit gerecht: {formatQuantity(scaledNeed.quantity, scaledNeed.unit)}
+                                </p>
+                                {line?.needsReview && (
+                                  <p className="mt-1 text-xs font-medium text-tag-amber-ink">Nog te bevestigen</p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <p className="font-semibold text-ink">{line ? formatOrderQuantity(line) : "?"}</p>
+                              {line ? (
+                                <Link
+                                  href={`/controle?focus=${line.id}#line-${line.id}`}
+                                  className="mt-1 block text-xs font-medium text-accent underline decoration-dotted"
+                                >
+                                  Product
+                                </Link>
+                              ) : (
+                                <Link
+                                  href="/controle"
+                                  className="mt-1 block text-xs font-medium text-tag-amber-ink underline decoration-dotted"
+                                >
+                                  Controleren
+                                </Link>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+
+        <h2 className="mb-3 text-sm font-semibold text-ink">Totaalbestelling</h2>
         <div className="flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
           {mealLines.map((line) => (
             <div key={line.id} className="flex min-w-0 items-center justify-between gap-4 p-4">
@@ -705,24 +831,6 @@ export default async function BoodschappenPage({
               </div>
             </div>
           ))}
-          </div>
-        </details>
-
-        <details className="mt-6 rounded-xl border border-line bg-surface p-4">
-          <summary className="cursor-pointer font-medium text-ink">Per maaltijd bekijken</summary>
-          <div className="mt-4 flex flex-col gap-4">
-            {mealPlan.entries.map((entry) => (
-              <div key={entry.id} className="min-w-0">
-                <p className="mb-1 text-sm font-medium text-ink">{entry.recipeVariant.recipe.title}</p>
-                <ul className="text-sm text-ink-muted">
-                  {entry.recipeVariant.recipe.ingredients.map((ri) => (
-                    <li key={ri.id}>
-                      {ri.ingredient.name} — {formatQuantity(ri.quantity, ri.unit)}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
           </div>
         </details>
 
