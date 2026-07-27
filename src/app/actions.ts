@@ -370,3 +370,37 @@ export async function dismissSmartLearningPrompt(formData: FormData) {
   await dismissLearningPrompt(householdId, promptId);
   revalidatePath("/");
 }
+
+/**
+ * Onthoudt de huidige maaltijd van deze dag als vaste daggewoonte (WP51,
+ * DATAMODEL_AUDIT.md punt 4) — een expliciete, door de gebruiker gegeven
+ * instructie, geen automatische conclusie. ensureMealPlan gebruikt dit
+ * daarna als voorstel voor die dag, zolang het nog veilig is.
+ */
+export async function setDayRoutine(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const dayKey = String(formData.get("dayKey")) as DayKey;
+  if (!DAY_KEYS.includes(dayKey)) throw new Error("Onbekende dag.");
+  const recipeVariantId = String(formData.get("recipeVariantId"));
+
+  await prisma.dayRoutine.upsert({
+    where: { householdId_dayOfWeek: { householdId, dayOfWeek: DAY_ENUM[dayKey] } },
+    update: { recipeVariantId },
+    create: { householdId, dayOfWeek: DAY_ENUM[dayKey], recipeVariantId },
+  });
+
+  revalidatePath("/");
+}
+
+/** Vergeet de vaste daggewoonte weer — deze week blijft staan, alleen toekomstige weken kiezen weer vrij. */
+export async function removeDayRoutine(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const dayKey = String(formData.get("dayKey")) as DayKey;
+  if (!DAY_KEYS.includes(dayKey)) throw new Error("Onbekende dag.");
+
+  await prisma.dayRoutine.deleteMany({ where: { householdId, dayOfWeek: DAY_ENUM[dayKey] } });
+
+  revalidatePath("/");
+}

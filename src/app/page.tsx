@@ -39,6 +39,8 @@ import {
   regenerateCurrentWeekPlan,
   setPersonMealPreference,
   setLooseMealForDay,
+  setDayRoutine,
+  removeDayRoutine,
   submitMealFeedback,
 } from "./actions";
 
@@ -168,11 +170,16 @@ export default async function Home() {
   if (!mealPlan) {
     throw new Error("Weekplanning kon niet worden geladen.");
   }
-  const [reasons, participantsByDay, learningPrompts] = await Promise.all([
+  const [reasons, participantsByDay, learningPrompts, dayRoutines] = await Promise.all([
     getReasonsForPlan(household.id, weekStart),
     getHouseholdMealParticipantsByDay(household.id),
     getPendingLearningPrompts(household.id, household.maxSmartQuestionsPerSession),
+    prisma.dayRoutine.findMany({
+      where: { householdId: household.id },
+      include: { recipeVariant: { include: { recipe: true } } },
+    }),
   ]);
+  const routineByDay = new Map(dayRoutines.map((routine) => [routine.dayOfWeek, routine]));
   const shoppingList = await prisma.shoppingList.findUnique({
     where: { mealPlanId: mealPlan.id },
     select: { id: true, status: true },
@@ -358,6 +365,8 @@ export default async function Home() {
               .filter((ri, index, list) => list.findIndex((item) => item.ingredientId === ri.ingredientId) === index)
               .slice(0, 4) ?? [];
           const reason = entry ? reasons.get(entry.recipeVariantId) : undefined;
+          const routine = routineByDay.get(DAY_ENUM[dayKey]);
+          const routineMatchesEntry = Boolean(entry && routine && routine.recipeVariantId === entry.recipeVariantId);
           const participants = participantsByDay[dayKey];
           const isNew =
             entry &&
@@ -408,6 +417,47 @@ export default async function Home() {
                   </summary>
                   <p className="mt-2 text-xs text-ink-muted">{reason}</p>
                 </details>
+              )}
+
+              {entry && (
+                <div className="ml-14 flex flex-wrap items-center gap-2 text-xs">
+                  {routineMatchesEntry ? (
+                    <>
+                      <span className="inline-flex items-center gap-1 font-medium text-tag-green-ink">
+                        <CheckCircle2 size={13} /> Vaste gewoonte op {DAY_LABELS[dayKey].toLowerCase()}
+                      </span>
+                      <form action={removeDayRoutine}>
+                        <input type="hidden" name="householdId" value={household.id} />
+                        <input type="hidden" name="dayKey" value={dayKey} />
+                        <button
+                          type="submit"
+                          className="font-medium text-ink-faint underline decoration-dotted hover:text-ink"
+                        >
+                          Stoppen
+                        </button>
+                      </form>
+                    </>
+                  ) : (
+                    <>
+                      {routine && (
+                        <span className="text-ink-faint">
+                          Gewoonlijk: {routine.recipeVariant.recipe.title}
+                        </span>
+                      )}
+                      <form action={setDayRoutine}>
+                        <input type="hidden" name="householdId" value={household.id} />
+                        <input type="hidden" name="dayKey" value={dayKey} />
+                        <input type="hidden" name="recipeVariantId" value={entry.recipeVariantId} />
+                        <button
+                          type="submit"
+                          className="font-medium text-ink-faint underline decoration-dotted hover:text-ink"
+                        >
+                          {routine ? "Onthoud dit i.p.v." : `Onthoud voor elke ${DAY_LABELS[dayKey].toLowerCase()}`}
+                        </button>
+                      </form>
+                    </>
+                  )}
+                </div>
               )}
 
               <details className="ml-14 rounded-lg border border-line bg-surface-2 px-3 py-2">

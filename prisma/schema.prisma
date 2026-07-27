@@ -46,8 +46,28 @@ model Household {
   originatedRecipes      Recipe[]                     @relation("OriginatedRecipes")
   learnedPatterns        LearnedPattern[]
   learningPrompts        LearningPrompt[]
+  dayRoutines            DayRoutine[]
 
   @@map("households")
+}
+
+// Een expliciet onthouden daggewoonte (WP51, DATAMODEL_AUDIT.md punt 4:
+// "eerst expliciet door de gebruiker, later via leervragen bij herhaling").
+// Eén routine per dag per huishouden — een nieuwe keuze onthouden vervangt
+// de vorige, net als bij vaste boodschappen. ensureMealPlan gebruikt dit als
+// voorstel voor die dag, maar nooit ten koste van een harde beperking.
+model DayRoutine {
+  id              String    @id @default(uuid())
+  householdId     String    @map("household_id")
+  dayOfWeek       DayOfWeek @map("day_of_week")
+  recipeVariantId String    @map("recipe_variant_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  household     Household     @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  recipeVariant RecipeVariant @relation(fields: [recipeVariantId], references: [id])
+
+  @@unique([householdId, dayOfWeek])
+  @@map("day_routines")
 }
 
 model HouseholdSession {
@@ -260,6 +280,7 @@ model RecipeVariant {
   recipe          Recipe           @relation(fields: [recipeId], references: [id], onDelete: Cascade)
   mealSuggestions MealSuggestion[]
   mealPlanEntries MealPlanEntry[]
+  dayRoutines     DayRoutine[]
 
   @@unique([recipeId, variantType])
   @@map("recipe_variants")
