@@ -202,13 +202,15 @@ export async function restoreFixedLineThisWeek(formData: FormData) {
 export async function updateFixedLineQuantity(formData: FormData) {
   const lineId = String(formData.get("lineId"));
   const quantity = parseQuantity(formData.get("quantity"));
+  const unit = formData.get("unit") ? parseUnit(formData.get("unit")) : null;
   const rememberAsDefault = formData.get("rememberAsDefault") === "true";
 
   const { line, householdId } = await loadFixedLine(lineId);
-  await prisma.shoppingListLine.update({ where: { id: line.id }, data: { quantity } });
+  const targetUnit = unit ?? line.unit;
+  await prisma.shoppingListLine.update({ where: { id: line.id }, data: { quantity, unit: targetUnit } });
 
   if (rememberAsDefault) {
-    await upsertFixedGrocery(householdId, line.ingredientId, quantity, line.unit);
+    await upsertFixedGrocery(householdId, line.ingredientId, quantity, targetUnit);
   }
   revalidatePath("/boodschappen");
 }

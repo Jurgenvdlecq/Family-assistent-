@@ -132,8 +132,11 @@ async function persistRefreshedToken(client: PicnicClient, householdId: string, 
 function getPackageCountForLine(line: {
   quantity: number;
   unit: "GRAM" | "ML" | "PIECE";
+  source: string;
   product: { packageQuantity: number | null } | null;
 }) {
+  if (line.source === "FIXED" && line.unit === "PIECE") return Math.max(1, Math.ceil(line.quantity));
+
   const packaging = describeLinePackaging(line, line.product);
   if (packaging.status === "OK") return packaging.packagesToBuy;
   if (line.unit === "PIECE") return Math.max(1, Math.ceil(line.quantity));

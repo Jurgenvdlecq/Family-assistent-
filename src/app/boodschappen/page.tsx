@@ -5,7 +5,7 @@ import { ChevronLeft, ShoppingCart, CheckCircle2, Utensils, ChevronRight, Search
 import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { getCurrentWeekStart } from "@/lib/week";
-import { ensureShoppingList } from "@/lib/shoppingList";
+import { describeLinePackaging, ensureShoppingList } from "@/lib/shoppingList";
 import { prisma } from "@/lib/prisma";
 import { getFixedGroceries } from "@/lib/fixedGroceries";
 import { getInventoryChecklist } from "@/lib/inventory";
@@ -13,7 +13,7 @@ import { enrichShoppingListProductImages } from "@/lib/picnic/productEnrichment"
 import { picnicImageUrl, picnicPriceToEuros, picnicProductRef } from "@/lib/picnic/products";
 import { PicnicClient } from "@/lib/picnic/client";
 import type { PicnicSearchResultItem } from "@/lib/picnic/searchResults";
-import { inferFixedGroceryQuantity, parseBulkFixedGroceryInput } from "@/lib/fixedGroceryProductChoice";
+import { inferFixedProductOrderQuantity, parseBulkFixedGroceryInput } from "@/lib/fixedGroceryProductChoice";
 import NavBar from "@/components/NavBar";
 import PicnicTransfer from "./PicnicTransfer";
 import AddToPicnicCart from "./AddToPicnicCart";
@@ -43,6 +43,34 @@ function formatQuantity(quantity: number, unit: string) {
   if (unit === "GRAM") return `${quantity} g`;
   if (unit === "ML") return `${quantity} ml`;
   return `${quantity}x`;
+}
+
+function formatOrderQuantity(line: {
+  quantity: number;
+  unit: string;
+  source: string;
+  product: { packageQuantity: number | null; packageSize: string | null } | null;
+}) {
+  if (line.source === "FIXED" && line.unit === "PIECE") return `${line.quantity}x`;
+
+  const packaging = describeLinePackaging(
+    { quantity: line.quantity, unit: line.unit as "GRAM" | "ML" | "PIECE" },
+    line.product
+  );
+  if (packaging.status === "OK") return `${packaging.packagesToBuy}x`;
+  return formatQuantity(line.quantity, line.unit);
+}
+
+function fixedLineEditQuantity(line: {
+  quantity: number;
+  unit: string;
+  product: { packageQuantity: number | null } | null;
+}) {
+  if (line.unit === "PIECE") return { quantity: line.quantity, unit: "PIECE" };
+  if (line.product?.packageQuantity && line.product.packageQuantity > 0) {
+    return { quantity: Math.ceil(line.quantity / line.product.packageQuantity), unit: "PIECE" };
+  }
+  return { quantity: line.quantity, unit: line.unit };
 }
 
 function ProductThumb({
@@ -107,7 +135,7 @@ async function searchFixedProductResults(householdId: string, token: string, que
     .map((item): FixedProductResult | null => {
       const externalRef = picnicProductRef(item);
       if (!externalRef || !item.name) return null;
-      const inferred = inferFixedGroceryQuantity(item.unit_quantity ?? null);
+      const inferred = inferFixedProductOrderQuantity();
       return { ...item, externalRef, fixedQuantity: inferred.quantity, fixedUnit: inferred.unit };
     })
     .filter((item) => item !== null)
@@ -129,13 +157,13 @@ async function searchBulkFixedProductResults(householdId: string, token: string,
           const externalRef = picnicProductRef(item);
           if (!externalRef || !item.name || seenRefs.has(externalRef)) return null;
           seenRefs.add(externalRef);
-          const inferred = inferFixedGroceryQuantity(item.unit_quantity ?? null);
+          const inferred = inferFixedProductOrderQuantity(line.multiplier);
           return {
             ...item,
             externalRef,
             fixedQuantity: inferred.quantity,
             fixedUnit: inferred.unit,
-            suggestedQuantity: inferred.quantity * line.multiplier,
+            suggestedQuantity: inferred.quantity,
           };
         })
         .filter((item) => item !== null)
@@ -269,7 +297,7 @@ export default async function BoodschappenPage({
                 </div>
               </div>
               <span className="shrink-0 text-sm text-ink-muted">
-                {formatQuantity(line.quantity, line.unit)}
+                {formatOrderQuantity(line)}
               </span>
             </div>
           ))}
@@ -290,14 +318,21 @@ export default async function BoodschappenPage({
               Nog geen vaste boodschappen ingesteld — voeg hieronder je eerste toe.
             </p>
           )}
-          {activeFixedLines.map((line) => (
-            <div
-              key={line.id}
-              id={`fixed-line-${line.id}`}
-              className="flex min-w-0 scroll-mt-6 flex-col gap-2 p-4 transition-colors target:bg-accent/10"
-            >
+          {activeFixedLines.map((line) => {
+            const editQuantity = fixedLineEditQuantity(line);
+            return (
+              <div
+                key={line.id}
+                id={`fixed-line-${line.id}`}
+                className="flex min-w-0 scroll-mt-6 flex-col gap-2 p-4 transition-colors target:bg-accent/10"
+              >
               <div className="flex min-w-0 items-center justify-between gap-4">
-                <p className="min-w-0 truncate text-ink">{line.product?.name ?? line.ingredient.name}</p>
+                <div className="min-w-0">
+                  <p className="min-w-0 truncate text-ink">{line.product?.name ?? line.ingredient.name}</p>
+                  {line.product?.packageSize && (
+                    <p className="mt-0.5 text-xs text-ink-faint">{line.product.packageSize}</p>
+                  )}
+                </div>
                 <div className="flex shrink-0 items-center gap-3">
                   <form action="/boodschappen#add-fixed-grocery">
                     <input type="hidden" name="fixedQ" value={line.ingredient.name} />
@@ -325,12 +360,13 @@ export default async function BoodschappenPage({
                 <input
                   type="number"
                   name="quantity"
-                  defaultValue={line.quantity}
+                  defaultValue={editQuantity.quantity}
                   step="any"
                   min="0.01"
                   className="w-20 rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink"
                 />
-                <span className="text-xs text-ink-faint">{UNIT_LABELS[line.unit] ?? line.unit}</span>
+                <input type="hidden" name="unit" value={editQuantity.unit} />
+                <span className="text-xs text-ink-faint">{UNIT_LABELS[editQuantity.unit] ?? editQuantity.unit}</span>
                 <label className="flex items-center gap-1 text-xs text-ink-muted">
                   <input type="checkbox" name="rememberAsDefault" value="true" />
                   onthouden
@@ -342,8 +378,9 @@ export default async function BoodschappenPage({
                   Bijwerken
                 </button>
               </form>
-            </div>
-          ))}
+              </div>
+            );
+          })}
           {inactiveFixedItems.map((item) => (
             <div key={item.id} className="flex min-w-0 items-center justify-between gap-3 p-4">
               <p className="min-w-0 truncate text-ink-faint line-through">{item.ingredient.name}</p>

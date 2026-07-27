@@ -23,6 +23,13 @@ export function inferFixedGroceryQuantity(packageSize: string | null | undefined
   return { quantity: 1, unit: Unit.PIECE };
 }
 
+export function inferFixedProductOrderQuantity(multiplier = 1) {
+  return {
+    quantity: multiplier,
+    unit: Unit.PIECE,
+  };
+}
+
 export interface ParsedBulkFixedGroceryLine {
   raw: string;
   searchTerm: string;
