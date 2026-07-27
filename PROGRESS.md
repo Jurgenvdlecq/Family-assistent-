@@ -3,7 +3,8 @@
 Dit bestand is bedoeld voor een AI-coding-agent (Claude Code, Codex, of wie
 dan ook) die dit project overneemt in een nieuwe sessie zonder chatgeschiedenis.
 Lees eerst `AGENTS.md` (de oorspronkelijke productspecificatie),
-`PRODUCT_VISION.md` (het actuele productkompas) en dan dit bestand voor de
+`PRODUCT_VISION.md` (het actuele productkompas), `DATAMODEL_AUDIT.md`
+(toetsing van schema/architectuur tegen de visie) en dan dit bestand voor de
 actuele status en de manier van werken die tot nu toe is gevolgd.
 
 ## Manier van werken (belangrijk — hou dit aan)
@@ -56,13 +57,14 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 | WP16 | Ingrediëntenbeheer en receptingrediënten bewerken | `/recepten` heeft nu beheer voor ingrediënten: aanmaken, hernoemen, categorie/dieettags/voorraadcontrole aanpassen. Per bestaand recept kunnen ingrediëntregels en hoeveelheden worden vervangen; dubbele regels worden samengevoegd en de huidige boodschappenlijst wordt ongeldig gemaakt zodat nieuwe receptdata doorwerkt. Geen nieuwe migratie nodig. |
 | WP17 | Productkeuzes per ingrediënt beheren | In `/recepten` kan per ingrediënt nu ook de productmatching worden beheerd: bekende producten bekijken, handmatig productkandidaten toevoegen, een standaardproduct vastleggen, producten uitsluiten of weer toestaan. Wijzigingen maken de huidige boodschappenlijst ongeldig zodat de volgende lijst de nieuwe standaardkeuze gebruikt. Geen nieuwe migratie nodig. |
 | WP18 | Productvisie vastleggen | `PRODUCT_VISION.md` legt de aangescherpte richting vast: de app leert wat een huishouden eet en regelt boodschappen, met algemene slimme basis, huishouden-personalisatie, waarom-signalen, korte onboarding, expliciete bevestiging voor Picnic en beheer als secundaire route. Geen code- of migratiewijziging. |
+| WP19 | Datamodel toetsen aan productvisie | `DATAMODEL_AUDIT.md` legt vast wat al goed staat en wat ontbreekt voor de zelflerende multi-household assistent: receptscope/eigenaarschap, typed tags, waarom-signalen, afgeleide patronen, rijkere onboarding, entry-context en provider-neutraliteit. Geen code- of migratiewijziging. |
 
 ## Nog te doen (roadmap, nog niet gestart)
 
 - **Volgende WP nog kiezen.** Logische vervolgstappen zijn bijvoorbeeld
-  het datamodel toetsen aan `PRODUCT_VISION.md`, de hoofdflow terugbrengen
-  naar een assistent-ervaring, onboarding ontwerpen, waarom-signalen bouwen
-  of slimme wens-invoer toevoegen.
+  receptscope/eigenaarschap toevoegen, typed tags introduceren, waarom-signalen
+  bouwen, onboarding ontwerpen of de hoofdflow terugbrengen naar een
+  assistent-ervaring. Zie `DATAMODEL_AUDIT.md` voor de aanbevolen volgorde.
 
 ## Niet-voor-de-hand-liggende operationele kennis
 
