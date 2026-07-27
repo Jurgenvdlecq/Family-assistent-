@@ -14,7 +14,6 @@ import { picnicImageUrl, picnicPriceToEuros, picnicProductRef } from "@/lib/picn
 import { PicnicClient } from "@/lib/picnic/client";
 import type { PicnicSearchResultItem } from "@/lib/picnic/searchResults";
 import { inferFixedGroceryQuantity } from "@/lib/fixedGroceryProductChoice";
-import { preparePicnicTransfer } from "@/lib/picnicAdapter";
 import NavBar from "@/components/NavBar";
 import PicnicTransfer from "./PicnicTransfer";
 import AddToPicnicCart from "./AddToPicnicCart";
@@ -68,6 +67,19 @@ type FixedProductResult = PicnicSearchResultItem & {
   fixedUnit: "GRAM" | "ML" | "PIECE";
 };
 
+function preparePicnicTransferText(lines: Array<{
+  ingredient: { name: string };
+  product: { name: string; packageSize: string | null } | null;
+}>) {
+  return lines
+    .map((line) => {
+      const label = line.product?.name ?? line.ingredient.name;
+      const detail = line.product?.packageSize ? ` (${line.product.packageSize})` : "";
+      return `- ${label}${detail}`;
+    })
+    .join("\n");
+}
+
 async function searchFixedProductResults(householdId: string, token: string, query: string) {
   const client = new PicnicClient(token);
   const results = await client.search(query);
@@ -106,12 +118,13 @@ function FixedProductImage({ item }: { item: { image_id?: string; name?: string 
 export default async function BoodschappenPage({
   searchParams,
 }: {
-  searchParams: Promise<{ fixedQ?: string; fixedLine?: string }>;
+  searchParams: Promise<{ fixedQ?: string; fixedLine?: string; fixedReplaceLineId?: string }>;
 }) {
   const params = await searchParams;
   const household = await requireCurrentHousehold();
   const fixedSearchQuery = String(params.fixedQ ?? "").trim();
   const focusedFixedLineId = String(params.fixedLine ?? "").trim();
+  const fixedReplaceLineId = String(params.fixedReplaceLineId ?? "").trim();
 
   const weekStart = getCurrentWeekStart();
   const mealPlan = await getMealPlanForWeek(household.id, weekStart);
@@ -132,8 +145,13 @@ export default async function BoodschappenPage({
   );
   const mealLines = sortedLines.filter((l) => l.source === "MEAL" || l.source === "INVENTORY");
   const activeFixedLines = sortedLines.filter((l) => l.source === "FIXED");
+  const fixedReplacementLine = activeFixedLines.find((line) => line.id === fixedReplaceLineId);
   const reviewCount = sortedLines.filter((l) => l.needsReview).length;
-  const picnicTransfer = await preparePicnicTransfer(shoppingList.id);
+  const picnicTransfer = {
+    text: preparePicnicTransferText(sortedLines),
+    itemCount: sortedLines.length,
+    status: shoppingList.status,
+  };
 
   const [fixedGroceries, inventoryChecklist, fixedProductResults] = await Promise.all([
     getFixedGroceries(household.id),
@@ -209,7 +227,7 @@ export default async function BoodschappenPage({
         <details
           id="fixed-groceries"
           className="mt-8 scroll-mt-6 rounded-xl border border-line bg-surface p-4"
-          open={focusedFixedLineId ? true : undefined}
+          open={focusedFixedLineId || fixedReplaceLineId ? true : undefined}
         >
           <summary className="cursor-pointer text-sm font-semibold text-ink">
             {activeFixedLines.length + inactiveFixedItems.length} vaste boodschap
@@ -229,15 +247,27 @@ export default async function BoodschappenPage({
             >
               <div className="flex min-w-0 items-center justify-between gap-4">
                 <p className="min-w-0 truncate text-ink">{line.product?.name ?? line.ingredient.name}</p>
-                <form action={removeFixedLineThisWeek}>
-                  <input type="hidden" name="lineId" value={line.id} />
-                  <button
-                    type="submit"
-                    className="shrink-0 text-xs font-medium text-ink-faint hover:text-ink"
-                  >
-                    Deze week niet nodig
-                  </button>
-                </form>
+                <div className="flex shrink-0 items-center gap-3">
+                  <form action="/boodschappen#add-fixed-grocery">
+                    <input type="hidden" name="fixedQ" value={line.ingredient.name} />
+                    <input type="hidden" name="fixedReplaceLineId" value={line.id} />
+                    <button
+                      type="submit"
+                      className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink transition-colors hover:border-accent/60 hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:scale-[0.98]"
+                    >
+                      Wijzigen
+                    </button>
+                  </form>
+                  <form action={removeFixedLineThisWeek}>
+                    <input type="hidden" name="lineId" value={line.id} />
+                    <button
+                      type="submit"
+                      className="shrink-0 text-xs font-medium text-ink-faint transition-colors hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:scale-[0.98]"
+                    >
+                      Deze week niet nodig
+                    </button>
+                  </form>
+                </div>
               </div>
               <form action={updateFixedLineQuantity} className="flex flex-wrap items-center gap-2">
                 <input type="hidden" name="lineId" value={line.id} />
@@ -290,12 +320,15 @@ export default async function BoodschappenPage({
         <details
           id="add-fixed-grocery"
           className="mt-4 scroll-mt-6 rounded-xl border border-line bg-surface p-4"
-          open={fixedSearchQuery ? true : undefined}
+          open={fixedSearchQuery || fixedReplaceLineId ? true : undefined}
         >
           <summary className="cursor-pointer text-sm font-medium text-ink">
-            Nieuwe vaste boodschap toevoegen
+            {fixedReplacementLine ? "Vaste boodschap wijzigen" : "Nieuwe vaste boodschap toevoegen"}
           </summary>
           <form action="/boodschappen#add-fixed-grocery" className="mt-3 flex min-w-0 gap-2">
+            {fixedReplaceLineId && (
+              <input type="hidden" name="fixedReplaceLineId" value={fixedReplaceLineId} />
+            )}
             <input
               name="fixedQ"
               defaultValue={fixedSearchQuery}
@@ -311,6 +344,16 @@ export default async function BoodschappenPage({
               <Search size={16} />
             </button>
           </form>
+
+          {fixedReplacementLine && (
+            <p className="mt-3 rounded-lg bg-surface-2 px-3 py-2 text-sm text-ink-muted">
+              Je wijzigt nu:{" "}
+              <span className="font-medium text-ink">
+                {fixedReplacementLine.product?.name ?? fixedReplacementLine.ingredient.name}
+              </span>
+              . Kies hieronder het product dat voortaan standaard gebruikt moet worden.
+            </p>
+          )}
 
           {!household.picnicAuthToken && (
             <p className="mt-3 text-sm text-ink-muted">
@@ -330,6 +373,9 @@ export default async function BoodschappenPage({
                 <form key={item.externalRef} action={addFixedPicnicProduct} className="rounded-lg border border-line p-3">
                   <input type="hidden" name="householdId" value={household.id} />
                   <input type="hidden" name="shoppingListId" value={shoppingList.id} />
+                  {fixedReplaceLineId && (
+                    <input type="hidden" name="replaceLineId" value={fixedReplaceLineId} />
+                  )}
                   <input type="hidden" name="searchTerm" value={fixedSearchQuery} />
                   <input type="hidden" name="externalRef" value={item.externalRef} />
                   <input type="hidden" name="productName" value={item.name ?? ""} />
@@ -373,7 +419,7 @@ export default async function BoodschappenPage({
                           type="submit"
                           className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
                         >
-                          Kies als vaste boodschap
+                          {fixedReplacementLine ? "Vervang vaste boodschap" : "Kies als vaste boodschap"}
                         </button>
                       </div>
                     </div>
