@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { matchProduct } from "./matchProduct";
+import { getHouseholdProductChoicePreference } from "./productChoicePreference";
 import { getRejectedProductIds, getTrustedPreferences, toMatchCandidate } from "./repository";
 import type { ProductMatchResult } from "./types";
 
@@ -14,15 +15,17 @@ export async function matchProductForIngredient(
   householdId: string,
   ingredientId: string
 ): Promise<ProductMatchResult> {
-  const [products, trustedMap, rejectedMap] = await Promise.all([
+  const [products, trustedMap, rejectedMap, productChoicePreference] = await Promise.all([
     prisma.product.findMany({ where: { ingredientId } }),
     getTrustedPreferences(householdId, [ingredientId]),
     getRejectedProductIds(householdId, [ingredientId]),
+    getHouseholdProductChoicePreference(householdId),
   ]);
 
   return matchProduct({
     candidates: products.map(toMatchCandidate),
     trusted: trustedMap.get(ingredientId) ?? null,
     rejectedProductIds: rejectedMap.get(ingredientId) ?? new Set(),
+    productChoicePreference,
   });
 }
