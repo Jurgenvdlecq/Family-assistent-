@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { assertCurrentHousehold } from "@/lib/auth";
+import { parsePackageQuantity } from "@/lib/quantity/parsePackageSize";
+import { recordProductChosen, recordProductRejected } from "@/domain/product-matching/repository";
 
 const RECIPE_CATEGORIES = [
   "PASTA",
@@ -253,6 +255,107 @@ export async function updateIngredient(formData: FormData) {
     where: { id: ingredientId },
     data: { name, category, restrictionTags, likelyInStock },
   });
+
+  await invalidateCurrentShoppingList(householdId);
+  revalidateRecipeManagementPaths();
+}
+
+export async function createIngredientProduct(formData: FormData) {
+  const householdId = await requireRecipeEditor(formData);
+  const ingredientId = String(formData.get("ingredientId"));
+  const name = String(formData.get("name") ?? "").trim();
+  const brand = String(formData.get("brand") ?? "").trim() || null;
+  const packageSize = String(formData.get("packageSize") ?? "").trim() || null;
+  const externalRef = String(formData.get("externalRef") ?? "").trim() || null;
+  const priceValue = String(formData.get("price") ?? "").trim();
+  const setAsDefault = formData.get("setAsDefault") === "on";
+
+  if (!name) throw new Error("Productnaam is verplicht.");
+
+  const ingredient = await prisma.ingredient.findUniqueOrThrow({
+    where: { id: ingredientId },
+    select: { unit: true },
+  });
+  const price = priceValue ? Number(priceValue.replace(",", ".")) : null;
+  if (price !== null && (!Number.isFinite(price) || price < 0)) {
+    throw new Error("Vul een geldige prijs in.");
+  }
+
+  const product = await prisma.product.create({
+    data: {
+      ingredientId,
+      name,
+      brand,
+      packageSize,
+      externalRef,
+      price,
+      packageQuantity: packageSize ? parsePackageQuantity(packageSize, ingredient.unit) : null,
+      lastSeenAvailable: new Date(),
+    },
+  });
+
+  if (setAsDefault) {
+    await recordProductChosen(householdId, ingredientId, product.id, "MANUAL");
+  }
+
+  await invalidateCurrentShoppingList(householdId);
+  revalidateRecipeManagementPaths();
+}
+
+export async function setDefaultProductForIngredient(formData: FormData) {
+  const householdId = await requireRecipeEditor(formData);
+  const ingredientId = String(formData.get("ingredientId"));
+  const productId = String(formData.get("productId"));
+
+  const product = await prisma.product.findUniqueOrThrow({
+    where: { id: productId },
+    select: { ingredientId: true },
+  });
+  if (product.ingredientId !== ingredientId) {
+    throw new Error("Dit product hoort niet bij dit ingrediënt.");
+  }
+
+  await prisma.rejectedProductMatch.deleteMany({ where: { householdId, ingredientId, productId } });
+  await recordProductChosen(householdId, ingredientId, productId, "MANUAL");
+
+  await invalidateCurrentShoppingList(householdId);
+  revalidateRecipeManagementPaths();
+}
+
+export async function rejectProductForIngredient(formData: FormData) {
+  const householdId = await requireRecipeEditor(formData);
+  const ingredientId = String(formData.get("ingredientId"));
+  const productId = String(formData.get("productId"));
+
+  const product = await prisma.product.findUniqueOrThrow({
+    where: { id: productId },
+    select: { ingredientId: true },
+  });
+  if (product.ingredientId !== ingredientId) {
+    throw new Error("Dit product hoort niet bij dit ingrediënt.");
+  }
+
+  await recordProductRejected(householdId, ingredientId, productId, "ingredient_management");
+  await prisma.householdProductPreference.deleteMany({ where: { householdId, ingredientId, productId } });
+
+  await invalidateCurrentShoppingList(householdId);
+  revalidateRecipeManagementPaths();
+}
+
+export async function allowProductForIngredient(formData: FormData) {
+  const householdId = await requireRecipeEditor(formData);
+  const ingredientId = String(formData.get("ingredientId"));
+  const productId = String(formData.get("productId"));
+
+  const product = await prisma.product.findUniqueOrThrow({
+    where: { id: productId },
+    select: { ingredientId: true },
+  });
+  if (product.ingredientId !== ingredientId) {
+    throw new Error("Dit product hoort niet bij dit ingrediënt.");
+  }
+
+  await prisma.rejectedProductMatch.deleteMany({ where: { householdId, ingredientId, productId } });
 
   await invalidateCurrentShoppingList(householdId);
   revalidateRecipeManagementPaths();

@@ -53,12 +53,13 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 | WP14 | Weekplanning opnieuw genereren | Op `/` staat een uitklapbare actie "Week opnieuw plannen". Deze verwijdert alleen de huidige weekplanning, bijbehorende boodschappenlijst en suggesties van het huidige huishouden, en bouwt de week opnieuw op met actuele voorkeuren. Geen nieuwe migratie nodig. |
 | WP15 | Recepten/varianten beheren | Nieuwe pagina `/recepten` met navigatietab. Daar kan een recept met ingrediënten en eerste variant worden toegevoegd, kunnen titel/bron/categorie/status/eigenschappen/bereiding worden gecorrigeerd en kunnen varianten met context-signalen worden toegevoegd of bijgewerkt. Server actions valideren het huidige huishouden. Geen nieuwe migratie nodig. |
 | WP16 | Ingrediëntenbeheer en receptingrediënten bewerken | `/recepten` heeft nu beheer voor ingrediënten: aanmaken, hernoemen, categorie/dieettags/voorraadcontrole aanpassen. Per bestaand recept kunnen ingrediëntregels en hoeveelheden worden vervangen; dubbele regels worden samengevoegd en de huidige boodschappenlijst wordt ongeldig gemaakt zodat nieuwe receptdata doorwerkt. Geen nieuwe migratie nodig. |
+| WP17 | Productkeuzes per ingrediënt beheren | In `/recepten` kan per ingrediënt nu ook de productmatching worden beheerd: bekende producten bekijken, handmatig productkandidaten toevoegen, een standaardproduct vastleggen, producten uitsluiten of weer toestaan. Wijzigingen maken de huidige boodschappenlijst ongeldig zodat de volgende lijst de nieuwe standaardkeuze gebruikt. Geen nieuwe migratie nodig. |
 
 ## Nog te doen (roadmap, nog niet gestart)
 
 - **Volgende WP nog kiezen.** Logische vervolgstappen zijn bijvoorbeeld
-  product/Picnic-matching verder specificeren voor ingrediënten, standaardkeuzes
-  per receptcategorie verfijnen, of de controle-/boodschappenflow verder
+  UX-polish op het beheercluster, echte Picnic-zoekresultaten direct kunnen
+  importeren als productkandidaten, of de controle-/boodschappenflow verder
   aanscherpen.
 
 ## Niet-voor-de-hand-liggende operationele kennis
