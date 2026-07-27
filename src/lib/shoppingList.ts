@@ -310,6 +310,31 @@ export async function getShoppingListCandidates(householdId: string, ingredientI
   return products.filter((p) => !rejected.has(p.id));
 }
 
+export async function getShoppingListCandidatesByIngredient(
+  householdId: string,
+  ingredientIds: string[]
+) {
+  const uniqueIngredientIds = Array.from(new Set(ingredientIds));
+  if (uniqueIngredientIds.length === 0) return new Map<string, Awaited<ReturnType<typeof getShoppingListCandidates>>>();
+
+  const [products, rejectedMap] = await Promise.all([
+    prisma.product.findMany({ where: { ingredientId: { in: uniqueIngredientIds } } }),
+    getRejectedProductIds(householdId, uniqueIngredientIds),
+  ]);
+
+  const candidatesByIngredient = new Map<string, typeof products>();
+  for (const product of products) {
+    if (!product.ingredientId) continue;
+    const rejected = rejectedMap.get(product.ingredientId) ?? new Set<string>();
+    if (rejected.has(product.id)) continue;
+    const list = candidatesByIngredient.get(product.ingredientId) ?? [];
+    list.push(product);
+    candidatesByIngredient.set(product.ingredientId, list);
+  }
+
+  return candidatesByIngredient;
+}
+
 /**
  * Vertaalt een boodschappenregel naar de verpakkingsberekening uit Fase 3
  * (aantal verpakkingen, totaal gekocht, verwacht overschot). `line.quantity`

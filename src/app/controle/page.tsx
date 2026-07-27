@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { after } from "next/server";
 import {
   ChevronLeft,
   ClipboardCheck,
@@ -11,7 +12,7 @@ import {
 import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { getCurrentWeekStart } from "@/lib/week";
-import { ensureShoppingList, getShoppingListCandidates, describeLinePackaging } from "@/lib/shoppingList";
+import { ensureShoppingList, getShoppingListCandidatesByIngredient, describeLinePackaging } from "@/lib/shoppingList";
 import { prisma } from "@/lib/prisma";
 import { enrichShoppingListProductImages } from "@/lib/picnic/productEnrichment";
 import NavBar from "@/components/NavBar";
@@ -335,7 +336,7 @@ export default async function ControlePage({
   if (!mealPlan) redirect("/");
 
   const initialShoppingList = await ensureShoppingList(mealPlan.id, household.id);
-  await enrichShoppingListProductImages(household.id, initialShoppingList.id);
+  after(() => enrichShoppingListProductImages(household.id, initialShoppingList.id));
   const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
     where: { id: initialShoppingList.id },
     include: {
@@ -351,10 +352,14 @@ export default async function ControlePage({
   const sortedTrustedLines = [...trustedLines].sort((a, b) => a.ingredient.name.localeCompare(b.ingredient.name));
   const focusedTrustedLine = sortedTrustedLines.some((line) => line.id === params.focus);
 
-  const candidatesByLine = new Map<string, Awaited<ReturnType<typeof getShoppingListCandidates>>>();
-  for (const line of [...sortedReviewLines, ...sortedTrustedLines]) {
-    candidatesByLine.set(line.id, await getShoppingListCandidates(household.id, line.ingredientId));
-  }
+  const allVisibleLines = [...sortedReviewLines, ...sortedTrustedLines];
+  const candidatesByIngredient = await getShoppingListCandidatesByIngredient(
+    household.id,
+    allVisibleLines.map((line) => line.ingredientId)
+  );
+  const candidatesByLine = new Map(
+    allVisibleLines.map((line) => [line.id, candidatesByIngredient.get(line.ingredientId) ?? []])
+  );
 
   // Fase 6: "niet gevonden" is een apart geval van "aandacht nodig" — geen
   // enkel bekend product om uit te kiezen, dus andere acties dan een
