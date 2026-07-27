@@ -5,6 +5,7 @@ import { tagsForMealCandidate } from "@/domain/meal-tags/mealTags";
 type RecipeStatus = "FOUND" | "ADAPTED" | "PROVEN" | "SAFE_CHOICE";
 type VariantType = "FAST" | "FRESH" | "REHEATABLE" | "KID_FRIENDLY";
 type Stance = "LIKED" | "SOMETIMES" | "RATHER_NOT" | "NEVER" | "UNKNOWN";
+type PlanningStyle = "SAFE" | "BALANCED" | "ADVENTUROUS";
 
 export interface MealPlanCandidate {
   id: string;
@@ -41,6 +42,7 @@ export interface MealPlanScoringInput {
   personalVariantPreferences?: Map<string, PersonalRecipeVariantPreference[]>;
   personalCategoryPreferences?: Map<string, PersonalSubjectPreference[]>;
   personalIngredientPreferences?: Map<string, PersonalSubjectPreference[]>;
+  planningStyle?: PlanningStyle;
   lastPlannedByRecipeId: Map<string, Date>;
   usedRecipeIds: Set<string>;
   targetDate: Date;
@@ -142,6 +144,7 @@ function scoreCandidate(input: MealPlanScoringInput, candidate: MealPlanCandidat
   const variantPreference = input.variantPreferences.get(candidate.id);
   const personalPreferences = input.personalVariantPreferences?.get(candidate.id) ?? [];
   const lastPlannedAt = input.lastPlannedByRecipeId.get(candidate.recipeId);
+  const planningStyle = input.planningStyle ?? "BALANCED";
 
   if (input.busy) {
     if (busyFit) {
@@ -225,6 +228,22 @@ function scoreCandidate(input: MealPlanScoringInput, candidate: MealPlanCandidat
   } else if (candidate.recipeStatus === "PROVEN") {
     signal.score += 10;
     reasons.push(`heeft zich eerder bewezen`);
+  }
+
+  if (planningStyle === "SAFE") {
+    if (candidate.recipeStatus === "SAFE_CHOICE" || candidate.recipeStatus === "PROVEN") {
+      signal.score += 14;
+      reasons.push("past bij veilig beginnen");
+    } else {
+      signal.score -= 8;
+      signal.hasDoubt = true;
+    }
+  } else if (planningStyle === "ADVENTUROUS") {
+    if (candidate.recipeStatus === "FOUND") {
+      signal.score += 12;
+      reasons.push("past bij meer nieuwe suggesties proberen");
+    }
+    if (lastPlannedAt) signal.score -= 6;
   }
 
   if (candidateTags.has("KID_FRIENDLY")) {

@@ -12,6 +12,8 @@ export type OnboardingPersonInput = {
 
 export type OnboardingPayload = {
   householdName: string;
+  onboardingMode: "QUICK" | "DETAILED";
+  planningStyle: "SAFE" | "BALANCED" | "ADVENTUROUS";
   persons: OnboardingPersonInput[];
   weeklyRhythm: Record<string, "busy" | "quiet">;
   preferredCategories: string[];
@@ -39,6 +41,9 @@ export async function completeOnboarding(payload: OnboardingPayload) {
       name: householdName,
       weeklyRhythm: payload.weeklyRhythm,
       onboardingStatus: "COMPLETED",
+      onboardingMode: payload.onboardingMode,
+      planningStyle: payload.planningStyle,
+      maxSmartQuestionsPerSession: 2,
       persons: {
         create: persons.map((p) => ({
           name: p.name,

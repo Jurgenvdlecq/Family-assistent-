@@ -21,6 +21,9 @@ model Household {
   weeklyRhythm         Json             @default("{}") @map("weekly_rhythm")
   deliveryPreference   Json             @default("{}") @map("delivery_preference")
   onboardingStatus     OnboardingStatus @default(NOT_STARTED) @map("onboarding_status")
+  onboardingMode       OnboardingMode   @default(QUICK) @map("onboarding_mode")
+  planningStyle        PlanningStyle    @default(BALANCED) @map("planning_style")
+  maxSmartQuestionsPerSession Int       @default(2) @map("max_smart_questions_per_session")
   accessCodeHash       String?          @map("access_code_hash")
   // Picnic-integratie (fase 4, verdiept): sessie-token van de niet-officiële
   // Picnic-API. Nooit een wachtwoord — dat komt nooit verder dan het
@@ -67,6 +70,21 @@ enum OnboardingStatus {
   COMPLETED
 
   @@map("onboarding_status")
+}
+
+enum OnboardingMode {
+  QUICK
+  DETAILED
+
+  @@map("onboarding_mode")
+}
+
+enum PlanningStyle {
+  SAFE
+  BALANCED
+  ADVENTUROUS
+
+  @@map("planning_style")
 }
 
 // Vaste, terugkerende boodschappen van een huishouden (melk, koffie, kaas…)

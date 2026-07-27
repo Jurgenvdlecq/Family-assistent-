@@ -260,6 +260,7 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
       personalVariantPreferences: personalPreferencesForPresentPersons.byVariant,
       personalCategoryPreferences: personalPreferencesForPresentPersons.byCategory,
       personalIngredientPreferences: personalPreferencesForPresentPersons.byIngredient,
+      planningStyle: household.planningStyle,
       lastPlannedByRecipeId,
       usedRecipeIds,
       targetDate: dateForDay(weekStart, dayKey),
