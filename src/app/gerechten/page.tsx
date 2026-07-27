@@ -38,6 +38,12 @@ function personalPreferenceScore(stances: string[]): number {
   }, 0);
 }
 
+function addStance(map: Map<string, string[]>, key: string, stance: string) {
+  const list = map.get(key) ?? [];
+  list.push(stance);
+  map.set(key, list);
+}
+
 export default async function GerechtenPage({
   searchParams,
 }: {
@@ -75,20 +81,40 @@ export default async function GerechtenPage({
     getHouseholdMealParticipantsByDay(household.id),
   ]);
   const participants = participantsByDay[dayKey];
+  const allIngredientIds = [
+    ...new Set(
+      allVariants.flatMap((variant) => variant.recipe.ingredients.map((ri) => ri.ingredientId))
+    ),
+  ];
+  const allCategories = [...new Set(allVariants.map((variant) => variant.recipe.category))];
   const personalPreferences = await prisma.preference.findMany({
     where: {
       ownerType: "PERSON",
       ownerId: { in: participants.map((person) => person.id) },
-      subjectType: "RECIPE_VARIANT",
-      subjectId: { in: allVariants.map((variant) => variant.id) },
+      OR: [
+        { subjectType: "RECIPE_VARIANT", subjectId: { in: allVariants.map((variant) => variant.id) } },
+        { subjectType: "RECIPE_CATEGORY", subjectId: { in: allCategories } },
+        { subjectType: "INGREDIENT", subjectId: { in: allIngredientIds } },
+      ],
     },
   });
   const personalStancesByVariantId = new Map<string, string[]>();
+  const personalStancesByCategory = new Map<string, string[]>();
+  const personalStancesByIngredient = new Map<string, string[]>();
   for (const preference of personalPreferences) {
-    const list = personalStancesByVariantId.get(preference.subjectId) ?? [];
-    list.push(preference.stance);
-    personalStancesByVariantId.set(preference.subjectId, list);
+    if (preference.subjectType === "RECIPE_VARIANT") {
+      addStance(personalStancesByVariantId, preference.subjectId, preference.stance);
+    } else if (preference.subjectType === "RECIPE_CATEGORY") {
+      addStance(personalStancesByCategory, preference.subjectId, preference.stance);
+    } else if (preference.subjectType === "INGREDIENT") {
+      addStance(personalStancesByIngredient, preference.subjectId, preference.stance);
+    }
   }
+  const personalStancesForVariant = (variant: VariantWithRecipe) => [
+    ...(personalStancesByVariantId.get(variant.id) ?? []),
+    ...(personalStancesByCategory.get(variant.recipe.category) ?? []),
+    ...variant.recipe.ingredients.flatMap((ri) => personalStancesByIngredient.get(ri.ingredientId) ?? []),
+  ];
 
   // Een onveilig gerecht mag niet eens als suggestie zichtbaar zijn — niet
   // pas bij het bevestigen ervan (sectie 10 van de Blueprint).
@@ -100,7 +126,7 @@ export default async function GerechtenPage({
           restrictionTags: ri.ingredient.restrictionTags,
         })),
         hardRestrictions
-      ) && !(personalStancesByVariantId.get(v.id) ?? []).includes("NEVER")
+      ) && !personalStancesForVariant(v).includes("NEVER")
   );
 
   let filtered = variants;
@@ -117,8 +143,8 @@ export default async function GerechtenPage({
     .filter((v) => v.id !== currentEntry?.recipeVariantId)
     .sort(
       (a, b) =>
-        personalPreferenceScore(personalStancesByVariantId.get(b.id) ?? []) -
-          personalPreferenceScore(personalStancesByVariantId.get(a.id) ?? []) ||
+        personalPreferenceScore(personalStancesForVariant(b)) -
+          personalPreferenceScore(personalStancesForVariant(a)) ||
         (confidenceByVariantId.get(b.id) ?? 0.5) - (confidenceByVariantId.get(a.id) ?? 0.5)
     )
     .slice(0, 12);

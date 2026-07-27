@@ -8,6 +8,17 @@ import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "@/lib/sc
 import { DAY_ENUM, DAY_KEYS, type DayKey } from "@/lib/week";
 
 const PERSONAL_STANCES = ["LIKED", "SOMETIMES", "RATHER_NOT", "NEVER"] as const;
+const PERSONAL_SUBJECT_TYPES = ["RECIPE_VARIANT", "RECIPE_CATEGORY", "INGREDIENT"] as const;
+const RECIPE_CATEGORIES = [
+  "PASTA",
+  "WRAPS",
+  "RICE_DISH",
+  "ALL_VEGGIE_DAY",
+  "QUICK_AND_EASY",
+  "COMFORT_FOOD",
+  "AIRFRYER",
+  "OTHER",
+] as const;
 
 function parsePersonalStance(value: FormDataEntryValue | null): (typeof PERSONAL_STANCES)[number] {
   const stance = String(value ?? "SOMETIMES");
@@ -15,6 +26,14 @@ function parsePersonalStance(value: FormDataEntryValue | null): (typeof PERSONAL
     throw new Error("Onbekende voorkeur.");
   }
   return stance as (typeof PERSONAL_STANCES)[number];
+}
+
+function parsePersonalSubjectType(value: FormDataEntryValue | null): (typeof PERSONAL_SUBJECT_TYPES)[number] {
+  const subjectType = String(value ?? "RECIPE_VARIANT");
+  if (!PERSONAL_SUBJECT_TYPES.includes(subjectType as (typeof PERSONAL_SUBJECT_TYPES)[number])) {
+    throw new Error("Onbekend voorkeurstype.");
+  }
+  return subjectType as (typeof PERSONAL_SUBJECT_TYPES)[number];
 }
 
 /**
@@ -53,7 +72,8 @@ export async function setPersonMealPreference(formData: FormData) {
   const householdId = String(formData.get("householdId"));
   await assertCurrentHousehold(householdId);
   const personId = String(formData.get("personId"));
-  const recipeVariantId = String(formData.get("recipeVariantId"));
+  const subjectType = parsePersonalSubjectType(formData.get("subjectType"));
+  const subjectId = String(formData.get("subjectId") ?? formData.get("recipeVariantId"));
   const dayKey = String(formData.get("dayKey")) as DayKey;
   const stance = parsePersonalStance(formData.get("stance"));
 
@@ -65,23 +85,29 @@ export async function setPersonMealPreference(formData: FormData) {
     where: { id: personId, householdId },
     select: { id: true },
   });
-  await prisma.recipeVariant.findUniqueOrThrow({ where: { id: recipeVariantId }, select: { id: true } });
+  if (subjectType === "RECIPE_VARIANT") {
+    await prisma.recipeVariant.findUniqueOrThrow({ where: { id: subjectId }, select: { id: true } });
+  } else if (subjectType === "INGREDIENT") {
+    await prisma.ingredient.findUniqueOrThrow({ where: { id: subjectId }, select: { id: true } });
+  } else if (!RECIPE_CATEGORIES.includes(subjectId as (typeof RECIPE_CATEGORIES)[number])) {
+    throw new Error("Onbekende categorie.");
+  }
 
   await prisma.preference.upsert({
     where: {
       ownerType_ownerId_subjectType_subjectId: {
         ownerType: "PERSON",
         ownerId: personId,
-        subjectType: "RECIPE_VARIANT",
-        subjectId: recipeVariantId,
+        subjectType,
+        subjectId,
       },
     },
     update: { stance, source: "EXPLICIT", confidence: 1 },
     create: {
       ownerType: "PERSON",
       ownerId: personId,
-      subjectType: "RECIPE_VARIANT",
-      subjectId: recipeVariantId,
+      subjectType,
+      subjectId,
       stance,
       source: "EXPLICIT",
       confidence: 1,
@@ -91,8 +117,8 @@ export async function setPersonMealPreference(formData: FormData) {
   await logFeedbackEvent({
     householdId,
     personId,
-    subjectType: "RECIPE_VARIANT",
-    subjectId: recipeVariantId,
+    subjectType,
+    subjectId,
     eventType: "EXPLICIT_FEEDBACK",
     explicit: true,
     context: { dayOfWeek: DAY_ENUM[dayKey], stance, source: "personal_week_plan" },
