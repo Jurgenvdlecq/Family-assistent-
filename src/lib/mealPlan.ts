@@ -47,7 +47,7 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
   const recentPlanningStart = new Date(weekStart);
   recentPlanningStart.setDate(recentPlanningStart.getDate() - RECENT_PLANNING_WINDOW_DAYS);
 
-  const [household, preferences, variantPreferences, recentSuggestions, allVariants, hardRestrictions] = await Promise.all([
+  const [household, preferences, variantPreferences, recentSuggestions, allVariants, hardRestrictionsByDayEntries] = await Promise.all([
     prisma.household.findUniqueOrThrow({ where: { id: householdId } }),
     prisma.preference.findMany({
       where: {
@@ -78,27 +78,21 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
     prisma.recipeVariant.findMany({
       include: { recipe: { include: { ingredients: { include: { ingredient: true } } } } },
     }),
-    getHouseholdHardRestrictions(householdId),
+    Promise.all(DAY_KEYS.map(async (dayKey) => [dayKey, await getHouseholdHardRestrictions(householdId, dayKey)] as const)),
   ]);
 
-  // Harde beperkingen (allergieën, "nooit") gelden voor het hele huishouden
-  // en worden vóór elke andere afweging toegepast — nooit als gewone
-  // voorkeur behandeld (sectie 10 van de Blueprint).
-  const variants = allVariants.filter(
-    (v) =>
-      !recipeConflictsWithRestrictions(
-        v.recipe.ingredients.map((ri) => ({
-          category: ri.ingredient.category,
-          restrictionTags: ri.ingredient.restrictionTags,
-        })),
-        hardRestrictions
-      )
-  );
-  if (variants.length === 0) {
-    throw new Error(
-      "Geen enkel gerecht in de bibliotheek voldoet aan de harde beperkingen van dit huishouden. Voeg geschikte recepten toe voordat er een weekplanning gemaakt kan worden."
+  const hardRestrictionsByDay = new Map<DayKey, string[]>(hardRestrictionsByDayEntries);
+  const safeVariantsForDay = (dayKey: DayKey) =>
+    allVariants.filter(
+      (v) =>
+        !recipeConflictsWithRestrictions(
+          v.recipe.ingredients.map((ri) => ({
+            category: ri.ingredient.category,
+            restrictionTags: ri.ingredient.restrictionTags,
+          })),
+          hardRestrictionsByDay.get(dayKey) ?? []
+        )
     );
-  }
 
   const preferredCategories = new Set(preferences.map((p) => p.subjectId));
   const variantPreferenceById = new Map(
@@ -116,12 +110,18 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
   const rhythm = (household.weeklyRhythm ?? {}) as unknown as WeeklyRhythm;
 
   const usedRecipeIds = new Set<string>();
-  type VariantWithRecipe = (typeof variants)[number];
+  type VariantWithRecipe = (typeof allVariants)[number];
   type Pick = { variant: VariantWithRecipe; reason: string; confidence: ConfidenceLevel };
   const picks = {} as Record<DayKey, Pick>;
 
   for (const dayKey of DAY_KEYS) {
     const busy = rhythm[dayKey] === "busy";
+    const variants = safeVariantsForDay(dayKey);
+    if (variants.length === 0) {
+      throw new Error(
+        `Geen enkel gerecht in de bibliotheek voldoet aan de harde beperkingen voor ${DAY_ENUM[dayKey]}. Voeg geschikte recepten toe voordat er een weekplanning gemaakt kan worden.`
+      );
+    }
     const notUsedYet = variants.filter((v) => !usedRecipeIds.has(v.recipeId));
     const pool = notUsedYet.length > 0 ? notUsedYet : variants;
 

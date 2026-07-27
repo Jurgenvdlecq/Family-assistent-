@@ -30,6 +30,10 @@ export const DAY_ENUM: Record<
   sunday: "SUNDAY",
 };
 
+export const DAY_KEY_BY_ENUM = Object.fromEntries(
+  DAY_KEYS.map((dayKey) => [DAY_ENUM[dayKey], dayKey])
+) as Record<(typeof DAY_ENUM)[DayKey], DayKey>;
+
 export const DAY_LABELS: Record<DayKey, string> = {
   monday: "Maandag",
   tuesday: "Dinsdag",

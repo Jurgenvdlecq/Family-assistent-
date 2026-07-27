@@ -9,12 +9,15 @@ import { invalidateShoppingList } from "@/lib/shoppingList";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "@/lib/scoring";
 import { getHouseholdHardRestrictions } from "@/lib/household";
 import { recipeConflictsWithRestrictions } from "@/lib/dietaryRestrictions";
-import { DAY_ENUM, type DayKey } from "@/lib/week";
+import { DAY_ENUM, DAY_KEYS, type DayKey } from "@/lib/week";
 
 export async function replaceMealPlanEntry(formData: FormData) {
   const householdId = String(formData.get("householdId"));
   await assertCurrentHousehold(householdId);
   const dayKey = String(formData.get("dayKey")) as DayKey;
+  if (!DAY_KEYS.includes(dayKey)) {
+    throw new Error("Onbekende dag.");
+  }
   const recipeVariantId = String(formData.get("recipeVariantId"));
   const weekStart = new Date(String(formData.get("weekStart")));
 
@@ -27,7 +30,7 @@ export async function replaceMealPlanEntry(formData: FormData) {
       where: { id: recipeVariantId },
       include: { recipe: { include: { ingredients: { include: { ingredient: true } } } } },
     }),
-    getHouseholdHardRestrictions(householdId),
+    getHouseholdHardRestrictions(householdId, dayKey),
   ]);
   const conflicts = recipeConflictsWithRestrictions(
     variant.recipe.ingredients.map((ri) => ({
