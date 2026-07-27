@@ -51,13 +51,13 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 | WP12 | Persoonsvoorkeuren per categorie/ingrediënt | De weekplanning kan per aanwezige eter nu ook voorkeuren voor receptcategorieën en ingrediënten vastleggen via dezelfde `Preference`-tabel. Planning en `/gerechten` wegen `RECIPE_CATEGORY` en `INGREDIENT` mee; persoonlijke `NEVER` sluit ook categorieën/ingrediënten uit. Geen nieuwe migratie nodig. |
 | WP13 | Voorkeurenbeheer op Ons gezin | `/ons-gezin` toont nu een beheerblok voor alle persoonlijke voorkeuren per gezinslid, met leesbare labels voor gerecht/categorie/ingrediënt. Voorkeuren kunnen daar worden aangepast of verwijderd, met household-validatie in server actions. Geen nieuwe migratie nodig. |
 | WP14 | Weekplanning opnieuw genereren | Op `/` staat een uitklapbare actie "Week opnieuw plannen". Deze verwijdert alleen de huidige weekplanning, bijbehorende boodschappenlijst en suggesties van het huidige huishouden, en bouwt de week opnieuw op met actuele voorkeuren. Geen nieuwe migratie nodig. |
+| WP15 | Recepten/varianten beheren | Nieuwe pagina `/recepten` met navigatietab. Daar kan een recept met ingrediënten en eerste variant worden toegevoegd, kunnen titel/bron/categorie/status/eigenschappen/bereiding worden gecorrigeerd en kunnen varianten met context-signalen worden toegevoegd of bijgewerkt. Server actions valideren het huidige huishouden. Geen nieuwe migratie nodig. |
 
 ## Nog te doen (roadmap, nog niet gestart)
 
-- **WP15 — Recepten/varianten beheren.** Nu planning, voorkeuren en herplanning
-  werkbaar zijn, is de volgende logische stap een beheerflow om nieuwe
-  recepten of varianten toe te voegen, bestaande recepten te corrigeren en
-  hard te markeren waarom iets wel/niet geschikt is.
+- **Volgende WP nog kiezen.** Logische vervolgstappen zijn bijvoorbeeld
+  ingrediëntbeheer uitbreiden, recept-ingrediënten van bestaande recepten
+  bewerkbaar maken, of de controle-/boodschappenflow verder aanscherpen.
 
 ## Niet-voor-de-hand-liggende operationele kennis
 

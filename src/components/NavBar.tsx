@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, UtensilsCrossed, ShoppingCart, ClipboardCheck, Users } from "lucide-react";
+import { Home, UtensilsCrossed, BookOpen, ShoppingCart, ClipboardCheck, Users } from "lucide-react";
 
 const ITEMS = [
   { href: "/", label: "Jouw week", icon: Home },
   { href: "/gerechten", label: "Gerechten", icon: UtensilsCrossed },
+  { href: "/recepten", label: "Recepten", icon: BookOpen },
   { href: "/boodschappen", label: "Boodschappen", icon: ShoppingCart },
   { href: "/controle", label: "Controle", icon: ClipboardCheck },
   { href: "/ons-gezin", label: "Ons gezin", icon: Users },
@@ -25,14 +26,16 @@ export default function NavBar() {
             <Link
               key={item.href}
               href={item.href}
-              className="flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium"
+              className="flex min-w-0 flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium"
             >
               <Icon
                 size={22}
                 strokeWidth={active ? 2.25 : 1.75}
                 className={active ? "text-accent" : "text-ink-faint"}
               />
-              <span className={active ? "text-accent" : "text-ink-muted"}>{item.label}</span>
+              <span className={`max-w-full truncate text-center ${active ? "text-accent" : "text-ink-muted"}`}>
+                {item.label}
+              </span>
             </Link>
           );
         })}
