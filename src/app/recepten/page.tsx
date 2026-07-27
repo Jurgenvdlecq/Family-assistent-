@@ -5,9 +5,13 @@ import { requireCurrentHousehold } from "@/lib/auth";
 import { CATEGORY_LABELS, STATUS_LABELS, VARIANT_LABELS } from "@/lib/categoryStyle";
 import NavBar from "@/components/NavBar";
 import {
+  allowProductForIngredient,
   createIngredient,
+  createIngredientProduct,
   createRecipe,
   createRecipeVariant,
+  rejectProductForIngredient,
+  setDefaultProductForIngredient,
   updateIngredient,
   updateRecipeDetails,
   updateRecipeIngredients,
@@ -33,6 +37,11 @@ const INGREDIENT_CATEGORY_LABELS: Record<string, string> = {
 };
 const INGREDIENT_CATEGORY_OPTIONS = Object.entries(INGREDIENT_CATEGORY_LABELS);
 const UNIT_OPTIONS = Object.entries(UNIT_LABELS);
+
+function formatPrice(price: unknown) {
+  if (price === null || price === undefined) return null;
+  return `€ ${Number(price).toFixed(2)}`;
+}
 
 function IngredientRows({
   ingredients,
@@ -93,7 +102,18 @@ export default async function ReceptenPage() {
       },
       orderBy: { title: "asc" },
     }),
-    prisma.ingredient.findMany({ orderBy: { name: "asc" } }),
+    prisma.ingredient.findMany({
+      include: {
+        products: {
+          include: {
+            householdPreferences: { where: { householdId: household.id } },
+            rejections: { where: { householdId: household.id } },
+          },
+          orderBy: [{ lastSeenAvailable: "desc" }, { name: "asc" }],
+        },
+      },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   return (
@@ -155,48 +175,164 @@ export default async function ReceptenPage() {
         <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
           <summary className="font-medium text-ink">Ingrediënten beheren</summary>
           <div className="mt-4 grid gap-3">
-            {ingredients.map((ingredient) => (
-              <form key={ingredient.id} action={updateIngredient} className="grid gap-2 border-t border-line pt-3 first:border-t-0 first:pt-0">
-                <input type="hidden" name="householdId" value={household.id} />
-                <input type="hidden" name="ingredientId" value={ingredient.id} />
-                <div className="grid grid-cols-[1fr_112px] gap-2">
-                  <input
-                    name="name"
-                    defaultValue={ingredient.name}
-                    required
-                    className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-                  />
-                  <div className="rounded-lg border border-line px-3 py-2 text-sm text-ink-muted">
-                    {UNIT_LABELS[ingredient.unit] ?? ingredient.unit}
-                  </div>
-                </div>
-                <select name="category" defaultValue={ingredient.category} className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink">
-                  {INGREDIENT_CATEGORY_OPTIONS.map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
-                <input
-                  name="restrictionTags"
-                  defaultValue={ingredient.restrictionTags.join(", ")}
-                  placeholder="Dieettags"
-                  className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-                />
-                <div className="flex items-center justify-between gap-3">
-                  <label className="flex min-w-0 items-center gap-2 text-sm text-ink-muted">
+            {ingredients.map((ingredient) => {
+              const defaultProductId = ingredient.products.find((product) => product.householdPreferences.length > 0)?.id;
+              return (
+                <div key={ingredient.id} className="grid gap-3 border-t border-line pt-3 first:border-t-0 first:pt-0">
+                  <form action={updateIngredient} className="grid gap-2">
+                    <input type="hidden" name="householdId" value={household.id} />
+                    <input type="hidden" name="ingredientId" value={ingredient.id} />
+                    <div className="grid grid-cols-[1fr_112px] gap-2">
+                      <input
+                        name="name"
+                        defaultValue={ingredient.name}
+                        required
+                        className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                      />
+                      <div className="rounded-lg border border-line px-3 py-2 text-sm text-ink-muted">
+                        {UNIT_LABELS[ingredient.unit] ?? ingredient.unit}
+                      </div>
+                    </div>
+                    <select name="category" defaultValue={ingredient.category} className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink">
+                      {INGREDIENT_CATEGORY_OPTIONS.map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </select>
                     <input
-                      type="checkbox"
-                      name="likelyInStock"
-                      defaultChecked={ingredient.likelyInStock}
-                      className="h-4 w-4 accent-accent"
+                      name="restrictionTags"
+                      defaultValue={ingredient.restrictionTags.join(", ")}
+                      placeholder="Dieettags"
+                      className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
                     />
-                    Voorraadcontrole
-                  </label>
-                  <button type="submit" className="rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
-                    Opslaan
-                  </button>
+                    <div className="flex items-center justify-between gap-3">
+                      <label className="flex min-w-0 items-center gap-2 text-sm text-ink-muted">
+                        <input
+                          type="checkbox"
+                          name="likelyInStock"
+                          defaultChecked={ingredient.likelyInStock}
+                          className="h-4 w-4 accent-accent"
+                        />
+                        Voorraadcontrole
+                      </label>
+                      <button type="submit" className="rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
+                        Opslaan
+                      </button>
+                    </div>
+                  </form>
+
+                  <details className="rounded-lg border border-line p-3">
+                    <summary className="cursor-pointer text-sm font-medium text-ink">
+                      {ingredient.products.length} productkeuzes
+                    </summary>
+                    <div className="mt-3 grid gap-2">
+                      {ingredient.products.map((product) => {
+                        const isDefault = product.id === defaultProductId;
+                        const isRejected = product.rejections.length > 0;
+                        return (
+                          <div key={product.id} className="grid gap-2 rounded-lg border border-line p-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-ink">
+                                {product.name}
+                                {product.brand && <span className="text-ink-faint"> — {product.brand}</span>}
+                              </p>
+                              <p className="truncate text-xs text-ink-faint">
+                                {[product.packageSize, formatPrice(product.price), product.externalRef ? "Picnic-id bekend" : null]
+                                  .filter(Boolean)
+                                  .join(" · ") || "Geen extra productinfo"}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {isDefault ? (
+                                <span className="rounded-md bg-tag-green-bg px-2 py-1 text-xs font-medium text-tag-green-ink">
+                                  Standaard
+                                </span>
+                              ) : (
+                                <form action={setDefaultProductForIngredient}>
+                                  <input type="hidden" name="householdId" value={household.id} />
+                                  <input type="hidden" name="ingredientId" value={ingredient.id} />
+                                  <input type="hidden" name="productId" value={product.id} />
+                                  <button type="submit" className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
+                                    Maak standaard
+                                  </button>
+                                </form>
+                              )}
+                              {isRejected ? (
+                                <form action={allowProductForIngredient}>
+                                  <input type="hidden" name="householdId" value={household.id} />
+                                  <input type="hidden" name="ingredientId" value={ingredient.id} />
+                                  <input type="hidden" name="productId" value={product.id} />
+                                  <button type="submit" className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
+                                    Weer toestaan
+                                  </button>
+                                </form>
+                              ) : (
+                                <form action={rejectProductForIngredient}>
+                                  <input type="hidden" name="householdId" value={household.id} />
+                                  <input type="hidden" name="ingredientId" value={ingredient.id} />
+                                  <input type="hidden" name="productId" value={product.id} />
+                                  <button type="submit" className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink-faint hover:border-red-300 hover:text-red-600">
+                                    Uitsluiten
+                                  </button>
+                                </form>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      <details className="pt-1">
+                        <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium text-accent">
+                          <Plus size={15} />
+                          Product toevoegen
+                        </summary>
+                        <form action={createIngredientProduct} className="mt-3 grid gap-2">
+                          <input type="hidden" name="householdId" value={household.id} />
+                          <input type="hidden" name="ingredientId" value={ingredient.id} />
+                          <input
+                            name="name"
+                            required
+                            placeholder="Productnaam"
+                            className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              name="brand"
+                              placeholder="Merk"
+                              className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                            />
+                            <input
+                              name="packageSize"
+                              placeholder="Bijv. 750 g"
+                              className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              name="price"
+                              inputMode="decimal"
+                              placeholder="Prijs"
+                              className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                            />
+                            <input
+                              name="externalRef"
+                              placeholder="Picnic-id"
+                              className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                            />
+                          </div>
+                          <label className="flex items-center gap-2 text-sm text-ink-muted">
+                            <input type="checkbox" name="setAsDefault" className="h-4 w-4 accent-accent" />
+                            Meteen standaard maken
+                          </label>
+                          <button type="submit" className="w-fit rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-ink">
+                            Product toevoegen
+                          </button>
+                        </form>
+                      </details>
+                    </div>
+                  </details>
                 </div>
-              </form>
-            ))}
+              );
+            })}
           </div>
         </details>
 
