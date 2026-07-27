@@ -14,6 +14,7 @@ import { getCurrentWeekStart } from "@/lib/week";
 import { ensureShoppingList, getShoppingListCandidates, describeLinePackaging } from "@/lib/shoppingList";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
+import PendingSubmitButton from "@/components/PendingSubmitButton";
 import {
   confirmProductChoice,
   rejectProductChoice,
@@ -105,7 +106,7 @@ function ProductChoiceCard({
   householdId,
   selected = false,
 }: {
-  line: { id: string; ingredientId: string; quantity: number; unit: string };
+  line: { id: string; ingredientId: string; quantity: number; unit: string; needsReview: boolean };
   product: ProductCardProduct;
   householdId: string;
   selected?: boolean;
@@ -139,38 +140,44 @@ function ProductChoiceCard({
           <PackagingLine line={line} product={product} />
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <form action={confirmProductChoice}>
-              <input type="hidden" name="lineId" value={line.id} />
-              <input type="hidden" name="productId" value={product.id} />
-              <input type="hidden" name="householdId" value={householdId} />
-              <button
-                type="submit"
-                className="rounded-md bg-accent px-2.5 py-1.5 text-xs font-medium text-accent-ink hover:opacity-90"
-              >
-                {selected ? "Goed, onthouden" : "Kies en onthoud"}
-              </button>
-            </form>
+            {selected && !line.needsReview ? (
+              <span className="rounded-md bg-tag-green-bg px-2.5 py-1.5 text-xs font-medium text-tag-green-ink">
+                Opgeslagen
+              </span>
+            ) : (
+              <form action={confirmProductChoice}>
+                <input type="hidden" name="lineId" value={line.id} />
+                <input type="hidden" name="productId" value={product.id} />
+                <input type="hidden" name="householdId" value={householdId} />
+                <PendingSubmitButton
+                  pendingText="Opslaan..."
+                  className="rounded-md bg-accent px-2.5 py-1.5 text-xs font-medium text-accent-ink hover:opacity-90"
+                >
+                  {selected ? "Goed, onthouden" : "Kies en onthoud"}
+                </PendingSubmitButton>
+              </form>
+            )}
             <form action={useProductThisWeekOnly}>
               <input type="hidden" name="lineId" value={line.id} />
               <input type="hidden" name="productId" value={product.id} />
               <input type="hidden" name="householdId" value={householdId} />
-              <button
-                type="submit"
+              <PendingSubmitButton
+                pendingText="Kiezen..."
                 className="rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink hover:border-accent/50"
               >
                 Alleen deze week
-              </button>
+              </PendingSubmitButton>
             </form>
             <form action={rejectProductChoice}>
               <input type="hidden" name="lineId" value={line.id} />
               <input type="hidden" name="productId" value={product.id} />
               <input type="hidden" name="householdId" value={householdId} />
-              <button
-                type="submit"
+              <PendingSubmitButton
+                pendingText="Wegzetten..."
                 className="rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink-faint hover:border-red-300 hover:text-red-600"
               >
                 Nooit
-              </button>
+              </PendingSubmitButton>
             </form>
           </div>
         </div>
@@ -230,12 +237,12 @@ function LineControlCard({
           className="w-24 rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
         />
         <span className="text-xs text-ink-faint">{UNIT_LABELS[line.unit] ?? line.unit}</span>
-        <button
-          type="submit"
+        <PendingSubmitButton
+          pendingText="Bijwerken..."
           className="rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink hover:border-accent/50"
         >
           Hoeveelheid
-        </button>
+        </PendingSubmitButton>
       </form>
 
       <form action={searchPicnicProductsForLine} className="mb-3 flex min-w-0 gap-2">
@@ -245,14 +252,14 @@ function LineControlCard({
           placeholder={`Zoek Picnic-product, bv. ${line.ingredient.name}`}
           className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
         />
-        <button
-          type="submit"
-          aria-label="Zoeken bij Picnic"
+        <PendingSubmitButton
+          pendingText="..."
+          ariaLabel="Zoeken bij Picnic"
           title="Zoeken bij Picnic"
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-line bg-surface text-ink hover:border-accent/50"
         >
           <Search size={16} />
-        </button>
+        </PendingSubmitButton>
       </form>
 
       <div className="grid gap-2">
@@ -288,21 +295,21 @@ function LineControlCard({
         <div className="mt-3 flex flex-wrap gap-2">
           <form action={skipReview}>
             <input type="hidden" name="lineId" value={line.id} />
-            <button
-              type="submit"
+            <PendingSubmitButton
+              pendingText="Opslaan..."
               className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink"
             >
               Zonder product doorgaan
-            </button>
+            </PendingSubmitButton>
           </form>
           <form action={removeLineFromList}>
             <input type="hidden" name="lineId" value={line.id} />
-            <button
-              type="submit"
+            <PendingSubmitButton
+              pendingText="Verwijderen..."
               className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink-faint hover:text-red-600"
             >
               Van lijst verwijderen
-            </button>
+            </PendingSubmitButton>
           </form>
         </div>
       )}
@@ -407,13 +414,13 @@ export default async function ControlePage() {
 
         <form action={confirmShoppingList}>
           <input type="hidden" name="shoppingListId" value={shoppingList.id} />
-          <button
-            type="submit"
+          <PendingSubmitButton
+            pendingText="Bevestigen..."
             disabled={reviewLines.length > 0}
-            className="w-full rounded-xl bg-accent px-4 py-3.5 text-center font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            className="w-full rounded-xl bg-accent px-4 py-3.5 text-center font-medium text-accent-ink transition-opacity hover:opacity-90"
           >
             {reviewLines.length > 0 ? "Los eerst de twijfelgevallen op" : "Bevestigen"}
-          </button>
+          </PendingSubmitButton>
         </form>
       </div>
 
