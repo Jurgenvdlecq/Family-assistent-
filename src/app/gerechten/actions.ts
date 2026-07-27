@@ -12,6 +12,7 @@ import { recipeConflictsWithRestrictions } from "@/lib/dietaryRestrictions";
 import { accessibleRecipeWhere } from "@/lib/recipeScope";
 import { DAY_ENUM, DAY_KEYS, type DayKey } from "@/lib/week";
 import { parseFeedbackReason, labelFeedbackReason } from "@/domain/learning/feedbackReasons";
+import { recordRepeatedMealReplacement } from "@/domain/learning/patterns";
 
 export async function replaceMealPlanEntry(formData: FormData) {
   const householdId = String(formData.get("householdId"));
@@ -79,6 +80,10 @@ export async function replaceMealPlanEntry(formData: FormData) {
     if (currentEntry.recipeVariantId === recipeVariantId) {
       redirect("/");
     }
+    const replacedVariant = await prisma.recipeVariant.findUniqueOrThrow({
+      where: { id: currentEntry.recipeVariantId },
+      include: { recipe: { select: { category: true, title: true } } },
+    });
     await logFeedbackEvent({
       householdId,
       subjectType: "RECIPE_VARIANT",
@@ -87,6 +92,15 @@ export async function replaceMealPlanEntry(formData: FormData) {
       reason: replacementReason,
       explicit: true,
       context: { dayOfWeek: dayEnum, reasonLabel: labelFeedbackReason(replacementReason) },
+    });
+    await recordRepeatedMealReplacement({
+      householdId,
+      dayOfWeek: dayEnum,
+      replacedRecipeVariantId: currentEntry.recipeVariantId,
+      replacementRecipeVariantId: recipeVariantId,
+      replacedRecipeCategory: replacedVariant.recipe.category,
+      replacedRecipeTitle: replacedVariant.recipe.title,
+      reason: replacementReason,
     });
     await recalculateVariantConfidence(householdId, currentEntry.recipeVariantId);
     await prisma.mealPlanEntry.update({

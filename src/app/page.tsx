@@ -23,7 +23,15 @@ import {
 } from "@/lib/categoryStyle";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
-import { regenerateCurrentWeekPlan, setPersonMealPreference, submitMealFeedback } from "./actions";
+import { getPendingLearningPrompts } from "@/domain/learning/patterns";
+import { MEAL_REPLACEMENT_REASONS } from "@/domain/learning/feedbackReasons";
+import {
+  answerSmartLearningPrompt,
+  dismissSmartLearningPrompt,
+  regenerateCurrentWeekPlan,
+  setPersonMealPreference,
+  submitMealFeedback,
+} from "./actions";
 
 // Deze pagina schrijft (idempotent) naar de database bij elk bezoek
 // (ensureMealPlan) — nooit statisch prerenderen tijdens de build, dat
@@ -97,10 +105,11 @@ export default async function Home() {
 
   const weekStart = getCurrentWeekStart();
   await ensureMealPlan(household.id, weekStart);
-  const [mealPlan, reasons, participantsByDay] = await Promise.all([
+  const [mealPlan, reasons, participantsByDay, learningPrompts] = await Promise.all([
     getMealPlanForWeek(household.id, weekStart),
     getReasonsForPlan(household.id, weekStart),
     getHouseholdMealParticipantsByDay(household.id),
+    getPendingLearningPrompts(household.id, 2),
   ]);
   const mealVariantIds = mealPlan!.entries.map((entry) => entry.recipeVariantId);
   const mealCategoryIds = [...new Set(mealPlan!.entries.map((entry) => entry.recipeVariant.recipe.category))];
@@ -206,6 +215,41 @@ export default async function Home() {
             </div>
           </details>
         </div>
+
+        {learningPrompts.length > 0 && (
+          <div className="mb-6 grid gap-3">
+            {learningPrompts.map((prompt) => (
+              <div key={prompt.id} className="rounded-xl border border-line bg-surface p-4">
+                <p className="mb-1 text-sm font-semibold text-ink">{prompt.title}</p>
+                <p className="mb-3 text-sm text-ink-muted">{prompt.question}</p>
+                <div className="grid gap-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    {MEAL_REPLACEMENT_REASONS.slice(1, 5).map((reason) => (
+                      <form key={reason.value} action={answerSmartLearningPrompt}>
+                        <input type="hidden" name="householdId" value={household.id} />
+                        <input type="hidden" name="promptId" value={prompt.id} />
+                        <input type="hidden" name="answer" value={reason.value} />
+                        <button
+                          type="submit"
+                          className="w-full rounded-lg border border-line px-2 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent"
+                        >
+                          {reason.label}
+                        </button>
+                      </form>
+                    ))}
+                  </div>
+                  <form action={dismissSmartLearningPrompt}>
+                    <input type="hidden" name="householdId" value={household.id} />
+                    <input type="hidden" name="promptId" value={prompt.id} />
+                    <button type="submit" className="text-xs font-medium text-ink-faint hover:text-ink-muted">
+                      Nu niet
+                    </button>
+                  </form>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex min-w-0 flex-col divide-y divide-line border-y border-line bg-surface">
