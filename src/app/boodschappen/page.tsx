@@ -130,16 +130,10 @@ export default async function BoodschappenPage({
   const mealPlan = await getMealPlanForWeek(household.id, weekStart);
   if (!mealPlan) redirect("/");
 
-  const initialShoppingList = await ensureShoppingList(mealPlan.id, household.id);
-  after(() => enrichShoppingListProductImages(household.id, initialShoppingList.id));
-  const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
-    where: { id: initialShoppingList.id },
-    include: {
-      lines: {
-        include: { ingredient: true, product: true },
-      },
-    },
-  });
+  const shoppingList = await ensureShoppingList(mealPlan.id, household.id);
+  if (shoppingList.lines.some((line) => line.product && !line.product.picnicImageId)) {
+    after(() => enrichShoppingListProductImages(household.id, shoppingList.id));
+  }
   const sortedLines = [...shoppingList.lines].sort((a, b) =>
     a.ingredient.name.localeCompare(b.ingredient.name)
   );

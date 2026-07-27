@@ -13,7 +13,6 @@ import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { getCurrentWeekStart } from "@/lib/week";
 import { ensureShoppingList, getShoppingListCandidatesByIngredient, describeLinePackaging } from "@/lib/shoppingList";
-import { prisma } from "@/lib/prisma";
 import { enrichShoppingListProductImages } from "@/lib/picnic/productEnrichment";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
@@ -335,16 +334,10 @@ export default async function ControlePage({
   const mealPlan = await getMealPlanForWeek(household.id, weekStart);
   if (!mealPlan) redirect("/");
 
-  const initialShoppingList = await ensureShoppingList(mealPlan.id, household.id);
-  after(() => enrichShoppingListProductImages(household.id, initialShoppingList.id));
-  const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
-    where: { id: initialShoppingList.id },
-    include: {
-      lines: {
-        include: { ingredient: true, product: true },
-      },
-    },
-  });
+  const shoppingList = await ensureShoppingList(mealPlan.id, household.id);
+  if (shoppingList.lines.some((line) => line.product && !line.product.picnicImageId)) {
+    after(() => enrichShoppingListProductImages(household.id, shoppingList.id));
+  }
 
   const trustedLines = shoppingList.lines.filter((l) => !l.needsReview);
   const reviewLines = shoppingList.lines.filter((l) => l.needsReview);
@@ -352,13 +345,14 @@ export default async function ControlePage({
   const sortedTrustedLines = [...trustedLines].sort((a, b) => a.ingredient.name.localeCompare(b.ingredient.name));
   const focusedTrustedLine = sortedTrustedLines.some((line) => line.id === params.focus);
 
-  const allVisibleLines = [...sortedReviewLines, ...sortedTrustedLines];
+  const focusedTrustedLines = sortedTrustedLines.filter((line) => line.id === params.focus);
+  const candidateLines = [...sortedReviewLines, ...focusedTrustedLines];
   const candidatesByIngredient = await getShoppingListCandidatesByIngredient(
     household.id,
-    allVisibleLines.map((line) => line.ingredientId)
+    candidateLines.map((line) => line.ingredientId)
   );
   const candidatesByLine = new Map(
-    allVisibleLines.map((line) => [line.id, candidatesByIngredient.get(line.ingredientId) ?? []])
+    candidateLines.map((line) => [line.id, candidatesByIngredient.get(line.ingredientId) ?? []])
   );
 
   // Fase 6: "niet gevonden" is een apart geval van "aandacht nodig" — geen
