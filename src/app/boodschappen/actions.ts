@@ -69,6 +69,28 @@ export async function adjustBoodschappenLineQuantity(formData: FormData) {
   redirectToBoodschappenLine(line.id, "quantity");
 }
 
+export async function setBoodschappenLinePackageCount(formData: FormData) {
+  const lineId = String(formData.get("lineId"));
+  const packageCount = Number(formData.get("packageCount"));
+  const { line } = await loadEditableShoppingLine(lineId);
+  if (line.source === "FIXED") throw new Error("Gebruik de vaste-boodschappenregel om vaste boodschappen aan te passen.");
+  if (!Number.isFinite(packageCount) || packageCount <= 0) {
+    throw new Error("Vul een geldig aantal groter dan 0 in.");
+  }
+
+  const nextQuantity =
+    line.product?.packageQuantity && line.product.packageQuantity > 0
+      ? packageCount * line.product.packageQuantity
+      : packageCount;
+
+  await prisma.shoppingListLine.update({
+    where: { id: line.id },
+    data: { quantity: nextQuantity },
+  });
+
+  redirectToBoodschappenLine(line.id, "quantity");
+}
+
 export async function chooseBoodschappenProduct(formData: FormData) {
   const lineId = String(formData.get("lineId"));
   const productId = String(formData.get("productId"));
