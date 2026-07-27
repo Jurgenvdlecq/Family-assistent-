@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, LogOut, Heart, ShoppingBag, Sparkles } from "lucide-react";
+import { ChevronLeft, LogOut, Heart, ShoppingBag, Sparkles, Trash2 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
 import type { DayKey } from "@/lib/week";
@@ -15,7 +15,13 @@ import AddPersonForm from "./AddPersonForm";
 import PersonalPreferencesManager, { labelPersonalPreferenceSubject } from "./PersonalPreferencesManager";
 import PersonPreferencesCard from "./PersonPreferencesCard";
 import WeeklyRhythmEditor from "./WeeklyRhythmEditor";
-import { logout, updateAccessCode, updateProductChoicePreference } from "./actions";
+import {
+  forgetProductPreference,
+  logout,
+  updateAccessCode,
+  updateHouseholdCategoryPreference,
+  updateProductChoicePreference,
+} from "./actions";
 
 // Leest live gezinsdata — nooit statisch prerenderen.
 export const dynamic = "force-dynamic";
@@ -27,6 +33,13 @@ const STANCE_LABELS: Record<string, string> = {
   NEVER: "Nooit",
   UNKNOWN: "Onbekend",
 };
+
+const CATEGORY_STANCE_OPTIONS = [
+  { value: "LIKED", label: "Favoriet" },
+  { value: "SOMETIMES", label: "Oké" },
+  { value: "RATHER_NOT", label: "Liever niet" },
+  { value: "UNKNOWN", label: "Geen voorkeur" },
+] as const;
 
 export default async function OnsGezinPage() {
   const currentHousehold = await requireCurrentHousehold();
@@ -94,15 +107,16 @@ export default async function OnsGezinPage() {
     stance: preference.stance,
   }));
 
-  const likedCategories = preferences
-    .filter((p) => p.subjectType === "RECIPE_CATEGORY" && p.stance === "LIKED")
-    .map((p) => CATEGORY_LABELS[p.subjectId] ?? p.subjectId);
-
-  const likedProductPrefs = preferences.filter(
-    (p) => p.subjectType === "PRODUCT" && p.stance === "LIKED"
+  const categoryStanceById = new Map(
+    preferences
+      .filter((p) => p.subjectType === "RECIPE_CATEGORY")
+      .map((preference) => [preference.subjectId, preference.stance])
   );
-  const likedProducts = await prisma.product.findMany({
-    where: { id: { in: likedProductPrefs.map((p) => p.subjectId) } },
+
+  const productPreferences = await prisma.householdProductPreference.findMany({
+    where: { householdId: household.id },
+    include: { ingredient: true, product: true },
+    orderBy: { lastChosenAt: "desc" },
   });
 
   const variantPrefs = preferences
@@ -163,6 +177,94 @@ export default async function OnsGezinPage() {
         </div>
 
         <PersonalPreferencesManager householdId={household.id} preferences={personalPreferenceItems} />
+
+        <h2 className="mb-3 text-sm font-semibold text-ink">Favorieten en eetstijl</h2>
+        <section className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <div className="mb-4 flex min-w-0 items-start gap-3">
+            <Heart size={18} className="mt-0.5 shrink-0 text-tag-pink-ink" />
+            <div className="min-w-0">
+              <p className="font-medium text-ink">Maaltijdsoorten</p>
+              <p className="text-sm text-ink-muted">
+                Dit stuurt welke gerechten ik eerder voorstel. Je kunt dit altijd aanpassen.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-3">
+            {Object.entries(CATEGORY_LABELS).map(([category, label]) => {
+              const currentStance = categoryStanceById.get(category) ?? "UNKNOWN";
+              return (
+                <div key={category} className="grid gap-2 rounded-lg border border-line p-3">
+                  <p className="text-sm font-medium text-ink">{label}</p>
+                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                    {CATEGORY_STANCE_OPTIONS.map((option) => (
+                      <form key={option.value} action={updateHouseholdCategoryPreference}>
+                        <input type="hidden" name="householdId" value={household.id} />
+                        <input type="hidden" name="category" value={category} />
+                        <input type="hidden" name="stance" value={option.value} />
+                        <button
+                          type="submit"
+                          className={`w-full rounded-md border px-2 py-1.5 text-xs font-medium transition-colors hover:border-accent/70 hover:bg-surface-2 ${
+                            currentStance === option.value
+                              ? "border-accent bg-accent/10 text-accent"
+                              : "border-line text-ink-muted"
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      </form>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <h2 className="mb-3 text-sm font-semibold text-ink">Onthouden Picnic-producten</h2>
+        <section className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <div className="mb-4 flex min-w-0 items-start gap-3">
+            <ShoppingBag size={18} className="mt-0.5 shrink-0 text-tag-blue-ink" />
+            <div className="min-w-0">
+              <p className="font-medium text-ink">Vaste productkeuzes</p>
+              <p className="text-sm text-ink-muted">
+                Deze producten gebruik ik automatisch opnieuw bij dezelfde ingrediënten.
+              </p>
+            </div>
+          </div>
+
+          {productPreferences.length === 0 ? (
+            <p className="rounded-lg bg-surface-2 px-3 py-2 text-sm text-ink-muted">
+              Nog niets onthouden. Dit groeit vanzelf wanneer je producten bevestigt op Controle.
+            </p>
+          ) : (
+            <div className="flex min-w-0 flex-col divide-y divide-line rounded-lg border border-line">
+              {productPreferences.map((preference) => (
+                <div key={preference.id} className="flex min-w-0 items-center justify-between gap-3 p-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-ink">{preference.ingredient.name}</p>
+                    <p className="truncate text-xs text-ink-muted">
+                      {preference.product.name}
+                      {preference.product.packageSize ? ` · ${preference.product.packageSize}` : ""}
+                      {` · ${preference.timesChosen}x gekozen`}
+                    </p>
+                  </div>
+                  <form action={forgetProductPreference} className="shrink-0">
+                    <input type="hidden" name="householdId" value={household.id} />
+                    <input type="hidden" name="preferenceId" value={preference.id} />
+                    <button
+                      type="submit"
+                      aria-label={`${preference.product.name} vergeten`}
+                      title="Niet meer onthouden"
+                      className="rounded-lg border border-line p-2 text-ink-faint transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-700"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </form>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
 
         <h2 className="mb-3 text-sm font-semibold text-ink">Productkeuze</h2>
         <form action={updateProductChoicePreference} className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
@@ -228,29 +330,6 @@ export default async function OnsGezinPage() {
             </button>
           </div>
         </form>
-
-        <div className="mb-8 flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
-          <div className="flex min-w-0 items-start gap-3 p-4">
-            <Heart size={18} className="mt-0.5 shrink-0 text-tag-pink-ink" />
-            <div className="min-w-0">
-              <p className="font-medium text-ink">Favorieten</p>
-              <p className="text-sm text-ink-muted">
-                {likedCategories.length > 0 ? likedCategories.join(", ") : "Nog niets gekozen"}
-              </p>
-            </div>
-          </div>
-          <div className="flex min-w-0 items-start gap-3 p-4">
-            <ShoppingBag size={18} className="mt-0.5 shrink-0 text-tag-blue-ink" />
-            <div className="min-w-0">
-              <p className="font-medium text-ink">Vaste productvoorkeuren</p>
-              <p className="text-sm text-ink-muted">
-                {likedProducts.length > 0
-                  ? likedProducts.map((p) => p.name).join(", ")
-                  : "Nog niets geleerd — dit vult zich vanzelf via Controle"}
-              </p>
-            </div>
-          </div>
-        </div>
 
         <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
           <summary className="flex cursor-pointer items-center gap-2 font-medium text-ink">
