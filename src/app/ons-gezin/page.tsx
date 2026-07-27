@@ -6,17 +6,12 @@ import type { DayKey } from "@/lib/week";
 import { CATEGORY_LABELS } from "@/lib/categoryStyle";
 import NavBar from "@/components/NavBar";
 import AddPersonForm from "./AddPersonForm";
+import PersonPreferencesCard from "./PersonPreferencesCard";
 import WeeklyRhythmEditor from "./WeeklyRhythmEditor";
 import { logout, updateAccessCode } from "./actions";
 
 // Leest live gezinsdata — nooit statisch prerenderen.
 export const dynamic = "force-dynamic";
-
-const ROLE_LABELS: Record<string, string> = {
-  PARENT: "Ouder",
-  CHILD: "Kind",
-  OTHER: "Anders",
-};
 
 const STANCE_LABELS: Record<string, string> = {
   LIKED: "Lekker",
@@ -26,28 +21,16 @@ const STANCE_LABELS: Record<string, string> = {
   UNKNOWN: "Onbekend",
 };
 
-const AVATAR_TONES = [
-  "bg-tag-blue-bg text-tag-blue-ink",
-  "bg-tag-green-bg text-tag-green-ink",
-  "bg-tag-amber-bg text-tag-amber-ink",
-  "bg-tag-purple-bg text-tag-purple-ink",
-  "bg-tag-pink-bg text-tag-pink-ink",
-];
-
-function avatarTone(name: string) {
-  const sum = [...name].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-  return AVATAR_TONES[sum % AVATAR_TONES.length];
-}
-
-function initials(name: string) {
-  return name.trim().slice(0, 2).toUpperCase();
-}
-
 export default async function OnsGezinPage() {
   const currentHousehold = await requireCurrentHousehold();
   const household = await prisma.household.findUniqueOrThrow({
     where: { id: currentHousehold.id },
-    include: { persons: { orderBy: { createdAt: "asc" } } },
+    include: {
+      persons: {
+        include: { presenceOverrides: { orderBy: { dayOfWeek: "asc" } } },
+        orderBy: { createdAt: "asc" },
+      },
+    },
   });
 
   const preferences = await prisma.preference.findMany({
@@ -97,22 +80,23 @@ export default async function OnsGezinPage() {
         </p>
 
         <h2 className="mb-3 text-sm font-semibold text-ink">Gezinsleden</h2>
-        <div className="mb-8 grid grid-cols-2 gap-3">
+        <div className="mb-8 grid gap-3">
           {household.persons.map((person) => (
-            <div key={person.id} className="min-w-0 rounded-xl border border-line bg-surface p-4">
-              <div
-                className={`mb-2 flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold ${avatarTone(person.name)}`}
-              >
-                {initials(person.name)}
-              </div>
-              <p className="truncate font-medium text-ink">{person.name}</p>
-              <p className="text-xs text-ink-faint">{ROLE_LABELS[person.role] ?? person.role}</p>
-              {Array.isArray(person.hardRestrictions) && person.hardRestrictions.length > 0 && (
-                <p className="mt-1 truncate text-xs text-tag-amber-ink">
-                  {(person.hardRestrictions as string[]).join(", ")}
-                </p>
-              )}
-            </div>
+            <PersonPreferencesCard
+              key={person.id}
+              householdId={household.id}
+              person={{
+                id: person.id,
+                name: person.name,
+                role: person.role,
+                hardRestrictions: Array.isArray(person.hardRestrictions)
+                  ? (person.hardRestrictions as string[])
+                  : [],
+                defaultPresent: person.defaultPresent,
+                portionMultiplier: person.portionMultiplier,
+                presenceOverrides: person.presenceOverrides,
+              }}
+            />
           ))}
           <AddPersonForm householdId={household.id} />
         </div>

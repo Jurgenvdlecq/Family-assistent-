@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { createHouseholdSession, hashHouseholdAccessCode } from "@/lib/auth";
+import { defaultPortionMultiplierForRole } from "@/domain/household/presence";
 
 export type OnboardingPersonInput = {
   name: string;
@@ -42,6 +43,7 @@ export async function completeOnboarding(payload: OnboardingPayload) {
         create: persons.map((p) => ({
           name: p.name,
           role: p.role,
+          portionMultiplier: defaultPortionMultiplierForRole(p.role),
           hardRestrictions: p.hardRestrictions.filter((r) => r.trim().length > 0),
         })),
       },

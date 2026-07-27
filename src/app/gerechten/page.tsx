@@ -61,7 +61,7 @@ export default async function GerechtenPage({
 
   const [allVariants, hardRestrictions] = await Promise.all([
     prisma.recipeVariant.findMany({ include: VARIANT_INCLUDE }),
-    getHouseholdHardRestrictions(household.id),
+    getHouseholdHardRestrictions(household.id, dayKey),
   ]);
 
   // Een onveilig gerecht mag niet eens als suggestie zichtbaar zijn — niet

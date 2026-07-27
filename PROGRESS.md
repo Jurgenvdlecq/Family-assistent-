@@ -46,12 +46,15 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 | WP7 | Picnic-mandje professionaliseren | `src/lib/picnic/cartService.ts` (idempotente add + clear), `PicnicNetworkError`/`PicnicApiError`, bevestigingsscherm vóór het vullen van het mandje (`src/lib/picnic/confirmationSummary.ts`), "mandje legen"-knop. |
 | WP8 | Uitlegbare weekplanning-scoring | `src/domain/meal-planning/scoreMealPlanCandidate.ts` + `src/lib/mealPlan.ts` — `Math.random()` vervangen door deterministische score met stabiele tiebreak op variant-id, concrete redenen, recente-planning-signaal en variantvoorkeuren. |
 | WP9 | Multi-household / authenticatie | `src/lib/auth.ts`, `/login`, `HouseholdSession` + toegangscode-hash — pagina's gebruiken het huidige huishouden uit een HttpOnly-sessiecookie en server actions valideren household-toegang voordat ze muteren. |
+| WP10 | Persoonlijke gezinslogica | `Person.portionMultiplier`, `PersonPresenceOverride`, `src/domain/household/presence.ts` en bewerkbare gezinsleden op `/ons-gezin` — weekplanning filtert harde beperkingen per dag, boodschappenhoeveelheden schalen relatief op wie die dag mee-eet. |
 
 ## Nog te doen (roadmap, nog niet gestart)
 
-- **WP10 — Persoonlijke gezinslogica.** Volgende logische pakket uit Fase 10:
-  aanwezigheid per dag, voorkeuren per persoon, portiegrootte/kind-volwassene
-  en planningregels die deze signalen echt meewegen.
+- **WP11 — Persoonsvoorkeuren verder uitdiepen.** WP10 bevat harde
+  beperkingen, dagaanwezigheid en porties. Logische vervolgstap: echte
+  persoonsgebonden voorkeuren per gerecht/ingrediënt modelleren met het
+  onderscheid hard restriction / sterke afkeur / lichte voorkeur / favoriet,
+  plus eventuele agenda- of sportdag-signalen.
 
 ## Niet-voor-de-hand-liggende operationele kennis
 

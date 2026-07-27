@@ -4,24 +4,111 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { assertCurrentHousehold, clearHouseholdSession, setHouseholdAccessCode } from "@/lib/auth";
-import { DAY_KEYS, type DayKey } from "@/lib/week";
+import { defaultPortionMultiplierForRole } from "@/domain/household/presence";
+import { DAY_ENUM, DAY_KEYS, getCurrentWeekStart, type DayKey } from "@/lib/week";
+
+const ROLES = ["PARENT", "CHILD", "OTHER"] as const;
+
+function parseRole(value: FormDataEntryValue | null): (typeof ROLES)[number] {
+  const role = String(value ?? "OTHER");
+  return ROLES.includes(role as (typeof ROLES)[number]) ? (role as (typeof ROLES)[number]) : "OTHER";
+}
+
+function parseHardRestrictions(value: FormDataEntryValue | null): string[] {
+  return String(value ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+async function invalidateCurrentShoppingList(householdId: string) {
+  const mealPlan = await prisma.mealPlan.findUnique({
+    where: { householdId_weekStart: { householdId, weekStart: getCurrentWeekStart() } },
+    select: { id: true },
+  });
+  if (!mealPlan) return;
+  await prisma.shoppingList.deleteMany({ where: { mealPlanId: mealPlan.id } });
+}
 
 export async function addPerson(formData: FormData) {
   const householdId = String(formData.get("householdId"));
   await assertCurrentHousehold(householdId);
   const name = String(formData.get("name") ?? "").trim();
-  const role = String(formData.get("role") ?? "OTHER") as "PARENT" | "CHILD" | "OTHER";
+  const role = parseRole(formData.get("role"));
 
   if (!name) {
     throw new Error("Naam is verplicht.");
   }
 
   await prisma.person.create({
-    data: { householdId, name, role },
+    data: { householdId, name, role, portionMultiplier: defaultPortionMultiplierForRole(role) },
   });
 
   revalidatePath("/ons-gezin");
   revalidatePath("/");
+}
+
+export async function updatePersonProfile(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const personId = String(formData.get("personId"));
+  const role = parseRole(formData.get("role"));
+  const portionMultiplier = Number(formData.get("portionMultiplier"));
+
+  if (!Number.isFinite(portionMultiplier) || portionMultiplier <= 0 || portionMultiplier > 4) {
+    throw new Error("Portiegrootte moet tussen 0 en 4 liggen.");
+  }
+
+  await prisma.person.update({
+    where: { id: personId, householdId },
+    data: {
+      role,
+      defaultPresent: formData.get("defaultPresent") === "on",
+      portionMultiplier,
+      hardRestrictions: parseHardRestrictions(formData.get("hardRestrictions")),
+    },
+  });
+
+  await invalidateCurrentShoppingList(householdId);
+  revalidatePath("/ons-gezin");
+  revalidatePath("/");
+  revalidatePath("/gerechten");
+  revalidatePath("/boodschappen");
+}
+
+export async function updatePersonPresence(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const personId = String(formData.get("personId"));
+  const dayKey = String(formData.get("dayKey")) as DayKey;
+  const present = String(formData.get("present")) === "true";
+
+  if (!DAY_KEYS.includes(dayKey)) {
+    throw new Error("Onbekende dag.");
+  }
+
+  const person = await prisma.person.findUniqueOrThrow({
+    where: { id: personId, householdId },
+    select: { defaultPresent: true },
+  });
+
+  if (present === person.defaultPresent) {
+    await prisma.personPresenceOverride.deleteMany({
+      where: { personId, dayOfWeek: DAY_ENUM[dayKey] },
+    });
+  } else {
+    await prisma.personPresenceOverride.upsert({
+      where: { personId_dayOfWeek: { personId, dayOfWeek: DAY_ENUM[dayKey] } },
+      create: { personId, dayOfWeek: DAY_ENUM[dayKey], present },
+      update: { present },
+    });
+  }
+
+  await invalidateCurrentShoppingList(householdId);
+  revalidatePath("/ons-gezin");
+  revalidatePath("/");
+  revalidatePath("/gerechten");
+  revalidatePath("/boodschappen");
 }
 
 export async function updateWeeklyRhythm(formData: FormData) {

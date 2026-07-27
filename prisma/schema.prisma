@@ -119,13 +119,30 @@ model Person {
   role             PersonRole @default(OTHER)
   hardRestrictions Json       @default("[]") @map("hard_restrictions")
   defaultPresent   Boolean    @default(true) @map("default_present")
+  portionMultiplier Float     @default(1) @map("portion_multiplier")
   createdAt        DateTime   @default(now()) @map("created_at")
 
-  household      Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  feedbackEvents FeedbackEvent[]
+  household         Household                @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  feedbackEvents    FeedbackEvent[]
+  presenceOverrides PersonPresenceOverride[]
 
   @@index([householdId])
   @@map("persons")
+}
+
+model PersonPresenceOverride {
+  id        String    @id @default(uuid())
+  personId  String    @map("person_id")
+  dayOfWeek DayOfWeek @map("day_of_week")
+  present   Boolean
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@unique([personId, dayOfWeek])
+  @@index([personId])
+  @@map("person_presence_overrides")
 }
 
 enum PersonRole {

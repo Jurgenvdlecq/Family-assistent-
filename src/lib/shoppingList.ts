@@ -5,6 +5,8 @@ import { subtractInventory } from "./quantity/inventory";
 import { resolveInStockQuantity } from "./quantity/inventoryStatus";
 import type { BaseQuantity } from "./quantity/units";
 import { getCurrentWeekStart } from "./week";
+import { DAY_KEY_BY_ENUM } from "./week";
+import { getHouseholdPortionScaleByDay } from "./household";
 import { matchProduct } from "@/domain/product-matching/matchProduct";
 import { matchProductForIngredient } from "@/domain/product-matching/matchIngredient";
 import { getRejectedProductIds, getTrustedPreferences, toMatchCandidate } from "@/domain/product-matching/repository";
@@ -59,7 +61,7 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
   });
   if (existing) return existing;
 
-  const [mealPlan, fixedGroceries, inventory, likelyInStockIngredients] = await Promise.all([
+  const [mealPlan, fixedGroceries, inventory, likelyInStockIngredients, portionScaleByDay] = await Promise.all([
     prisma.mealPlan.findUniqueOrThrow({
       where: { id: mealPlanId },
       include: {
@@ -77,18 +79,22 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
     prisma.fixedGrocery.findMany({ where: { householdId } }),
     getInventoryMap(householdId),
     prisma.ingredient.findMany({ where: { likelyInStock: true }, select: { id: true, unit: true } }),
+    getHouseholdPortionScaleByDay(householdId),
   ]);
 
   type Agg = { ingredientId: string; quantity: number; unit: Unit };
   const totals = new Map<string, Agg>();
   for (const entry of mealPlan.entries) {
+    const dayKey = DAY_KEY_BY_ENUM[entry.dayOfWeek];
+    const scale = portionScaleByDay[dayKey]?.scale ?? 1;
     for (const ri of entry.recipeVariant.recipe.ingredients) {
       const key = `${ri.ingredientId}:${ri.unit}`;
+      const scaledQuantity = ri.quantity * scale;
       const current = totals.get(key);
       if (current) {
-        current.quantity += ri.quantity;
+        current.quantity += scaledQuantity;
       } else {
-        totals.set(key, { ingredientId: ri.ingredientId, quantity: ri.quantity, unit: ri.unit });
+        totals.set(key, { ingredientId: ri.ingredientId, quantity: scaledQuantity, unit: ri.unit });
       }
     }
   }
@@ -215,19 +221,23 @@ export async function syncShoppingListForInventoryChange(householdId: string, in
   });
   if (!shoppingList) return;
 
-  const [ingredient, inventory, fixedGroceries] = await Promise.all([
+  const [ingredient, inventory, fixedGroceries, portionScaleByDay] = await Promise.all([
     prisma.ingredient.findUniqueOrThrow({ where: { id: ingredientId } }),
     getInventoryMap(householdId),
     prisma.fixedGrocery.findMany({ where: { householdId, ingredientId } }),
+    getHouseholdPortionScaleByDay(householdId),
   ]);
 
   let rawNeed: BaseQuantity | null = null;
   for (const entry of mealPlan.entries) {
+    const dayKey = DAY_KEY_BY_ENUM[entry.dayOfWeek];
+    const scale = portionScaleByDay[dayKey]?.scale ?? 1;
     for (const ri of entry.recipeVariant.recipe.ingredients) {
       if (ri.ingredientId !== ingredientId) continue;
+      const scaledQuantity = ri.quantity * scale;
       rawNeed = rawNeed
-        ? { amount: rawNeed.amount + ri.quantity, unit: rawNeed.unit }
-        : { amount: ri.quantity, unit: ri.unit };
+        ? { amount: rawNeed.amount + scaledQuantity, unit: rawNeed.unit }
+        : { amount: scaledQuantity, unit: ri.unit };
     }
   }
 
