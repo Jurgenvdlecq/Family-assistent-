@@ -31,6 +31,11 @@ actuele status en de manier van werken die tot nu toe is gevolgd.
   zodat het volgende work package op een schone basis begint.
 - Commit-berichten en PR's zijn in het Nederlands geschreven, consistent met
   de rest van het project (`AGENTS.md`, UI-teksten).
+- Bij acties binnen lange pagina's (zoals `/controle` en `/boodschappen`):
+  redirect altijd terug naar dezelfde sectie of regel met query+hash
+  (`?focus=...#...`) en open ingeklapte `<details>`-secties wanneer de
+  gefocuste regel daarin staat. De gebruiker mag na een zoek/keuze-actie
+  niet bovenaan de pagina belanden.
 
 ## Status: work packages
 

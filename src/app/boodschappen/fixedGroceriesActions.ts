@@ -212,16 +212,26 @@ export async function addFixedPicnicProduct(formData: FormData) {
       matchConfidence: 1,
       matchReasons: ["Handmatig als vaste boodschap gekozen en onthouden."],
     };
+    let lineId: string | null = null;
     if (existingLine) {
       await prisma.shoppingListLine.update({ where: { id: existingLine.id }, data: lineData });
+      lineId = existingLine.id;
     } else {
-      await prisma.shoppingListLine.create({ data: { shoppingListId, ...lineData } });
+      const line = await prisma.shoppingListLine.create({
+        data: { shoppingListId, ...lineData },
+        select: { id: true },
+      });
+      lineId = line.id;
     }
+
+    revalidatePath("/boodschappen");
+    revalidatePath("/controle");
+    redirect(`/boodschappen?fixedLine=${encodeURIComponent(lineId)}#fixed-line-${encodeURIComponent(lineId)}`);
   }
 
   revalidatePath("/boodschappen");
   revalidatePath("/controle");
-  redirect("/boodschappen#fixed-groceries");
+  redirect("/boodschappen#add-fixed-grocery");
 }
 
 /** Verwijdert een vaste boodschap definitief uit de standaardlijst (niet alleen deze week). */

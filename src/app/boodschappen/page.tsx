@@ -105,11 +105,12 @@ function FixedProductImage({ item }: { item: { image_id?: string; name?: string 
 export default async function BoodschappenPage({
   searchParams,
 }: {
-  searchParams: Promise<{ fixedQ?: string }>;
+  searchParams: Promise<{ fixedQ?: string; fixedLine?: string }>;
 }) {
   const params = await searchParams;
   const household = await requireCurrentHousehold();
   const fixedSearchQuery = String(params.fixedQ ?? "").trim();
+  const focusedFixedLineId = String(params.fixedLine ?? "").trim();
 
   const weekStart = getCurrentWeekStart();
   const mealPlan = await getMealPlanForWeek(household.id, weekStart);
@@ -204,7 +205,11 @@ export default async function BoodschappenPage({
           ))}
         </div>
 
-        <details id="fixed-groceries" className="mt-8 scroll-mt-6 rounded-xl border border-line bg-surface p-4">
+        <details
+          id="fixed-groceries"
+          className="mt-8 scroll-mt-6 rounded-xl border border-line bg-surface p-4"
+          open={focusedFixedLineId ? true : undefined}
+        >
           <summary className="cursor-pointer text-sm font-semibold text-ink">
             {activeFixedLines.length + inactiveFixedItems.length} vaste boodschap
             {activeFixedLines.length + inactiveFixedItems.length === 1 ? "" : "pen"}
@@ -216,7 +221,11 @@ export default async function BoodschappenPage({
             </p>
           )}
           {activeFixedLines.map((line) => (
-            <div key={line.id} className="flex min-w-0 flex-col gap-2 p-4">
+            <div
+              key={line.id}
+              id={`fixed-line-${line.id}`}
+              className="flex min-w-0 scroll-mt-6 flex-col gap-2 p-4 transition-colors target:bg-accent/10"
+            >
               <div className="flex min-w-0 items-center justify-between gap-4">
                 <p className="min-w-0 truncate text-ink">{line.product?.name ?? line.ingredient.name}</p>
                 <form action={removeFixedLineThisWeek}>
@@ -277,11 +286,15 @@ export default async function BoodschappenPage({
           </div>
         </details>
 
-        <details className="mt-4 rounded-xl border border-line bg-surface p-4">
+        <details
+          id="add-fixed-grocery"
+          className="mt-4 scroll-mt-6 rounded-xl border border-line bg-surface p-4"
+          open={fixedSearchQuery ? true : undefined}
+        >
           <summary className="cursor-pointer text-sm font-medium text-ink">
             Nieuwe vaste boodschap toevoegen
           </summary>
-          <form action="/boodschappen" className="mt-3 flex min-w-0 gap-2">
+          <form action="/boodschappen#add-fixed-grocery" className="mt-3 flex min-w-0 gap-2">
             <input
               name="fixedQ"
               defaultValue={fixedSearchQuery}
