@@ -5,11 +5,16 @@ import { prisma } from "@/lib/prisma";
 import { assertCurrentHousehold } from "@/lib/auth";
 import { logFeedbackEvent } from "@/lib/feedback";
 import { ensureMealPlan } from "@/lib/mealPlan";
+import { invalidateShoppingList } from "@/lib/shoppingList";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "@/lib/scoring";
 import { DAY_ENUM, DAY_KEYS, dateForDay, getCurrentWeekStart, type DayKey } from "@/lib/week";
 import { accessibleRecipeWhere } from "@/lib/recipeScope";
 import { answerLearningPrompt, dismissLearningPrompt } from "@/domain/learning/patterns";
 import { parseFeedbackReason } from "@/domain/learning/feedbackReasons";
+import { parseRecipeIngredientText } from "@/lib/recipeIngredientText";
+import { parsePackageQuantity } from "@/lib/quantity/parsePackageSize";
+import { PicnicClient } from "@/lib/picnic/client";
+import { picnicPriceToEuros, picnicProductRef } from "@/lib/picnic/products";
 
 const PERSONAL_STANCES = ["LIKED", "SOMETIMES", "RATHER_NOT", "NEVER"] as const;
 const PERSONAL_SUBJECT_TYPES = ["RECIPE_VARIANT", "RECIPE_CATEGORY", "INGREDIENT"] as const;
@@ -23,6 +28,8 @@ const RECIPE_CATEGORIES = [
   "AIRFRYER",
   "OTHER",
 ] as const;
+
+type ParsedLooseMealLine = ReturnType<typeof parseRecipeIngredientText>[number];
 
 function parsePersonalStance(value: FormDataEntryValue | null): (typeof PERSONAL_STANCES)[number] {
   const stance = String(value ?? "SOMETIMES");
@@ -38,6 +45,188 @@ function parsePersonalSubjectType(value: FormDataEntryValue | null): (typeof PER
     throw new Error("Onbekend voorkeurstype.");
   }
   return subjectType as (typeof PERSONAL_SUBJECT_TYPES)[number];
+}
+
+function looseMealCategory(title: string, lines: ParsedLooseMealLine[]) {
+  const text = `${title} ${lines.map((line) => line.name).join(" ")}`.toLowerCase();
+  if (/(airfryer|patat|friet|frikandel|kaassouffle|kaasstengel|snack)/.test(text)) return "AIRFRYER" as const;
+  if (text.includes("wrap")) return "WRAPS" as const;
+  if (text.includes("rijst")) return "RICE_DISH" as const;
+  if (text.includes("pasta")) return "PASTA" as const;
+  return "QUICK_AND_EASY" as const;
+}
+
+async function upsertLooseMealIngredients(lines: ParsedLooseMealLine[]) {
+  const rows = [];
+  for (const line of lines) {
+    const ingredient = await prisma.ingredient.upsert({
+      where: { name: line.name },
+      update: {},
+      create: {
+        name: line.name,
+        unit: line.unit,
+        category: line.category,
+      },
+    });
+    rows.push({
+      ingredientId: ingredient.id,
+      ingredientName: ingredient.name,
+      quantity: line.quantity,
+      unit: ingredient.unit,
+    });
+  }
+  return rows;
+}
+
+async function savePicnicCandidatesForLooseMeal(
+  householdId: string,
+  rows: Awaited<ReturnType<typeof upsertLooseMealIngredients>>
+) {
+  const household = await prisma.household.findUniqueOrThrow({
+    where: { id: householdId },
+    select: { picnicAuthToken: true },
+  });
+  if (!household.picnicAuthToken) return;
+
+  const client = new PicnicClient(household.picnicAuthToken);
+  try {
+    for (const row of rows.slice(0, 12)) {
+      const results = await client.search(row.ingredientName);
+      const seenRefs = new Set<string>();
+      const candidates = results
+        .map((item) => {
+          const externalRef = picnicProductRef(item);
+          if (!externalRef || !item.name || seenRefs.has(externalRef)) return null;
+          seenRefs.add(externalRef);
+          const packageSize = item.unit_quantity ?? null;
+          return {
+            ingredientId: row.ingredientId,
+            externalRef,
+            picnicImageId: item.image_id ?? null,
+            name: item.name,
+            packageSize,
+            packageQuantity: packageSize ? parsePackageQuantity(packageSize, row.unit) : null,
+            price: picnicPriceToEuros(item.display_price ?? item.price),
+            lastSeenAvailable: new Date(),
+          };
+        })
+        .filter((item) => item !== null)
+        .slice(0, 3);
+
+      await Promise.all(
+        candidates.map((candidate) =>
+          prisma.product.upsert({
+            where: {
+              ingredientId_externalRef: {
+                ingredientId: candidate.ingredientId,
+                externalRef: candidate.externalRef,
+              },
+            },
+            update: candidate,
+            create: candidate,
+          })
+        )
+      );
+    }
+  } finally {
+    const refreshedToken = client.getAuthToken();
+    if (refreshedToken && refreshedToken !== household.picnicAuthToken) {
+      await prisma.household.update({
+        where: { id: householdId },
+        data: { picnicAuthToken: refreshedToken, picnicTokenUpdatedAt: new Date() },
+      });
+    }
+  }
+}
+
+export async function setLooseMealForDay(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const dayKey = String(formData.get("dayKey")) as DayKey;
+  if (!DAY_KEYS.includes(dayKey)) throw new Error("Onbekende dag.");
+
+  const title = String(formData.get("title") ?? "").trim();
+  const lineText = String(formData.get("lineText") ?? "").trim();
+  if (!title) throw new Error("Geef deze losse maaltijd een naam.");
+  if (!lineText) throw new Error("Vul minimaal één productregel in.");
+
+  const parsedLines = parseRecipeIngredientText(lineText);
+  if (parsedLines.length === 0) {
+    throw new Error("Ik kon geen producten herkennen. Gebruik bijvoorbeeld: patatjes, Kai: frikandel.");
+  }
+
+  const weekStart = getCurrentWeekStart();
+  const mealPlan = await ensureMealPlan(householdId, weekStart);
+  if (!mealPlan) throw new Error("Weekplanning kon niet worden geladen.");
+
+  const ingredientRows = await upsertLooseMealIngredients(parsedLines);
+  const recipe = await prisma.recipe.create({
+    data: {
+      title,
+      category: looseMealCategory(title, parsedLines),
+      scope: "HOUSEHOLD",
+      householdId,
+      originHouseholdId: householdId,
+      status: "FOUND",
+      source: "Losse maaltijd",
+      properties: ["losse_maaltijd", "handmatig_ingevuld"],
+      instructions: lineText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
+      ingredients: {
+        create: ingredientRows.map((row) => ({
+          ingredientId: row.ingredientId,
+          quantity: row.quantity,
+          unit: row.unit,
+        })),
+      },
+      variants: {
+        create: {
+          variantType: "FAST",
+          contextFit: ["losse_maaltijd", `dag_${dayKey}`],
+        },
+      },
+    },
+    include: { variants: true },
+  });
+  const recipeVariantId = recipe.variants[0]?.id;
+  if (!recipeVariantId) throw new Error("Kon geen maaltijdvariant maken.");
+
+  await savePicnicCandidatesForLooseMeal(householdId, ingredientRows);
+
+  const dayEnum = DAY_ENUM[dayKey];
+  const currentEntry = mealPlan.entries.find((entry) => entry.dayOfWeek === dayEnum);
+  if (currentEntry) {
+    await logFeedbackEvent({
+      householdId,
+      subjectType: "RECIPE_VARIANT",
+      subjectId: currentEntry.recipeVariantId,
+      eventType: "REPLACED",
+      reason: "ONLY_THIS_TIME",
+      explicit: true,
+      context: { dayOfWeek: dayEnum, source: "loose_meal" },
+    });
+    await prisma.mealPlanEntry.update({
+      where: { id: currentEntry.id },
+      data: { recipeVariantId },
+    });
+  } else {
+    await prisma.mealPlanEntry.create({
+      data: { mealPlanId: mealPlan.id, dayOfWeek: dayEnum, recipeVariantId },
+    });
+  }
+
+  await logFeedbackEvent({
+    householdId,
+    subjectType: "RECIPE_VARIANT",
+    subjectId: recipeVariantId,
+    eventType: "CHOSEN",
+    explicit: true,
+    context: { dayOfWeek: dayEnum, source: "loose_meal", lineText },
+  });
+  await invalidateShoppingList(mealPlan.id);
+
+  revalidatePath("/");
+  revalidatePath("/boodschappen");
+  revalidatePath("/controle");
 }
 
 /**
