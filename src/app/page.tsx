@@ -25,7 +25,6 @@ import {
   formatDayShort,
 } from "@/lib/week";
 import {
-  CATEGORY_GRADIENT,
   CATEGORY_LABELS,
   VARIANT_LABELS,
   STATUS_LABELS,
@@ -34,6 +33,7 @@ import {
 } from "@/lib/categoryStyle";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
+import RecipePhoto from "@/components/RecipePhoto";
 import { getPendingLearningPrompts } from "@/domain/learning/patterns";
 import { MEAL_REPLACEMENT_REASONS } from "@/domain/learning/feedbackReasons";
 import {
@@ -339,8 +339,6 @@ export default async function Home() {
             recipe &&
             (recipe.status === "FOUND" || recipe.status === "ADAPTED") &&
             !alreadyAsked.has(entry.recipeVariantId);
-          const gradient = recipe ? CATEGORY_GRADIENT[recipe.category] : "from-neutral-200 to-neutral-300";
-
           return (
             <div key={dayKey} className="flex min-w-0 flex-col gap-3 px-6 py-4">
               <div className="flex min-w-0 items-center gap-3">
@@ -353,10 +351,7 @@ export default async function Home() {
                   </p>
                 </div>
 
-                <div
-                  className={`h-14 w-14 shrink-0 rounded-xl bg-gradient-to-br ${gradient}`}
-                  aria-hidden
-                />
+                <RecipePhoto recipe={recipe} />
 
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium text-ink">{recipe?.title ?? "—"}</p>

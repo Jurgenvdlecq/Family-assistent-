@@ -35,6 +35,18 @@ function parseList(value: FormDataEntryValue | null): string[] {
     .filter(Boolean);
 }
 
+function parseOptionalUrl(value: FormDataEntryValue | null, fieldLabel: string) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    if (url.protocol === "http:" || url.protocol === "https:") return url.toString();
+  } catch {
+    // Geef hieronder één duidelijke foutmelding.
+  }
+  throw new Error(`${fieldLabel} moet een geldige http(s)-link zijn.`);
+}
+
 async function requireRecipeEditor(formData: FormData) {
   const householdId = String(formData.get("householdId"));
   await assertCurrentHousehold(householdId);
@@ -125,6 +137,9 @@ export async function createRecipe(formData: FormData) {
   const category = parseEnum(formData.get("category"), RECIPE_CATEGORIES, "OTHER");
   const variantType = parseEnum(formData.get("variantType"), VARIANT_TYPES, "FRESH");
   const source = String(formData.get("source") ?? "").trim() || null;
+  const imageUrl = parseOptionalUrl(formData.get("imageUrl"), "Foto-URL");
+  const imageSourceUrl = parseOptionalUrl(formData.get("imageSourceUrl"), "Fotobron");
+  const imageAttribution = String(formData.get("imageAttribution") ?? "").trim() || null;
   const properties = parseList(formData.get("properties"));
   const instructions = parseList(formData.get("instructions"));
   const contextFit = parseList(formData.get("contextFit"));
@@ -140,6 +155,9 @@ export async function createRecipe(formData: FormData) {
       title,
       category,
       source,
+      imageUrl,
+      imageSourceUrl,
+      imageAttribution,
       properties,
       instructions,
       status: "FOUND",
@@ -170,6 +188,9 @@ export async function updateRecipeDetails(formData: FormData) {
   const recipeId = String(formData.get("recipeId"));
   const title = String(formData.get("title") ?? "").trim();
   const source = String(formData.get("source") ?? "").trim() || null;
+  const imageUrl = parseOptionalUrl(formData.get("imageUrl"), "Foto-URL");
+  const imageSourceUrl = parseOptionalUrl(formData.get("imageSourceUrl"), "Fotobron");
+  const imageAttribution = String(formData.get("imageAttribution") ?? "").trim() || null;
   const category = parseEnum(formData.get("category"), RECIPE_CATEGORIES, "OTHER");
   const status = parseEnum(formData.get("status"), RECIPE_STATUSES, "FOUND");
   const properties = parseList(formData.get("properties"));
@@ -182,7 +203,7 @@ export async function updateRecipeDetails(formData: FormData) {
 
   await prisma.recipe.update({
     where: { id: recipeId },
-    data: { title, source, category, status, properties, instructions },
+    data: { title, source, imageUrl, imageSourceUrl, imageAttribution, category, status, properties, instructions },
   });
 
   revalidateRecipeManagementPaths();
@@ -268,6 +289,9 @@ export async function copyRecipeToHousehold(formData: FormData) {
       title: recipe.title,
       category: recipe.category,
       source: recipe.source,
+      imageUrl: recipe.imageUrl,
+      imageSourceUrl: recipe.imageSourceUrl,
+      imageAttribution: recipe.imageAttribution,
       properties: recipe.properties,
       instructions: recipe.instructions,
       status: "ADAPTED",

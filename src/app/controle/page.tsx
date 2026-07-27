@@ -12,6 +12,8 @@ import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { getCurrentWeekStart } from "@/lib/week";
 import { ensureShoppingList, getShoppingListCandidates, describeLinePackaging } from "@/lib/shoppingList";
+import { prisma } from "@/lib/prisma";
+import { enrichShoppingListProductImages } from "@/lib/picnic/productEnrichment";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
@@ -324,7 +326,16 @@ export default async function ControlePage() {
   const mealPlan = await getMealPlanForWeek(household.id, weekStart);
   if (!mealPlan) redirect("/");
 
-  const shoppingList = await ensureShoppingList(mealPlan.id, household.id);
+  const initialShoppingList = await ensureShoppingList(mealPlan.id, household.id);
+  await enrichShoppingListProductImages(household.id, initialShoppingList.id);
+  const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
+    where: { id: initialShoppingList.id },
+    include: {
+      lines: {
+        include: { ingredient: true, product: true },
+      },
+    },
+  });
 
   const trustedLines = shoppingList.lines.filter((l) => !l.needsReview);
   const reviewLines = shoppingList.lines.filter((l) => l.needsReview);
