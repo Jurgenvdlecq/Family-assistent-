@@ -31,6 +31,17 @@ test("buildConfirmationSummary: telt bekende prijzen op, telt onbekende apart", 
   assert.equal(summary.unknownPriceCount, 1);
 });
 
+test("buildConfirmationSummary: rekent bekende prijzen met het aantal verpakkingen", () => {
+  const summary = buildConfirmationSummary([
+    line({
+      ingredientName: "Aardappelen",
+      packageCount: 4,
+      product: { name: "Aardappeltjes", price: 1.79, lastSeenAvailable: new Date("2026-07-20") },
+    }),
+  ]);
+  assert.equal(summary.expectedTotalPrice, 7.16);
+});
+
 test("buildConfirmationSummary: nooit een prijs verzinnen als alles onbekend is", () => {
   const summary = buildConfirmationSummary([
     line({ product: { name: "X", price: null, lastSeenAvailable: null } }),

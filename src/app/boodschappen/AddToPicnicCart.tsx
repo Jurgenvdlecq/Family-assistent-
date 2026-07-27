@@ -152,7 +152,7 @@ export default function AddToPicnicCart({
       {stage === "done" && result && (
         <div className="mt-3 min-w-0 rounded-lg border border-line p-3 text-xs">
           <p className="font-medium text-tag-green-ink">
-            {result.added.length} product(en) toegevoegd aan je Picnic-mandje.
+            {result.added.reduce((sum, item) => sum + item.count, 0)} verpakking(en) toegevoegd aan je Picnic-mandje.
           </p>
           {result.skipped.length > 0 && (
             <p className="mt-1 text-ink-faint">
