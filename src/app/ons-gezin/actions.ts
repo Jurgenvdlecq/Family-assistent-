@@ -6,10 +6,12 @@ import { prisma } from "@/lib/prisma";
 import { assertCurrentHousehold, clearHouseholdSession, setHouseholdAccessCode } from "@/lib/auth";
 import { defaultPortionMultiplierForRole } from "@/domain/household/presence";
 import { normalizeProductChoicePreference } from "@/domain/product-matching/productChoicePreference";
+import { RecipeCategory } from "@/generated/prisma/enums";
 import { DAY_ENUM, DAY_KEYS, getCurrentWeekStart, type DayKey } from "@/lib/week";
 
 const ROLES = ["PARENT", "CHILD", "OTHER"] as const;
 const STANCES = ["LIKED", "SOMETIMES", "RATHER_NOT", "NEVER", "UNKNOWN"] as const;
+const RECIPE_CATEGORIES = new Set(Object.values(RecipeCategory));
 
 function parseRole(value: FormDataEntryValue | null): (typeof ROLES)[number] {
   const role = String(value ?? "OTHER");
@@ -160,6 +162,66 @@ export async function updateProductChoicePreference(formData: FormData) {
     where: { id: householdId },
     data: { deliveryPreference: { ...deliveryPreference, productChoicePreference } },
   });
+
+  await invalidateCurrentShoppingList(householdId);
+  revalidatePath("/ons-gezin");
+  revalidatePath("/boodschappen");
+  revalidatePath("/controle");
+}
+
+export async function updateHouseholdCategoryPreference(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const category = String(formData.get("category"));
+  const stance = parseStance(formData.get("stance"));
+
+  if (!RECIPE_CATEGORIES.has(category as RecipeCategory)) {
+    throw new Error("Onbekende maaltijdsoort.");
+  }
+
+  if (stance === "UNKNOWN") {
+    await prisma.preference.deleteMany({
+      where: {
+        ownerType: "HOUSEHOLD",
+        ownerId: householdId,
+        subjectType: "RECIPE_CATEGORY",
+        subjectId: category,
+      },
+    });
+  } else {
+    await prisma.preference.upsert({
+      where: {
+        ownerType_ownerId_subjectType_subjectId: {
+          ownerType: "HOUSEHOLD",
+          ownerId: householdId,
+          subjectType: "RECIPE_CATEGORY",
+          subjectId: category,
+        },
+      },
+      update: { stance, source: "EXPLICIT", confidence: 1 },
+      create: {
+        ownerType: "HOUSEHOLD",
+        ownerId: householdId,
+        subjectType: "RECIPE_CATEGORY",
+        subjectId: category,
+        stance,
+        source: "EXPLICIT",
+        confidence: 1,
+      },
+    });
+  }
+
+  revalidatePath("/ons-gezin");
+  revalidatePath("/");
+  revalidatePath("/gerechten");
+}
+
+export async function forgetProductPreference(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const preferenceId = String(formData.get("preferenceId"));
+
+  await prisma.householdProductPreference.deleteMany({ where: { id: preferenceId, householdId } });
 
   await invalidateCurrentShoppingList(householdId);
   revalidatePath("/ons-gezin");
