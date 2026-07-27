@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { after } from "next/server";
 import { ChevronLeft, ShoppingCart, CheckCircle2, Utensils, ChevronRight, Search } from "lucide-react";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
@@ -117,7 +118,7 @@ export default async function BoodschappenPage({
   if (!mealPlan) redirect("/");
 
   const initialShoppingList = await ensureShoppingList(mealPlan.id, household.id);
-  await enrichShoppingListProductImages(household.id, initialShoppingList.id);
+  after(() => enrichShoppingListProductImages(household.id, initialShoppingList.id));
   const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
     where: { id: initialShoppingList.id },
     include: {
