@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { after } from "next/server";
-import { ChevronLeft, ShoppingCart, CheckCircle2, Utensils, ChevronRight, Search } from "lucide-react";
+import { ChevronLeft, ShoppingCart, CheckCircle2, Utensils, ChevronRight, Search, ClipboardList } from "lucide-react";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { getCurrentWeekStart } from "@/lib/week";
@@ -13,7 +13,7 @@ import { enrichShoppingListProductImages } from "@/lib/picnic/productEnrichment"
 import { picnicImageUrl, picnicPriceToEuros, picnicProductRef } from "@/lib/picnic/products";
 import { PicnicClient } from "@/lib/picnic/client";
 import type { PicnicSearchResultItem } from "@/lib/picnic/searchResults";
-import { inferFixedGroceryQuantity } from "@/lib/fixedGroceryProductChoice";
+import { inferFixedGroceryQuantity, parseBulkFixedGroceryInput } from "@/lib/fixedGroceryProductChoice";
 import NavBar from "@/components/NavBar";
 import PicnicTransfer from "./PicnicTransfer";
 import AddToPicnicCart from "./AddToPicnicCart";
@@ -22,6 +22,7 @@ import {
   restoreFixedLineThisWeek,
   updateFixedLineQuantity,
   addFixedPicnicProduct,
+  addBulkFixedPicnicProducts,
   removeFixedGroceryPermanently,
 } from "./fixedGroceriesActions";
 import { updateInventoryStatus } from "./inventoryActions";
@@ -67,6 +68,17 @@ type FixedProductResult = PicnicSearchResultItem & {
   fixedUnit: "GRAM" | "ML" | "PIECE";
 };
 
+type BulkFixedProductResult = FixedProductResult & {
+  suggestedQuantity: number;
+};
+
+type BulkFixedPreviewLine = {
+  raw: string;
+  searchTerm: string;
+  multiplier: number;
+  results: BulkFixedProductResult[];
+};
+
 function preparePicnicTransferText(lines: Array<{
   ingredient: { name: string };
   product: { name: string; packageSize: string | null } | null;
@@ -102,6 +114,47 @@ async function searchFixedProductResults(householdId: string, token: string, que
     .slice(0, 8);
 }
 
+async function searchBulkFixedProductResults(householdId: string, token: string, bulkText: string): Promise<BulkFixedPreviewLine[]> {
+  const parsedLines = parseBulkFixedGroceryInput(bulkText).slice(0, 20);
+  if (parsedLines.length === 0) return [];
+
+  const client = new PicnicClient(token);
+  const previews: BulkFixedPreviewLine[] = [];
+  try {
+    for (const line of parsedLines) {
+      const results = await client.search(line.searchTerm);
+      const seenRefs = new Set<string>();
+      const productResults = results
+        .map((item): BulkFixedProductResult | null => {
+          const externalRef = picnicProductRef(item);
+          if (!externalRef || !item.name || seenRefs.has(externalRef)) return null;
+          seenRefs.add(externalRef);
+          const inferred = inferFixedGroceryQuantity(item.unit_quantity ?? null);
+          return {
+            ...item,
+            externalRef,
+            fixedQuantity: inferred.quantity,
+            fixedUnit: inferred.unit,
+            suggestedQuantity: inferred.quantity * line.multiplier,
+          };
+        })
+        .filter((item) => item !== null)
+        .slice(0, 3);
+      previews.push({ ...line, results: productResults });
+    }
+  } finally {
+    const refreshedToken = client.getAuthToken();
+    if (refreshedToken && refreshedToken !== token) {
+      await prisma.household.update({
+        where: { id: householdId },
+        data: { picnicAuthToken: refreshedToken, picnicTokenUpdatedAt: new Date() },
+      });
+    }
+  }
+
+  return previews;
+}
+
 function FixedProductImage({ item }: { item: { image_id?: string; name?: string } }) {
   const imageUrl = picnicImageUrl(item.image_id, "small");
   return (
@@ -118,11 +171,12 @@ function FixedProductImage({ item }: { item: { image_id?: string; name?: string 
 export default async function BoodschappenPage({
   searchParams,
 }: {
-  searchParams: Promise<{ fixedQ?: string; fixedLine?: string; fixedReplaceLineId?: string }>;
+  searchParams: Promise<{ fixedQ?: string; fixedLine?: string; fixedReplaceLineId?: string; bulkFixed?: string }>;
 }) {
   const params = await searchParams;
   const household = await requireCurrentHousehold();
   const fixedSearchQuery = String(params.fixedQ ?? "").trim();
+  const bulkFixedText = String(params.bulkFixed ?? "").trim();
   const focusedFixedLineId = String(params.fixedLine ?? "").trim();
   const fixedReplaceLineId = String(params.fixedReplaceLineId ?? "").trim();
 
@@ -147,11 +201,14 @@ export default async function BoodschappenPage({
     status: shoppingList.status,
   };
 
-  const [fixedGroceries, inventoryChecklist, fixedProductResults] = await Promise.all([
+  const [fixedGroceries, inventoryChecklist, fixedProductResults, bulkFixedPreviewLines] = await Promise.all([
     getFixedGroceries(household.id),
     getInventoryChecklist(household.id),
     fixedSearchQuery && household.picnicAuthToken
       ? searchFixedProductResults(household.id, household.picnicAuthToken, fixedSearchQuery)
+      : Promise.resolve([]),
+    bulkFixedText && household.picnicAuthToken
+      ? searchBulkFixedProductResults(household.id, household.picnicAuthToken, bulkFixedText)
       : Promise.resolve([]),
   ]);
   const activeIngredientIds = new Set(activeFixedLines.map((l) => l.ingredientId));
@@ -314,11 +371,162 @@ export default async function BoodschappenPage({
         <details
           id="add-fixed-grocery"
           className="mt-4 scroll-mt-6 rounded-xl border border-line bg-surface p-4"
-          open={fixedSearchQuery || fixedReplaceLineId ? true : undefined}
+          open={fixedSearchQuery || fixedReplaceLineId || bulkFixedText ? true : undefined}
         >
           <summary className="cursor-pointer text-sm font-medium text-ink">
             {fixedReplacementLine ? "Vaste boodschap wijzigen" : "Nieuwe vaste boodschap toevoegen"}
           </summary>
+
+          {!fixedReplacementLine && (
+            <section id="bulk-fixed-groceries" className="mt-4 rounded-lg border border-line bg-surface-2 p-3">
+              <div className="mb-3 flex items-start gap-2">
+                <ClipboardList size={17} className="mt-0.5 shrink-0 text-accent" />
+                <div className="min-w-0">
+                  <h2 className="text-sm font-semibold text-ink">Plak je vaste boodschappenlijst</h2>
+                  <p className="mt-1 text-xs text-ink-muted">
+                    Zet producten onder elkaar of scheid ze met komma&rsquo;s. Ik zoek ze daarna per regel op bij Picnic.
+                  </p>
+                </div>
+              </div>
+              <form action="/boodschappen#bulk-fixed-groceries" className="grid gap-2">
+                <textarea
+                  name="bulkFixed"
+                  defaultValue={bulkFixedText}
+                  rows={4}
+                  placeholder={"2 pakken magere melk\ndrinkyoghurt framboos\nbananen\nappels"}
+                  className="min-h-28 min-w-0 resize-y rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                />
+                <button
+                  type="submit"
+                  className="w-fit rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
+                >
+                  Zoek mijn lijst
+                </button>
+              </form>
+
+              {bulkFixedText && !household.picnicAuthToken && (
+                <p className="mt-3 text-sm text-ink-muted">
+                  Koppel eerst Picnic om een hele lijst automatisch op te zoeken.
+                </p>
+              )}
+
+              {bulkFixedPreviewLines.length > 0 && (
+                <div className="mt-4 grid gap-4">
+                  <form action={addBulkFixedPicnicProducts} className="rounded-lg border border-accent/30 bg-accent-soft p-3">
+                    <input type="hidden" name="householdId" value={household.id} />
+                    {bulkFixedPreviewLines
+                      .filter((line) => line.results[0])
+                      .map((line) => {
+                        const item = line.results[0]!;
+                        return (
+                          <input
+                            key={`${line.raw}-${item.externalRef}`}
+                            type="hidden"
+                            name="choice"
+                            value={JSON.stringify({
+                              householdId: household.id,
+                              shoppingListId: shoppingList.id,
+                              searchTerm: line.searchTerm,
+                              productName: item.name ?? "",
+                              externalRef: item.externalRef,
+                              packageSize: item.unit_quantity ?? "",
+                              picnicImageId: item.image_id ?? "",
+                              quantity: item.suggestedQuantity,
+                              unit: item.fixedUnit,
+                              price: picnicPriceToEuros(item.display_price ?? item.price),
+                            })}
+                          />
+                        );
+                      })}
+                    <button
+                      type="submit"
+                      className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
+                    >
+                      Beste keuzes opslaan
+                    </button>
+                    <p className="mt-2 text-xs text-ink-muted">
+                      Controleer hieronder of de beste keuze per regel klopt. Afwijkingen kun je los kiezen.
+                    </p>
+                  </form>
+
+                  {bulkFixedPreviewLines.map((line) => (
+                    <div key={line.raw} className="rounded-lg border border-line bg-surface p-3">
+                      <div className="mb-3">
+                        <p className="text-sm font-semibold text-ink">{line.raw}</p>
+                        <p className="text-xs text-ink-faint">
+                          Zoekterm: {line.searchTerm}
+                          {line.multiplier !== 1 ? ` · aantal/verpakking: ${line.multiplier}x` : ""}
+                        </p>
+                      </div>
+                      {line.results.length === 0 ? (
+                        <p className="text-sm text-ink-muted">Geen Picnic-product gevonden. Probeer deze regel los te zoeken.</p>
+                      ) : (
+                        <div className="grid gap-2">
+                          {line.results.map((item, index) => (
+                            <form key={item.externalRef} action={addFixedPicnicProduct} className="rounded-lg border border-line p-3">
+                              <input type="hidden" name="householdId" value={household.id} />
+                              <input type="hidden" name="shoppingListId" value={shoppingList.id} />
+                              <input type="hidden" name="searchTerm" value={line.searchTerm} />
+                              <input type="hidden" name="externalRef" value={item.externalRef} />
+                              <input type="hidden" name="productName" value={item.name ?? ""} />
+                              <input type="hidden" name="packageSize" value={item.unit_quantity ?? ""} />
+                              <input type="hidden" name="picnicImageId" value={item.image_id ?? ""} />
+                              <input type="hidden" name="price" value={picnicPriceToEuros(item.display_price ?? item.price) ?? ""} />
+                              <div className="flex min-w-0 gap-3">
+                                <FixedProductImage item={item} />
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex min-w-0 items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <p className="line-clamp-2 text-sm font-medium text-ink">
+                                        {index === 0 ? "Beste keuze: " : ""}
+                                        {item.name}
+                                      </p>
+                                      <p className="text-xs text-ink-faint">{item.unit_quantity ?? "Geen verpakkingsinfo"}</p>
+                                    </div>
+                                    <span className="shrink-0 text-sm font-semibold text-ink">
+                                      {picnicPriceToEuros(item.display_price ?? item.price) != null
+                                        ? `€ ${picnicPriceToEuros(item.display_price ?? item.price)!.toFixed(2)}`
+                                        : "Prijs onbekend"}
+                                    </span>
+                                  </div>
+                                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                                    <input
+                                      type="number"
+                                      name="quantity"
+                                      defaultValue={item.suggestedQuantity}
+                                      min="0.01"
+                                      step="any"
+                                      className="w-24 rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
+                                    />
+                                    <select
+                                      name="unit"
+                                      defaultValue={item.fixedUnit}
+                                      className="rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
+                                    >
+                                      <option value="PIECE">stuks</option>
+                                      <option value="GRAM">gram</option>
+                                      <option value="ML">ml</option>
+                                    </select>
+                                    <button
+                                      type="submit"
+                                      className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:border-accent/70 hover:bg-surface-2"
+                                    >
+                                      Deze opslaan
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </form>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
           <form action="/boodschappen#add-fixed-grocery" className="mt-3 flex min-w-0 gap-2">
             {fixedReplaceLineId && (
               <input type="hidden" name="fixedReplaceLineId" value={fixedReplaceLineId} />

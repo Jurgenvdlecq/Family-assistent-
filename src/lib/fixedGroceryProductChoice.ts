@@ -23,6 +23,58 @@ export function inferFixedGroceryQuantity(packageSize: string | null | undefined
   return { quantity: 1, unit: Unit.PIECE };
 }
 
+export interface ParsedBulkFixedGroceryLine {
+  raw: string;
+  searchTerm: string;
+  multiplier: number;
+}
+
+const COUNT_WORDS = new Set([
+  "pak",
+  "pakken",
+  "fles",
+  "flessen",
+  "doos",
+  "dozen",
+  "zak",
+  "zakken",
+  "stuk",
+  "stuks",
+  "gram",
+  "gr",
+  "kg",
+  "kilo",
+  "liter",
+  "l",
+  "ml",
+  "x",
+]);
+
+export function parseBulkFixedGroceryInput(input: string): ParsedBulkFixedGroceryLine[] {
+  return input
+    .split(/\n|,|;/)
+    .map((line) => line.trim().replace(/\s+/g, " "))
+    .filter(Boolean)
+    .map((raw) => {
+      const match = raw.match(/^(\d+(?:[,.]\d+)?)\s*(.*)$/);
+      if (!match) return { raw, searchTerm: raw, multiplier: 1 };
+
+      const multiplier = Number(match[1].replace(",", "."));
+      const rest = match[2].trim();
+      if (!Number.isFinite(multiplier) || multiplier <= 0 || !rest) {
+        return { raw, searchTerm: raw, multiplier: 1 };
+      }
+
+      const parts = rest.split(" ");
+      const searchTerm = COUNT_WORDS.has(parts[0]?.toLowerCase()) ? parts.slice(1).join(" ") : rest;
+      return {
+        raw,
+        searchTerm: searchTerm || rest,
+        multiplier,
+      };
+    });
+}
+
 export function inferIngredientCategory(searchTerm: string): IngredientCategory {
   const normalized = searchTerm.toLowerCase();
   if (/(appel|appels|banaan|bananen|peer|peren|fruit|druif|druiven|sinaasappel)/.test(normalized)) return "FRUIT";
