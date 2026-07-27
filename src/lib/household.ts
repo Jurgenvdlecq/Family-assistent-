@@ -1,5 +1,5 @@
 import { prisma } from "./prisma";
-import type { DayKey } from "./week";
+import { DAY_KEYS, type DayKey } from "./week";
 import {
   calculatePortionScaleByDay,
   getPresentPersonsForDay,
@@ -53,4 +53,11 @@ export async function getHouseholdPortionScaleByDay(
 ): Promise<Record<DayKey, DayPortionScale>> {
   const persons = await getHouseholdPersonsForMeals(householdId);
   return calculatePortionScaleByDay(persons);
+}
+
+export async function getHouseholdMealParticipantsByDay(householdId: string) {
+  const persons = await getHouseholdPersonsForMeals(householdId);
+  return Object.fromEntries(
+    DAY_KEYS.map((dayKey) => [dayKey, getPresentPersonsForDay(persons, dayKey)])
+  ) as Record<DayKey, PersonPresenceInput[]>;
 }

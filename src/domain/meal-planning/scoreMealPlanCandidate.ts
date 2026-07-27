@@ -21,12 +21,17 @@ export interface RecipeVariantPreference {
   confidence: number;
 }
 
+export interface PersonalRecipeVariantPreference extends RecipeVariantPreference {
+  personName: string;
+}
+
 export interface MealPlanScoringInput {
   candidates: MealPlanCandidate[];
   dayKey: DayKey;
   busy: boolean;
   preferredCategories: Set<string>;
   variantPreferences: Map<string, RecipeVariantPreference>;
+  personalVariantPreferences?: Map<string, PersonalRecipeVariantPreference[]>;
   lastPlannedByRecipeId: Map<string, Date>;
   usedRecipeIds: Set<string>;
   targetDate: Date;
@@ -79,6 +84,7 @@ function scoreCandidate(input: MealPlanScoringInput, candidate: MealPlanCandidat
   const busyFit = BUSY_VARIANT_TYPES.has(candidate.variantType) || candidate.contextFit.includes("drukke_dag");
   const preferred = input.preferredCategories.has(candidate.recipeCategory);
   const variantPreference = input.variantPreferences.get(candidate.id);
+  const personalPreferences = input.personalVariantPreferences?.get(candidate.id) ?? [];
   const lastPlannedAt = input.lastPlannedByRecipeId.get(candidate.recipeId);
 
   if (input.busy) {
@@ -117,6 +123,31 @@ function scoreCandidate(input: MealPlanScoringInput, candidate: MealPlanCandidat
     score -= 60;
     hasDoubt = true;
     reasons.push(`staat als te vermijden gerechtvariant geregistreerd`);
+  }
+
+  const favorites = personalPreferences.filter((preference) => preference.stance === "LIKED");
+  const lightOk = personalPreferences.filter((preference) => preference.stance === "SOMETIMES");
+  const dislikes = personalPreferences.filter((preference) => preference.stance === "RATHER_NOT");
+  const never = personalPreferences.filter((preference) => preference.stance === "NEVER");
+
+  if (favorites.length > 0) {
+    const boost = favorites.reduce((sum, preference) => sum + 14 * preference.confidence, 0);
+    score += boost;
+    reasons.push(`${favorites.map((preference) => preference.personName).join(", ")} vindt dit favoriet`);
+  }
+  if (lightOk.length > 0) {
+    score += lightOk.reduce((sum, preference) => sum + 4 * preference.confidence, 0);
+  }
+  if (dislikes.length > 0) {
+    const penalty = dislikes.reduce((sum, preference) => sum + 35 * Math.max(0.5, preference.confidence), 0);
+    score -= penalty;
+    hasDoubt = true;
+    reasons.push(`${dislikes.map((preference) => preference.personName).join(", ")} eet dit liever niet`);
+  }
+  if (never.length > 0) {
+    score -= 120;
+    hasDoubt = true;
+    reasons.push(`${never.map((preference) => preference.personName).join(", ")} wil dit nooit eten`);
   }
 
   if (candidate.recipeStatus === "SAFE_CHOICE") {
