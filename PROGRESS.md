@@ -52,12 +52,14 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 | WP13 | Voorkeurenbeheer op Ons gezin | `/ons-gezin` toont nu een beheerblok voor alle persoonlijke voorkeuren per gezinslid, met leesbare labels voor gerecht/categorie/ingrediënt. Voorkeuren kunnen daar worden aangepast of verwijderd, met household-validatie in server actions. Geen nieuwe migratie nodig. |
 | WP14 | Weekplanning opnieuw genereren | Op `/` staat een uitklapbare actie "Week opnieuw plannen". Deze verwijdert alleen de huidige weekplanning, bijbehorende boodschappenlijst en suggesties van het huidige huishouden, en bouwt de week opnieuw op met actuele voorkeuren. Geen nieuwe migratie nodig. |
 | WP15 | Recepten/varianten beheren | Nieuwe pagina `/recepten` met navigatietab. Daar kan een recept met ingrediënten en eerste variant worden toegevoegd, kunnen titel/bron/categorie/status/eigenschappen/bereiding worden gecorrigeerd en kunnen varianten met context-signalen worden toegevoegd of bijgewerkt. Server actions valideren het huidige huishouden. Geen nieuwe migratie nodig. |
+| WP16 | Ingrediëntenbeheer en receptingrediënten bewerken | `/recepten` heeft nu beheer voor ingrediënten: aanmaken, hernoemen, categorie/dieettags/voorraadcontrole aanpassen. Per bestaand recept kunnen ingrediëntregels en hoeveelheden worden vervangen; dubbele regels worden samengevoegd en de huidige boodschappenlijst wordt ongeldig gemaakt zodat nieuwe receptdata doorwerkt. Geen nieuwe migratie nodig. |
 
 ## Nog te doen (roadmap, nog niet gestart)
 
 - **Volgende WP nog kiezen.** Logische vervolgstappen zijn bijvoorbeeld
-  ingrediëntbeheer uitbreiden, recept-ingrediënten van bestaande recepten
-  bewerkbaar maken, of de controle-/boodschappenflow verder aanscherpen.
+  product/Picnic-matching verder specificeren voor ingrediënten, standaardkeuzes
+  per receptcategorie verfijnen, of de controle-/boodschappenflow verder
+  aanscherpen.
 
 ## Niet-voor-de-hand-liggende operationele kennis
 
