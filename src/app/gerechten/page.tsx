@@ -13,7 +13,7 @@ import { MEAL_REPLACEMENT_REASONS } from "@/domain/learning/feedbackReasons";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
 import RecipePhoto from "@/components/RecipePhoto";
-import { replaceMealPlanEntry } from "./actions";
+import { chooseLiteralMealPlanEntry, replaceMealPlanEntry } from "./actions";
 
 // Leest live weekplanning + voorkeuren — nooit statisch prerenderen.
 export const dynamic = "force-dynamic";
@@ -171,6 +171,10 @@ export default async function GerechtenPage({
     ])
   );
   const hasWish = mealWish.tags.length > 0 || mealWish.ingredientIds.length > 0;
+  const literalWishIngredients = mealWish.ingredientIds
+    .map((id) => allIngredients.find((ingredient) => ingredient.id === id))
+    .filter((ingredient): ingredient is (typeof allIngredients)[number] => Boolean(ingredient));
+  const canUseLiteralWish = literalWishIngredients.length >= 3;
   const wishLabelParts = [
     ...mealWish.tags.map((tag) => tag.toLowerCase().replaceAll("_", " ")),
     ...mealWish.ingredientIds
@@ -265,6 +269,33 @@ export default async function GerechtenPage({
       </div>
 
       <div className="flex min-w-0 flex-col gap-8 px-6">
+        {canUseLiteralWish && (
+          <form action={chooseLiteralMealPlanEntry}>
+            <input type="hidden" name="householdId" value={household.id} />
+            <input type="hidden" name="dayKey" value={dayKey} />
+            <input type="hidden" name="weekStart" value={weekStart.toISOString()} />
+            <input type="hidden" name="ingredientIds" value={literalWishIngredients.map((ingredient) => ingredient.id).join(",")} />
+            <div className="rounded-xl border border-accent/35 bg-accent-soft p-4">
+              <div className="mb-3 flex items-start gap-2">
+                <Sparkles size={17} className="mt-0.5 shrink-0 text-accent" />
+                <div className="min-w-0">
+                  <h2 className="text-sm font-semibold text-ink">Maak precies deze maaltijd</h2>
+                  <p className="mt-1 text-sm text-ink-muted">
+                    Ik kan dit direct plannen met {literalWishIngredients.map((ingredient) => ingredient.name.toLowerCase()).join(", ")}.
+                    De recepten hieronder blijven alternatieven.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="submit"
+                className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-ink transition-all duration-150 hover:-translate-y-0.5 hover:bg-accent/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:translate-y-0 active:scale-[0.98]"
+              >
+                Kies deze combinatie
+              </button>
+            </div>
+          </form>
+        )}
+
         {filtered.length === 0 && (
           <p className="text-sm text-ink-muted">Geen andere gerechten gevonden in deze richting.</p>
         )}

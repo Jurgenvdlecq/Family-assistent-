@@ -10,6 +10,7 @@ import {
   ShoppingBasket,
 } from "lucide-react";
 import { requireCurrentHousehold } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { getCurrentWeekStart } from "@/lib/week";
 import { ensureShoppingList, getShoppingListCandidatesByIngredient, describeLinePackaging } from "@/lib/shoppingList";
@@ -28,6 +29,9 @@ import {
   searchPicnicProductsForLine,
 } from "./actions";
 import { picnicImageUrl } from "@/lib/picnic/products";
+import { PicnicClient } from "@/lib/picnic/client";
+import { picnicPriceToEuros, picnicProductRef } from "@/lib/picnic/products";
+import { parsePackageQuantity } from "@/lib/quantity/parsePackageSize";
 
 // ensureShoppingList schrijft (idempotent) naar de database — nooit
 // statisch prerenderen tijdens de build.
@@ -190,10 +194,99 @@ function ProductChoiceCard({
   );
 }
 
+const STATUS_MESSAGES: Record<string, string> = {
+  remembered: "Opgeslagen en onthouden voor volgende keer.",
+  "week-only": "Gekozen voor deze week.",
+  rejected: "Afgewezen. Ik stel dit product niet meer automatisch voor.",
+  quantity: "Hoeveelheid bijgewerkt.",
+  searched: "Alternatieven opgehaald. Kies hieronder het juiste product.",
+  skipped: "Opgeslagen zonder bevestigd product.",
+};
+
+async function ensureMinimumCandidatesForLines({
+  householdId,
+  picnicAuthToken,
+  lines,
+  candidatesByIngredient,
+}: {
+  householdId: string;
+  picnicAuthToken: string | null;
+  lines: {
+    ingredientId: string;
+    ingredient: { name: string; unit: string };
+  }[];
+  candidatesByIngredient: Map<string, ProductCardProduct[]>;
+}) {
+  if (!picnicAuthToken) return candidatesByIngredient;
+
+  const missingLines = lines.filter((line) => (candidatesByIngredient.get(line.ingredientId) ?? []).length < 4);
+  if (missingLines.length === 0) return candidatesByIngredient;
+
+  const client = new PicnicClient(picnicAuthToken);
+  const refreshedIngredientIds = new Set<string>();
+  try {
+    for (const line of missingLines.slice(0, 5)) {
+      if (refreshedIngredientIds.has(line.ingredientId)) continue;
+      refreshedIngredientIds.add(line.ingredientId);
+      const results = await client.search(line.ingredient.name);
+      const seenRefs = new Set(candidatesByIngredient.get(line.ingredientId)?.map((product) => product.externalRef).filter(Boolean));
+      const productsToSave = results.slice(0, 12).flatMap((item) => {
+        const externalRef = picnicProductRef(item);
+        if (!externalRef || !item.name || seenRefs.has(externalRef)) return [];
+        seenRefs.add(externalRef);
+        const packageSize = item.unit_quantity ?? null;
+        return [
+          {
+            ingredientId: line.ingredientId,
+            externalRef,
+            picnicImageId: item.image_id ?? null,
+            name: item.name,
+            packageSize,
+            packageQuantity: parsePackageQuantity(packageSize, line.ingredient.unit as "GRAM" | "ML" | "PIECE"),
+            price: picnicPriceToEuros(item.display_price ?? item.price),
+            lastSeenAvailable: new Date(),
+          },
+        ];
+      });
+      await Promise.all(
+        productsToSave.map((data) =>
+          prisma.product.upsert({
+            where: {
+              ingredientId_externalRef: {
+                ingredientId: data.ingredientId,
+                externalRef: data.externalRef,
+              },
+            },
+            update: data,
+            create: data,
+          })
+        )
+      );
+    }
+
+    const refreshedToken = client.getAuthToken();
+    if (refreshedToken && refreshedToken !== picnicAuthToken) {
+      await prisma.household.update({
+        where: { id: householdId },
+        data: { picnicAuthToken: refreshedToken, picnicTokenUpdatedAt: new Date() },
+      });
+    }
+
+    return getShoppingListCandidatesByIngredient(
+      householdId,
+      lines.map((line) => line.ingredientId)
+    );
+  } catch (error) {
+    console.warn("Picnic-alternatieven automatisch aanvullen mislukt", error);
+    return candidatesByIngredient;
+  }
+}
+
 function LineControlCard({
   line,
   candidates,
   householdId,
+  statusMessage,
 }: {
   line: {
     id: string;
@@ -207,6 +300,7 @@ function LineControlCard({
   };
   candidates: ProductCardProduct[];
   householdId: string;
+  statusMessage?: string;
 }) {
   const alternatives = candidates.filter((candidate) => candidate.id !== line.product?.id);
 
@@ -228,6 +322,12 @@ function LineControlCard({
       {line.matchReasons.length > 0 && (
         <p className="mb-3 rounded-lg bg-white/60 px-3 py-2 text-xs text-ink-muted">
           {line.matchReasons.join(" ")}
+        </p>
+      )}
+
+      {statusMessage && (
+        <p className="mb-3 rounded-lg border border-tag-green-ink/20 bg-tag-green-bg px-3 py-2 text-xs font-medium text-tag-green-ink">
+          {statusMessage}
         </p>
       )}
 
@@ -278,10 +378,15 @@ function LineControlCard({
         )}
 
         {alternatives.length > 0 && (
-          <details className="rounded-lg border border-line bg-surface p-3">
+          <details className="rounded-lg border border-line bg-surface p-3" open={alternatives.length < 3 ? true : undefined}>
             <summary className="cursor-pointer text-sm font-medium text-ink">
               {alternatives.length} {alternatives.length === 1 ? "alternatief" : "alternatieven"}
             </summary>
+            {alternatives.length < 3 && (
+              <p className="mt-2 text-xs text-ink-faint">
+                Ik heb minder dan 3 alternatieven gevonden. Zoek hierboven specifieker als je meer keuze wilt zien.
+              </p>
+            )}
             <div className="mt-3 grid gap-2">
               {alternatives.map((candidate) => (
                 <ProductChoiceCard
@@ -325,7 +430,7 @@ function LineControlCard({
 export default async function ControlePage({
   searchParams,
 }: {
-  searchParams: Promise<{ focus?: string }>;
+  searchParams: Promise<{ focus?: string; status?: string }>;
 }) {
   const params = await searchParams;
   const household = await requireCurrentHousehold();
@@ -347,10 +452,16 @@ export default async function ControlePage({
 
   const focusedTrustedLines = sortedTrustedLines.filter((line) => line.id === params.focus);
   const candidateLines = [...sortedReviewLines, ...focusedTrustedLines];
-  const candidatesByIngredient = await getShoppingListCandidatesByIngredient(
+  const initialCandidatesByIngredient = await getShoppingListCandidatesByIngredient(
     household.id,
     candidateLines.map((line) => line.ingredientId)
   );
+  const candidatesByIngredient = await ensureMinimumCandidatesForLines({
+    householdId: household.id,
+    picnicAuthToken: household.picnicAuthToken,
+    lines: candidateLines,
+    candidatesByIngredient: initialCandidatesByIngredient,
+  });
   const candidatesByLine = new Map(
     candidateLines.map((line) => [line.id, candidatesByIngredient.get(line.ingredientId) ?? []])
   );
@@ -401,6 +512,7 @@ export default async function ControlePage({
                 line={line}
                 candidates={candidatesByLine.get(line.id) ?? []}
                 householdId={household.id}
+                statusMessage={line.id === params.focus && params.status ? STATUS_MESSAGES[params.status] : undefined}
               />
             ))}
           </div>
@@ -425,6 +537,7 @@ export default async function ControlePage({
                   line={line}
                   candidates={candidatesByLine.get(line.id) ?? []}
                   householdId={household.id}
+                  statusMessage={line.id === params.focus && params.status ? STATUS_MESSAGES[params.status] : undefined}
                 />
               ))}
             </div>

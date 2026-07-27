@@ -20,10 +20,14 @@ async function loadLineForCurrentHousehold(lineId: string) {
   return { line, householdId: line.shoppingList.mealPlan.householdId };
 }
 
-function refreshControle(lineId?: string) {
+function refreshControle(lineId?: string, status?: string) {
   revalidatePath("/controle");
   revalidatePath("/boodschappen");
-  if (lineId) redirect(`/controle?focus=${encodeURIComponent(lineId)}#line-${encodeURIComponent(lineId)}`);
+  if (lineId) {
+    const params = new URLSearchParams({ focus: lineId });
+    if (status) params.set("status", status);
+    redirect(`/controle?${params.toString()}#line-${encodeURIComponent(lineId)}`);
+  }
   redirect("/controle");
 }
 
@@ -69,7 +73,7 @@ export async function confirmProductChoice(formData: FormData) {
   // (productkeuze-prioriteitsregel #1 uit sectie 10 van de Blueprint).
   await recordProductChosen(householdId, line.ingredientId, productId, "MANUAL");
 
-  refreshControle(lineId);
+  refreshControle(lineId, "remembered");
 }
 
 /**
@@ -108,7 +112,7 @@ export async function rejectProductChoice(formData: FormData) {
     },
   });
 
-  refreshControle(lineId);
+  refreshControle(lineId, "rejected");
 }
 
 /**
@@ -154,7 +158,7 @@ export async function useProductThisWeekOnly(formData: FormData) {
     context: { source: "controle_screen", onceOnly: true },
   });
 
-  refreshControle(lineId);
+  refreshControle(lineId, "week-only");
 }
 
 /** Past de hoeveelheid van deze ene regel aan (bv. een twijfelgeval bleek toch meer of minder nodig te hebben). */
@@ -167,7 +171,7 @@ export async function adjustLineQuantity(formData: FormData) {
   }
 
   await prisma.shoppingListLine.update({ where: { id: lineId }, data: { quantity } });
-  refreshControle(lineId);
+  refreshControle(lineId, "quantity");
 }
 
 export async function searchPicnicProductsForLine(formData: FormData) {
@@ -238,7 +242,7 @@ export async function searchPicnicProductsForLine(formData: FormData) {
     },
   });
 
-  refreshControle(lineId);
+  refreshControle(lineId, "searched");
 }
 
 async function persistRefreshedToken(client: PicnicClient, householdId: string, previousToken: string | null) {
@@ -256,7 +260,7 @@ export async function removeLineFromList(formData: FormData) {
   const lineId = String(formData.get("lineId"));
   await loadLineForCurrentHousehold(lineId);
   await prisma.shoppingListLine.delete({ where: { id: lineId } });
-  refreshControle(lineId);
+  refreshControle(lineId, "removed");
 }
 
 export async function skipReview(formData: FormData) {
@@ -266,7 +270,7 @@ export async function skipReview(formData: FormData) {
     where: { id: lineId },
     data: { needsReview: false },
   });
-  refreshControle(lineId);
+  refreshControle(lineId, "skipped");
 }
 
 export async function confirmShoppingList(formData: FormData) {
