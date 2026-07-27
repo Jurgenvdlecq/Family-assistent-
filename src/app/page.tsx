@@ -3,12 +3,9 @@ import {
   Menu,
   CheckCircle2,
   ClipboardCheck,
-  Flame,
-  Leaf,
-  MoreHorizontal,
+  Search,
   ShoppingBasket,
   Sparkles,
-  Utensils,
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
@@ -213,12 +210,9 @@ export default async function Home() {
   );
 
   const entryByDay = new Map(mealPlan.entries.map((e) => [e.dayOfWeek, e]));
-  const rhythm = (household.weeklyRhythm ?? {}) as Partial<Record<string, "busy" | "quiet">>;
-  const busyDayCount = DAY_KEYS.filter((k) => rhythm[k] === "busy").length;
-  const avgDayCount = mealPlan.entries.filter(
-    (e) => e.recipeVariant.recipe.category === "ALL_VEGGIE_DAY"
-  ).length;
   const greetingName = household.persons[0]?.name ?? household.name;
+  const todayIndex = new Date().getDay();
+  const defaultWishDayKey = DAY_KEYS[(todayIndex + 6) % 7] ?? "monday";
   const nextStep = nextStepCopy({
     learningPromptCount: learningPrompts.length,
     hasShoppingList: Boolean(shoppingList),
@@ -249,14 +243,14 @@ export default async function Home() {
       </header>
 
       <div className="px-6 pt-4">
-        <h1 className="mb-1 text-[1.7rem] font-semibold leading-tight text-ink">
+        <h1 className="mb-1 text-[1.65rem] font-semibold leading-tight text-ink">
           Goedemorgen, {greetingName}
         </h1>
         <p className="mb-5 text-[15px] text-ink-muted">
-          Ik heb een voorstel gemaakt. Jij hoeft vooral te corrigeren wat niet klopt.
+          Dit is jullie week. Corrigeer alleen wat niet klopt, dan regel ik de rest.
         </p>
 
-        <section className="mb-5 rounded-xl border border-accent/30 bg-surface p-4">
+        <section className="mb-4 rounded-xl border border-accent/30 bg-surface p-4">
           <div className="flex min-w-0 gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
               <NextStepIcon size={18} />
@@ -274,22 +268,36 @@ export default async function Home() {
           </div>
         </section>
 
-        <section className="mb-6 rounded-xl border border-line bg-surface p-4">
-          <p className="mb-3 text-sm font-semibold text-ink">Deze week {formatWeekRange(weekStart)}</p>
-          <div className="grid grid-cols-3 gap-2 text-xs text-ink-muted">
-            <span className="inline-flex min-w-0 items-center gap-1.5 rounded-lg bg-surface-2 px-2 py-2">
-              <Utensils size={14} className="shrink-0 text-ink-faint" />
-              <span className="truncate">{mealPlan!.entries.length} maaltijden</span>
-            </span>
-            <span className="inline-flex min-w-0 items-center gap-1.5 rounded-lg bg-surface-2 px-2 py-2">
-              <Flame size={14} className="shrink-0 text-tag-amber-ink" />
-              <span className="truncate">{busyDayCount} druk</span>
-            </span>
-            <span className="inline-flex min-w-0 items-center gap-1.5 rounded-lg bg-surface-2 px-2 py-2">
-              <Leaf size={14} className="shrink-0 text-tag-green-ink" />
-              <span className="truncate">{avgDayCount} AVG</span>
-            </span>
-          </div>
+        <section className="mb-5 rounded-xl border border-line bg-surface p-4">
+          <p className="mb-2 text-sm font-semibold text-ink">Toch ergens anders zin in?</p>
+          <form action="/gerechten" className="grid gap-2">
+            <div className="grid grid-cols-[112px_1fr] gap-2">
+              <select
+                name="day"
+                defaultValue={defaultWishDayKey}
+                aria-label="Dag kiezen"
+                className="min-w-0 rounded-lg border border-line bg-surface px-2 py-2.5 text-sm text-ink"
+              >
+                {DAY_KEYS.map((dayKey) => (
+                  <option key={dayKey} value={dayKey}>
+                    {DAY_LABELS[dayKey]}
+                  </option>
+                ))}
+              </select>
+              <input
+                name="q"
+                placeholder="Bijv. AVG met kip en sperziebonen"
+                className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none focus:border-accent"
+              />
+            </div>
+            <button
+              type="submit"
+              className="inline-flex w-fit items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-all duration-150 hover:-translate-y-0.5 hover:bg-accent/90 active:translate-y-0 active:scale-[0.98]"
+            >
+              <Search size={15} />
+              Zoek passend gerecht
+            </button>
+          </form>
         </section>
 
         {learningPrompts.length > 0 && (
@@ -326,6 +334,18 @@ export default async function Home() {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="px-6 pb-3">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-ink-faint">
+              {formatWeekRange(weekStart)}
+            </p>
+            <h2 className="text-lg font-semibold text-ink">Jullie weekmenu</h2>
+          </div>
+          <span className="text-xs text-ink-muted">{mealPlan.entries.length} maaltijden</span>
+        </div>
       </div>
 
       <div className="flex min-w-0 flex-col divide-y divide-line border-y border-line bg-surface">
@@ -374,20 +394,25 @@ export default async function Home() {
                 <a
                   href={`/gerechten?day=${dayKey}`}
                   aria-label={`Vervang ${DAY_LABELS[dayKey].toLowerCase()}`}
-                  className="shrink-0 rounded-full p-2 text-ink-faint hover:bg-surface-2 hover:text-ink"
+                  className="shrink-0 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:border-accent/60 hover:bg-surface-2 hover:text-accent"
                 >
-                  <MoreHorizontal size={18} />
+                  Wissel
                 </a>
               </div>
 
               {reason && (
-                <p className="pl-14 text-xs text-ink-muted">{reason}</p>
+                <details className="ml-14 rounded-lg bg-surface-2 px-3 py-2">
+                  <summary className="cursor-pointer text-xs font-medium text-ink-muted">
+                    Waarom dit?
+                  </summary>
+                  <p className="mt-2 text-xs text-ink-muted">{reason}</p>
+                </details>
               )}
 
               {entry && participants.length > 0 && (
                 <details className="ml-14 rounded-lg border border-line bg-surface-2 px-3 py-2">
                   <summary className="cursor-pointer text-xs font-medium text-ink-muted">
-                    Persoonlijke voorkeuren
+                    Voorkeuren aanpassen
                   </summary>
                   <div className="mt-3 flex min-w-0 flex-col gap-3">
                     {participants.map((person) => {
