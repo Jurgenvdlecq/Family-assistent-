@@ -9,6 +9,7 @@ import { invalidateShoppingList } from "@/lib/shoppingList";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "@/lib/scoring";
 import { getHouseholdHardRestrictions, getHouseholdMealParticipantsByDay } from "@/lib/household";
 import { recipeConflictsWithRestrictions } from "@/lib/dietaryRestrictions";
+import { accessibleRecipeWhere } from "@/lib/recipeScope";
 import { DAY_ENUM, DAY_KEYS, type DayKey } from "@/lib/week";
 
 export async function replaceMealPlanEntry(formData: FormData) {
@@ -27,7 +28,7 @@ export async function replaceMealPlanEntry(formData: FormData) {
   // Daarom hier nogmaals hard controleren, ongeacht wat er binnenkomt.
   const [variant, hardRestrictions, participantsByDay] = await Promise.all([
     prisma.recipeVariant.findUniqueOrThrow({
-      where: { id: recipeVariantId },
+      where: { id: recipeVariantId, recipe: accessibleRecipeWhere(householdId) },
       include: { recipe: { include: { ingredients: { include: { ingredient: true } } } } },
     }),
     getHouseholdHardRestrictions(householdId, dayKey),

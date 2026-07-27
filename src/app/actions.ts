@@ -7,6 +7,7 @@ import { logFeedbackEvent } from "@/lib/feedback";
 import { ensureMealPlan } from "@/lib/mealPlan";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "@/lib/scoring";
 import { DAY_ENUM, DAY_KEYS, dateForDay, getCurrentWeekStart, type DayKey } from "@/lib/week";
+import { accessibleRecipeWhere } from "@/lib/recipeScope";
 
 const PERSONAL_STANCES = ["LIKED", "SOMETIMES", "RATHER_NOT", "NEVER"] as const;
 const PERSONAL_SUBJECT_TYPES = ["RECIPE_VARIANT", "RECIPE_CATEGORY", "INGREDIENT"] as const;
@@ -87,7 +88,10 @@ export async function setPersonMealPreference(formData: FormData) {
     select: { id: true },
   });
   if (subjectType === "RECIPE_VARIANT") {
-    await prisma.recipeVariant.findUniqueOrThrow({ where: { id: subjectId }, select: { id: true } });
+    await prisma.recipeVariant.findUniqueOrThrow({
+      where: { id: subjectId, recipe: accessibleRecipeWhere(householdId) },
+      select: { id: true },
+    });
   } else if (subjectType === "INGREDIENT") {
     await prisma.ingredient.findUniqueOrThrow({ where: { id: subjectId }, select: { id: true } });
   } else if (!RECIPE_CATEGORIES.includes(subjectId as (typeof RECIPE_CATEGORIES)[number])) {

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
 import type { DayKey } from "@/lib/week";
 import { CATEGORY_LABELS } from "@/lib/categoryStyle";
+import { accessibleRecipeWhere } from "@/lib/recipeScope";
 import NavBar from "@/components/NavBar";
 import AddPersonForm from "./AddPersonForm";
 import PersonalPreferencesManager, { labelPersonalPreferenceSubject } from "./PersonalPreferencesManager";
@@ -54,6 +55,7 @@ export default async function OnsGezinPage() {
             .filter((preference) => preference.subjectType === "RECIPE_VARIANT")
             .map((preference) => preference.subjectId),
         },
+        recipe: accessibleRecipeWhere(household.id),
       },
       include: { recipe: true },
     }),
@@ -103,7 +105,10 @@ export default async function OnsGezinPage() {
     .sort((a, b) => b.confidence - a.confidence)
     .slice(0, 10);
   const learnedVariants = await prisma.recipeVariant.findMany({
-    where: { id: { in: variantPrefs.map((p) => p.subjectId) } },
+    where: {
+      id: { in: variantPrefs.map((p) => p.subjectId) },
+      recipe: accessibleRecipeWhere(household.id),
+    },
     include: { recipe: true },
   });
   const stanceByVariantId = new Map(variantPrefs.map((p) => [p.subjectId, p.stance]));

@@ -80,6 +80,7 @@ export async function maybePromoteRecipeStatus(recipeVariantId: string, househol
     where: { id: recipeVariantId },
     include: { recipe: true },
   });
+  if (variant.recipe.householdId !== householdId) return;
   if (variant.recipe.status === "SAFE_CHOICE") return;
 
   const events = await prisma.feedbackEvent.findMany({

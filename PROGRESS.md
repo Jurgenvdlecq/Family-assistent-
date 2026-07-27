@@ -58,13 +58,14 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 | WP17 | Productkeuzes per ingrediënt beheren | In `/recepten` kan per ingrediënt nu ook de productmatching worden beheerd: bekende producten bekijken, handmatig productkandidaten toevoegen, een standaardproduct vastleggen, producten uitsluiten of weer toestaan. Wijzigingen maken de huidige boodschappenlijst ongeldig zodat de volgende lijst de nieuwe standaardkeuze gebruikt. Geen nieuwe migratie nodig. |
 | WP18 | Productvisie vastleggen | `PRODUCT_VISION.md` legt de aangescherpte richting vast: de app leert wat een huishouden eet en regelt boodschappen, met algemene slimme basis, huishouden-personalisatie, waarom-signalen, korte onboarding, expliciete bevestiging voor Picnic en beheer als secundaire route. Geen code- of migratiewijziging. |
 | WP19 | Datamodel toetsen aan productvisie | `DATAMODEL_AUDIT.md` legt vast wat al goed staat en wat ontbreekt voor de zelflerende multi-household assistent: receptscope/eigenaarschap, typed tags, waarom-signalen, afgeleide patronen, rijkere onboarding, entry-context en provider-neutraliteit. Geen code- of migratiewijziging. |
+| WP20 | Receptscope en basisdata scheiden | `Recipe.scope`, `householdId`, `originHouseholdId` en `promotedAt` scheiden globale basisrecepten van eigen huishoudrecepten. Seed-data blijft `GLOBAL`; nieuwe recepten op `/recepten` worden `HOUSEHOLD`; basisrecepten kunnen eerst naar een eigen kopie worden gekopieerd voordat ze bewerkt worden. Planning en gerechten tonen alleen globale/community-goedgekeurde recepten plus eigen huishoudrecepten. Migratie nodig: `20260727093000_recipe_scope`. |
 
 ## Nog te doen (roadmap, nog niet gestart)
 
-- **Volgende WP nog kiezen.** Logische vervolgstappen zijn bijvoorbeeld
-  receptscope/eigenaarschap toevoegen, typed tags introduceren, waarom-signalen
-  bouwen, onboarding ontwerpen of de hoofdflow terugbrengen naar een
-  assistent-ervaring. Zie `DATAMODEL_AUDIT.md` voor de aanbevolen volgorde.
+- **Volgende WP nog kiezen.** Logische vervolgstappen zijn bijvoorbeeld typed
+  tags introduceren, waarom-signalen bouwen, onboarding ontwerpen of de
+  hoofdflow terugbrengen naar een assistent-ervaring. Zie
+  `DATAMODEL_AUDIT.md` voor de aanbevolen volgorde.
 
 ## Niet-voor-de-hand-liggende operationele kennis
 
