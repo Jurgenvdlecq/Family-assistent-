@@ -89,9 +89,9 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 
 ## Nog te doen (roadmap, nog niet gestart)
 
-- **Volgende WP nog kiezen.** Logische vervolgstap: `MealPlanEntry`-context
-  vastleggen voor beter leren uit stil accepteren en handmatige wijzigingen.
-  Zie `DATAMODEL_AUDIT.md` punt 6.
+- **Nieuwe hoofdflow is leidend:** `Week kiezen → Aanvullen → Per dag controleren → Totaalbestelling controleren → Naar Picnic`.
+- **Volgende WP:** bouw een per-dag controleweergave waarin de gebruiker per maaltijd ziet welke producten besteld worden, inclusief foto, prijs, inhoud per verpakking, aantal verpakkingen en directe acties zoals ander product, verwijderen, alleen deze keer en onthouden. De samengevoegde totaalbestelling blijft daarna de eindcheck.
+- Daarna pas verder met `MealPlanEntry`-context voor beter leren uit stil accepteren en handmatige wijzigingen (zie `DATAMODEL_AUDIT.md` punt 6).
 
 ## Niet-voor-de-hand-liggende operationele kennis
 

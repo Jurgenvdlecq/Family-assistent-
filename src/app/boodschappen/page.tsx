@@ -726,12 +726,14 @@ export default async function BoodschappenPage({
           </div>
         </details>
 
-        <PicnicTransfer
-          shoppingListId={shoppingList.id}
-          text={picnicTransfer.text}
-          itemCount={picnicTransfer.itemCount}
-          transferred={picnicTransfer.status === "TRANSFERRED"}
-        />
+        {!household.picnicAuthToken && (
+          <PicnicTransfer
+            shoppingListId={shoppingList.id}
+            text={picnicTransfer.text}
+            itemCount={picnicTransfer.itemCount}
+            transferred={picnicTransfer.status === "TRANSFERRED"}
+          />
+        )}
         <AddToPicnicCart
           shoppingListId={shoppingList.id}
           connected={Boolean(household.picnicAuthToken)}
