@@ -1,4 +1,15 @@
-import { Menu, SlidersHorizontal, Flame, Leaf, MoreHorizontal, Utensils } from "lucide-react";
+import Link from "next/link";
+import {
+  Menu,
+  CheckCircle2,
+  ClipboardCheck,
+  Flame,
+  Leaf,
+  MoreHorizontal,
+  ShoppingBasket,
+  Sparkles,
+  Utensils,
+} from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { getHouseholdMealParticipantsByDay } from "@/lib/household";
@@ -55,6 +66,57 @@ const PERSONAL_STANCE_TONES = {
 
 const PERSONAL_STANCES = ["LIKED", "SOMETIMES", "RATHER_NOT", "NEVER"] as const;
 
+function nextStepCopy(input: {
+  learningPromptCount: number;
+  hasShoppingList: boolean;
+  reviewCount: number;
+  shoppingListStatus: string | null;
+}) {
+  if (input.learningPromptCount > 0) {
+    return {
+      icon: Sparkles,
+      title: "Ik heb een korte vraag",
+      body: "Beantwoord maximaal twee leervragen, dan kan ik beter begrijpen waarom iets wel of niet blijft staan.",
+      href: "#leervragen",
+      cta: "Vraag bekijken",
+    };
+  }
+  if (!input.hasShoppingList) {
+    return {
+      icon: ShoppingBasket,
+      title: "Weekmenu staat klaar",
+      body: "Als dit ongeveer klopt, maak ik hierna de boodschappenlijst met vaste boodschappen en voorraadcontrole.",
+      href: "/boodschappen",
+      cta: "Boodschappen voorbereiden",
+    };
+  }
+  if (input.reviewCount > 0) {
+    return {
+      icon: ClipboardCheck,
+      title: `${input.reviewCount} productkeuze${input.reviewCount === 1 ? "" : "s"} controleren`,
+      body: "Er zijn nog producten, verpakkingen of hoeveelheden die ik niet stil wil aannemen.",
+      href: "/controle",
+      cta: "Controleren",
+    };
+  }
+  if (input.shoppingListStatus === "REVIEWED") {
+    return {
+      icon: CheckCircle2,
+      title: "Klaar om naar Picnic te gaan",
+      body: "De lijst is gecontroleerd. Je bevestigt zelf nog voordat er iets naar Picnic gaat.",
+      href: "/boodschappen",
+      cta: "Naar bevestigen",
+    };
+  }
+  return {
+    icon: ClipboardCheck,
+    title: "Boodschappen staan klaar",
+    body: "Loop de lijst nog even na. Vertrouwde keuzes hoeven weinig aandacht te vragen.",
+    href: "/boodschappen",
+    cta: "Boodschappen bekijken",
+  };
+}
+
 function PreferenceButtons({
   householdId,
   personId,
@@ -109,8 +171,12 @@ export default async function Home() {
     getMealPlanForWeek(household.id, weekStart),
     getReasonsForPlan(household.id, weekStart),
     getHouseholdMealParticipantsByDay(household.id),
-    getPendingLearningPrompts(household.id, 2),
+    getPendingLearningPrompts(household.id, household.maxSmartQuestionsPerSession),
   ]);
+  const shoppingList = await prisma.shoppingList.findUnique({
+    where: { mealPlanId: mealPlan!.id },
+    include: { lines: { select: { needsReview: true } } },
+  });
   const mealVariantIds = mealPlan!.entries.map((entry) => entry.recipeVariantId);
   const mealCategoryIds = [...new Set(mealPlan!.entries.map((entry) => entry.recipeVariant.recipe.category))];
   const mealIngredientIds = [
@@ -148,6 +214,14 @@ export default async function Home() {
     (e) => e.recipeVariant.recipe.category === "ALL_VEGGIE_DAY"
   ).length;
   const greetingName = household.persons[0]?.name ?? household.name;
+  const reviewCount = shoppingList?.lines.filter((line) => line.needsReview).length ?? 0;
+  const nextStep = nextStepCopy({
+    learningPromptCount: learningPrompts.length,
+    hasShoppingList: Boolean(shoppingList),
+    reviewCount,
+    shoppingListStatus: shoppingList?.status ?? null,
+  });
+  const NextStepIcon = nextStep.icon;
 
   const priorFeedback = await prisma.feedbackEvent.findMany({
     where: {
@@ -165,59 +239,57 @@ export default async function Home() {
       <header className="flex items-center justify-between px-6 pt-6 pb-2">
         <Menu size={20} className="text-ink-muted" />
         <span className="text-sm font-semibold">Jouw week</span>
-        <SlidersHorizontal size={18} className="text-ink-muted" />
+        <Link href="/ons-gezin" aria-label="Gezinsinstellingen" className="text-ink-muted hover:text-ink">
+          <Sparkles size={18} />
+        </Link>
       </header>
 
       <div className="px-6 pt-4">
         <h1 className="mb-1 text-[1.7rem] font-semibold leading-tight text-ink">
-          Goedemorgen, {greetingName}! 👋
+          Goedemorgen, {greetingName}
         </h1>
         <p className="mb-5 text-[15px] text-ink-muted">
-          Dit is jullie weekplanning. Ik houd rekening met jullie voorkeuren en drukke dagen.
+          Ik heb een voorstel gemaakt. Jij hoeft vooral te corrigeren wat niet klopt.
         </p>
 
-        <div className="mb-6 rounded-2xl border border-line bg-surface p-4">
-          <p className="mb-3 text-sm font-semibold text-ink">
-            Deze week {formatWeekRange(weekStart)}
-          </p>
-          <div className="flex flex-wrap gap-4 text-xs text-ink-muted">
-            <span className="inline-flex items-center gap-1.5">
-              <Utensils size={14} className="text-ink-faint" />
-              {mealPlan!.entries.length} maaltijden
+        <section className="mb-5 rounded-xl border border-accent/30 bg-surface p-4">
+          <div className="flex min-w-0 gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
+              <NextStepIcon size={18} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-ink">{nextStep.title}</p>
+              <p className="mt-1 text-sm text-ink-muted">{nextStep.body}</p>
+              <Link
+                href={nextStep.href}
+                className="mt-3 inline-flex rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink hover:opacity-90"
+              >
+                {nextStep.cta}
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        <section className="mb-6 rounded-xl border border-line bg-surface p-4">
+          <p className="mb-3 text-sm font-semibold text-ink">Deze week {formatWeekRange(weekStart)}</p>
+          <div className="grid grid-cols-3 gap-2 text-xs text-ink-muted">
+            <span className="inline-flex min-w-0 items-center gap-1.5 rounded-lg bg-surface-2 px-2 py-2">
+              <Utensils size={14} className="shrink-0 text-ink-faint" />
+              <span className="truncate">{mealPlan!.entries.length} maaltijden</span>
             </span>
-            <span className="inline-flex items-center gap-1.5">
-              <Flame size={14} className="text-tag-amber-ink" />
-              {busyDayCount} drukke {busyDayCount === 1 ? "dag" : "dagen"}
+            <span className="inline-flex min-w-0 items-center gap-1.5 rounded-lg bg-surface-2 px-2 py-2">
+              <Flame size={14} className="shrink-0 text-tag-amber-ink" />
+              <span className="truncate">{busyDayCount} druk</span>
             </span>
-            <span className="inline-flex items-center gap-1.5">
-              <Leaf size={14} className="text-tag-green-ink" />
-              {avgDayCount} AVG-{avgDayCount === 1 ? "dag" : "dagen"}
+            <span className="inline-flex min-w-0 items-center gap-1.5 rounded-lg bg-surface-2 px-2 py-2">
+              <Leaf size={14} className="shrink-0 text-tag-green-ink" />
+              <span className="truncate">{avgDayCount} AVG</span>
             </span>
           </div>
-          <details className="mt-4 rounded-lg border border-line bg-surface-2 px-3 py-2">
-            <summary className="cursor-pointer text-xs font-medium text-ink-muted">
-              Week opnieuw plannen
-            </summary>
-            <div className="mt-3 flex min-w-0 flex-col gap-3">
-              <p className="text-xs text-ink-muted">
-                Maakt deze week opnieuw met de nieuwste voorkeuren. De huidige boodschappenlijst
-                wordt opnieuw opgebouwd.
-              </p>
-              <form action={regenerateCurrentWeekPlan}>
-                <input type="hidden" name="householdId" value={household.id} />
-                <button
-                  type="submit"
-                  className="rounded-lg border border-line bg-surface px-3 py-2 text-xs font-medium text-ink hover:border-accent hover:text-accent"
-                >
-                  Opnieuw plannen
-                </button>
-              </form>
-            </div>
-          </details>
-        </div>
+        </section>
 
         {learningPrompts.length > 0 && (
-          <div className="mb-6 grid gap-3">
+          <div id="leervragen" className="mb-6 grid gap-3">
             {learningPrompts.map((prompt) => (
               <div key={prompt.id} className="rounded-xl border border-line bg-surface p-4">
                 <p className="mb-1 text-sm font-semibold text-ink">{prompt.title}</p>
@@ -423,12 +495,30 @@ export default async function Home() {
       </div>
 
       <div className="px-6">
-        <a
+        <Link
           href="/boodschappen"
           className="mt-6 block rounded-xl bg-accent px-4 py-3.5 text-center font-medium text-accent-ink transition-opacity hover:opacity-90"
         >
           Naar boodschappenlijst
-        </a>
+        </Link>
+
+        <details className="mt-4 rounded-xl border border-line bg-surface px-4 py-3">
+          <summary className="cursor-pointer text-sm font-medium text-ink-muted">Meer weekacties</summary>
+          <div className="mt-3 flex min-w-0 flex-col gap-3">
+            <p className="text-xs text-ink-muted">
+              Maak alleen opnieuw als het hele voorstel niet lekker voelt. Losse dagen pas je sneller aan via de dag zelf.
+            </p>
+            <form action={regenerateCurrentWeekPlan}>
+              <input type="hidden" name="householdId" value={household.id} />
+              <button
+                type="submit"
+                className="rounded-lg border border-line bg-surface px-3 py-2 text-xs font-medium text-ink hover:border-accent hover:text-accent"
+              >
+                Week opnieuw plannen
+              </button>
+            </form>
+          </div>
+        </details>
       </div>
 
       <NavBar />
