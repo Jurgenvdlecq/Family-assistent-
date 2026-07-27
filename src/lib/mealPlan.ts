@@ -1,7 +1,7 @@
 import { prisma } from "./prisma";
 import { logFeedbackEvent } from "./feedback";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "./scoring";
-import { DAY_KEYS, DAY_ENUM, dateForDay, type DayKey } from "./week";
+import { DAY_KEYS, DAY_ENUM, DAY_KEY_BY_ENUM, DAY_LABELS, dateForDay, type DayKey } from "./week";
 import { getHouseholdHardRestrictions, getHouseholdMealParticipantsByDay } from "./household";
 import { recipeConflictsWithRestrictions } from "./dietaryRestrictions";
 import { accessibleRecipeWhere } from "./recipeScope";
@@ -61,6 +61,7 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
     allVariants,
     hardRestrictionsByDayEntries,
     participantsByDay,
+    dayRoutines,
   ] = await Promise.all([
     prisma.household.findUniqueOrThrow({ where: { id: householdId } }),
     prisma.preference.findMany({
@@ -95,7 +96,11 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
     }),
     Promise.all(DAY_KEYS.map(async (dayKey) => [dayKey, await getHouseholdHardRestrictions(householdId, dayKey)] as const)),
     getHouseholdMealParticipantsByDay(householdId),
+    prisma.dayRoutine.findMany({ where: { householdId } }),
   ]);
+  const dayRoutineByDay = new Map(
+    dayRoutines.map((routine) => [DAY_KEY_BY_ENUM[routine.dayOfWeek], routine.recipeVariantId])
+  );
   const allVariantIds = allVariants.map((variant) => variant.id);
   const allRecipeCategories = [...new Set(allVariants.map((variant) => variant.recipe.category))];
   const allIngredients = allVariants.flatMap((variant) =>
@@ -219,6 +224,23 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
         `Geen enkel gerecht in de bibliotheek voldoet aan de harde beperkingen voor ${DAY_ENUM[dayKey]}. Voeg geschikte recepten toe voordat er een weekplanning gemaakt kan worden.`
       );
     }
+
+    // Een expliciet onthouden daggewoonte (WP51) wint van de gewone scoring,
+    // maar alleen zolang hij nog steeds veilig is (variants is al gefilterd
+    // op harde beperkingen en NEVER-voorkeuren) — "hard is hard" blijft
+    // gelden, ook voor een vaste gewoonte.
+    const routineVariantId = dayRoutineByDay.get(dayKey);
+    const routineVariant = routineVariantId ? variants.find((v) => v.id === routineVariantId) : undefined;
+    if (routineVariant) {
+      usedRecipeIds.add(routineVariant.recipeId);
+      picks[dayKey] = {
+        variant: routineVariant,
+        reason: `Dit is jullie vaste gewoonte op ${DAY_LABELS[dayKey].toLowerCase()}.`,
+        confidence: "CERTAIN",
+      };
+      continue;
+    }
+
     const notUsedYet = variants.filter((v) => !usedRecipeIds.has(v.recipeId));
     const pool = notUsedYet.length > 0 ? notUsedYet : variants;
 

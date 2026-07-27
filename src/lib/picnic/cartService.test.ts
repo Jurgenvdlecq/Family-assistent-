@@ -35,7 +35,7 @@ async function makeHouseholdWithShoppingListLine(name: string) {
   });
   const ingredient = await prisma.ingredient.findFirstOrThrow({});
   const product = await prisma.product.create({
-    data: { name: "Testproduct", externalRef: "picnic-123", ingredientId: ingredient.id },
+    data: { name: "Testproduct", externalRef: `picnic-test-${household.id}`, ingredientId: ingredient.id },
   });
   const variant = await prisma.recipeVariant.findFirstOrThrow({});
   const mealPlan = await prisma.mealPlan.create({
@@ -75,14 +75,16 @@ async function cleanup(householdId: string) {
 }
 
 test("addShoppingListToPicnicCart: idempotent — een tweede keer slaat de al overgedragen regel over zonder nieuwe netwerkcall", async () => {
-  const { household, shoppingList } = await makeHouseholdWithShoppingListLine(
-    "WP7 integratietest — idempotent"
-  );
   const originalFetch = global.fetch;
-  const callLog: string[] = [];
-  global.fetch = fakeAddProductFetch(callLog);
+  let household: Awaited<ReturnType<typeof makeHouseholdWithShoppingListLine>>["household"] | undefined;
 
   try {
+    const fixture = await makeHouseholdWithShoppingListLine("WP7 integratietest — idempotent");
+    household = fixture.household;
+    const shoppingList = fixture.shoppingList;
+    const callLog: string[] = [];
+    global.fetch = fakeAddProductFetch(callLog);
+
     const first = await addShoppingListToPicnicCart(shoppingList.id);
     assert.equal(first.added.length, 1);
     assert.equal(first.skipped.length, 0);
@@ -102,19 +104,21 @@ test("addShoppingListToPicnicCart: idempotent — een tweede keer slaat de al ov
     );
   } finally {
     global.fetch = originalFetch;
-    await cleanup(household.id);
+    if (household) await cleanup(household.id);
   }
 });
 
 test("clearPicnicCartForShoppingList: zet transferredToPicnicAt terug zodat een volgende add-poging alles opnieuw plaatst", async () => {
-  const { household, shoppingList } = await makeHouseholdWithShoppingListLine(
-    "WP7 integratietest — mandje legen"
-  );
   const originalFetch = global.fetch;
-  const callLog: string[] = [];
-  global.fetch = fakeAddProductFetch(callLog);
+  let household: Awaited<ReturnType<typeof makeHouseholdWithShoppingListLine>>["household"] | undefined;
 
   try {
+    const fixture = await makeHouseholdWithShoppingListLine("WP7 integratietest — mandje legen");
+    household = fixture.household;
+    const shoppingList = fixture.shoppingList;
+    const callLog: string[] = [];
+    global.fetch = fakeAddProductFetch(callLog);
+
     await addShoppingListToPicnicCart(shoppingList.id);
     let line = await prisma.shoppingListLine.findFirstOrThrow({ where: { shoppingListId: shoppingList.id } });
     assert.ok(line.transferredToPicnicAt);
@@ -127,6 +131,6 @@ test("clearPicnicCartForShoppingList: zet transferredToPicnicAt terug zodat een 
     assert.equal(second.added.length, 1, "na het legen van het mandje moet de regel opnieuw worden toegevoegd");
   } finally {
     global.fetch = originalFetch;
-    await cleanup(household.id);
+    if (household) await cleanup(household.id);
   }
 });
