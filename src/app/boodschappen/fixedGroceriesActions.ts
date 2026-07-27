@@ -251,6 +251,7 @@ export async function addFixedPicnicProduct(formData: FormData) {
   const externalRef = String(formData.get("externalRef") ?? "").trim();
   const packageSize = String(formData.get("packageSize") ?? "").trim() || null;
   const picnicImageId = String(formData.get("picnicImageId") ?? "").trim() || null;
+  const bulkFixed = String(formData.get("bulkFixed") ?? "").trim();
   const quantity = parseQuantity(formData.get("quantity"));
   const unit = parseUnit(formData.get("unit"));
   const price = parseOptionalPrice(formData.get("price"));
@@ -329,6 +330,10 @@ export async function addFixedPicnicProduct(formData: FormData) {
 
     revalidatePath("/boodschappen");
     revalidatePath("/controle");
+    if (bulkFixed) {
+      const params = new URLSearchParams({ bulkFixed, fixedLine: lineId });
+      redirect(`/boodschappen?${params.toString()}#bulk-fixed-groceries`);
+    }
     redirect(`/boodschappen?fixedLine=${encodeURIComponent(lineId)}#fixed-line-${encodeURIComponent(lineId)}`);
   }
 
