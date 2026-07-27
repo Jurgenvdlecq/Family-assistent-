@@ -61,13 +61,13 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 | WP20 | Receptscope en basisdata scheiden | `Recipe.scope`, `householdId`, `originHouseholdId` en `promotedAt` scheiden globale basisrecepten van eigen huishoudrecepten. Seed-data blijft `GLOBAL`; nieuwe recepten op `/recepten` worden `HOUSEHOLD`; basisrecepten kunnen eerst naar een eigen kopie worden gekopieerd voordat ze bewerkt worden. Planning en gerechten tonen alleen globale/community-goedgekeurde recepten plus eigen huishoudrecepten. Migratie nodig: `20260727093000_recipe_scope`. |
 | WP21 | Typed meal tags en slimme wens-invoer | `src/domain/meal-tags/mealTags.ts` introduceert een gecontroleerde taglaag boven bestaande categorieën/properties/contextFit, met herkenning van termen zoals AVG, snel, airfryer, kindvriendelijk, kip en sperziebonen. `/gerechten` heeft nu een wensveld ("AVG met sperziebonen en kip") dat suggesties filtert/rangschikt en kort uitlegt waarom iets past. De planner gebruikt dezelfde taglaag voor drukke dagen en kindvriendelijkheid. Geen nieuwe migratie nodig. |
 | WP22 | Typed waarom-signalen bij vervangen | `FeedbackEvent.reason` en enum `FeedbackReason` leggen vast waarom een gebruiker een gerecht vervangt. `/gerechten` vraagt bij wisselen één korte reden, zoals "alleen nu iets anders", "niet lekker genoeg" of "te veel werk vandaag". `src/domain/learning/feedbackReasons.ts` zorgt dat redenen gecontroleerd blijven en dat bijvoorbeeld `TOO_MUCH_EFFORT` niet als smaakafkeur telt. Migratie nodig: `20260727104500_feedback_reasons`. |
+| WP23 | Afgeleide patronen en leervragen | `LearnedPattern` en `LearningPrompt` leggen herhaalde gedragssignalen vast zonder meteen harde conclusies te trekken. Bij drie vervangingen van dezelfde receptcategorie op dezelfde dag ontstaat een pending leervraag. `/` toont maximaal twee slimme vragen tegelijk en antwoorden bevestigen of verwerpen het patroon. Migratie nodig: `20260727113000_learning_patterns`. |
 
 ## Nog te doen (roadmap, nog niet gestart)
 
 - **Volgende WP nog kiezen.** Logische vervolgstappen zijn bijvoorbeeld
-  afgeleide patronen/drie-keer-regel bouwen, onboarding ontwerpen of de
-  hoofdflow terugbrengen naar een assistent-ervaring. Zie
-  `DATAMODEL_AUDIT.md` voor de aanbevolen volgorde.
+  onboarding ontwerpen of de hoofdflow terugbrengen naar een
+  assistent-ervaring. Zie `DATAMODEL_AUDIT.md` voor de aanbevolen volgorde.
 
 ## Niet-voor-de-hand-liggende operationele kennis
 

@@ -41,6 +41,8 @@ model Household {
   sessions               HouseholdSession[]
   recipes                Recipe[]                     @relation("HouseholdRecipes")
   originatedRecipes      Recipe[]                     @relation("OriginatedRecipes")
+  learnedPatterns        LearnedPattern[]
+  learningPrompts        LearningPrompt[]
 
   @@map("households")
 }
@@ -546,6 +548,73 @@ model FeedbackEvent {
 
   @@index([householdId, subjectType, subjectId])
   @@map("feedback_events")
+}
+
+// ── Learning ─────────────────────────────────────────────────────────────
+
+model LearnedPattern {
+  id             String              @id @default(uuid())
+  householdId    String              @map("household_id")
+  personId       String?             @map("person_id")
+  patternType    LearnedPatternType  @map("pattern_type")
+  subjectType    FeedbackSubjectType? @map("subject_type")
+  subjectId      String?             @map("subject_id")
+  contextKey     String              @map("context_key")
+  context        Json                @default("{}")
+  confidence     Float               @default(0)
+  evidenceCount  Int                 @default(0) @map("evidence_count")
+  status         LearningStatus      @default(CANDIDATE)
+  lastObservedAt DateTime            @default(now()) @map("last_observed_at")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  household Household        @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  prompts   LearningPrompt[]
+
+  @@unique([householdId, patternType, subjectType, subjectId, contextKey])
+  @@index([householdId, status])
+  @@map("learned_patterns")
+}
+
+model LearningPrompt {
+  id               String             @id @default(uuid())
+  householdId      String             @map("household_id")
+  learnedPatternId String?            @map("learned_pattern_id")
+  promptType       LearningPromptType @map("prompt_type")
+  trigger          String
+  payload          Json               @default("{}")
+  status           LearningStatus     @default(PENDING)
+  createdAt        DateTime           @default(now()) @map("created_at")
+  answeredAt       DateTime?          @map("answered_at")
+
+  household      Household       @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  learnedPattern LearnedPattern? @relation(fields: [learnedPatternId], references: [id], onDelete: SetNull)
+
+  @@index([householdId, status, createdAt])
+  @@map("learning_prompts")
+}
+
+enum LearnedPatternType {
+  MEAL_CATEGORY_REPLACED_ON_DAY
+  MEAL_VARIANT_REPLACED_ON_DAY
+
+  @@map("learned_pattern_type")
+}
+
+enum LearningPromptType {
+  EXPLAIN_REPEATED_REPLACEMENT
+
+  @@map("learning_prompt_type")
+}
+
+enum LearningStatus {
+  CANDIDATE
+  CONFIRMED
+  DISMISSED
+  PENDING
+  ANSWERED
+
+  @@map("learning_status")
 }
 
 enum FeedbackSubjectType {

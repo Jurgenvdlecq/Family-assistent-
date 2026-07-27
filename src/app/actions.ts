@@ -8,6 +8,8 @@ import { ensureMealPlan } from "@/lib/mealPlan";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "@/lib/scoring";
 import { DAY_ENUM, DAY_KEYS, dateForDay, getCurrentWeekStart, type DayKey } from "@/lib/week";
 import { accessibleRecipeWhere } from "@/lib/recipeScope";
+import { answerLearningPrompt, dismissLearningPrompt } from "@/domain/learning/patterns";
+import { parseFeedbackReason } from "@/domain/learning/feedbackReasons";
 
 const PERSONAL_STANCES = ["LIKED", "SOMETIMES", "RATHER_NOT", "NEVER"] as const;
 const PERSONAL_SUBJECT_TYPES = ["RECIPE_VARIANT", "RECIPE_CATEGORY", "INGREDIENT"] as const;
@@ -158,4 +160,24 @@ export async function regenerateCurrentWeekPlan(formData: FormData) {
   revalidatePath("/gerechten");
   revalidatePath("/boodschappen");
   revalidatePath("/controle");
+}
+
+export async function answerSmartLearningPrompt(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const promptId = String(formData.get("promptId"));
+  const answer = parseFeedbackReason(formData.get("answer"));
+  if (!answer) throw new Error("Kies een geldige reden.");
+
+  await answerLearningPrompt({ householdId, promptId, answer });
+  revalidatePath("/");
+}
+
+export async function dismissSmartLearningPrompt(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const promptId = String(formData.get("promptId"));
+
+  await dismissLearningPrompt(householdId, promptId);
+  revalidatePath("/");
 }
