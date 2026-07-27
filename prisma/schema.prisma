@@ -425,6 +425,7 @@ model Product {
   rejections           RejectedProductMatch[]
 
   @@index([ingredientId])
+  @@unique([ingredientId, externalRef])
   @@map("products")
 }
 
@@ -526,6 +527,8 @@ model ShoppingListLine {
   product      Product?     @relation(fields: [productId], references: [id])
 
   @@index([shoppingListId])
+  @@index([shoppingListId, needsReview])
+  @@index([shoppingListId, ingredientId, source])
   @@map("shopping_list_lines")
 }
 
@@ -569,6 +572,7 @@ model FeedbackEvent {
   person    Person?   @relation(fields: [personId], references: [id])
 
   @@index([householdId, subjectType, subjectId])
+  @@index([householdId, eventType, subjectType, subjectId])
   @@map("feedback_events")
 }
 
