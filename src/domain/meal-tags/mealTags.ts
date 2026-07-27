@@ -89,13 +89,32 @@ const VARIANT_TAGS: Record<string, MealTag[]> = {
   FRESH: ["NORMAL_EFFORT"],
 };
 
-const INGREDIENT_ALIASES: Record<string, string[]> = {
-  kip: ["kip", "kipfilet", "kipdijfilet", "kipshoarma", "kipdrumsticks", "pulled chicken"],
-  aardappel: ["aardappel", "aardappelen", "aardappelpartjes"],
-  rijst: ["rijst"],
-  pasta: ["pasta", "spaghetti", "macaroni"],
-  bonen: ["boon", "bonen", "sperziebonen", "kidneybonen", "zwarte bonen"],
-};
+const INGREDIENT_ALIAS_GROUPS = [
+  {
+    triggers: ["kip"],
+    ingredientAliases: ["kipfilet", "kip"],
+  },
+  {
+    triggers: ["aardappel", "aardappelen", "aardappeltjes"],
+    ingredientAliases: ["aardappel", "aardappelen", "aardappelpartjes"],
+  },
+  {
+    triggers: ["rijst"],
+    ingredientAliases: ["rijst"],
+  },
+  {
+    triggers: ["pasta", "spaghetti", "macaroni"],
+    ingredientAliases: ["pasta", "spaghetti", "macaroni"],
+  },
+  {
+    triggers: ["boon", "bonen", "boontjes", "sperziebonen"],
+    ingredientAliases: ["sperziebonen", "boon", "bonen"],
+  },
+  {
+    triggers: ["paprika"],
+    ingredientAliases: ["paprika"],
+  },
+];
 
 export function normalizeMealText(value: string): string {
   return value
@@ -108,6 +127,45 @@ export function normalizeMealText(value: string): string {
 
 function addTags(target: Set<MealTag>, tags: MealTag[] | undefined) {
   for (const tag of tags ?? []) target.add(tag);
+}
+
+function containsNormalizedPhrase(text: string, phrase: string) {
+  return ` ${text} `.includes(` ${phrase} `);
+}
+
+function scoreIngredientForAlias(ingredientName: string, ingredientAliases: string[]) {
+  return ingredientAliases.reduce((best, alias, index) => {
+    const normalizedAlias = normalizeMealText(alias);
+    if (!normalizedAlias) return best;
+    if (ingredientName === normalizedAlias) return Math.max(best, 90 - index);
+    if (containsNormalizedPhrase(ingredientName, normalizedAlias)) return Math.max(best, 70 - index);
+    if (ingredientName.includes(normalizedAlias)) return Math.max(best, 45 - index);
+    return best;
+  }, 0);
+}
+
+function rankIngredientMatch(name: string, normalized: string) {
+  const ingredientName = normalizeMealText(name);
+  const mainName = ingredientName.split(" ")[0];
+  if (ingredientName && containsNormalizedPhrase(normalized, ingredientName)) return 120 + ingredientName.length;
+  if (mainName.length >= 3 && containsNormalizedPhrase(normalized, mainName)) return 95 + mainName.length;
+  return 0;
+}
+
+function pickBestIngredientIdForAlias(
+  ingredients: { id: string; name: string }[],
+  ingredientAliases: string[],
+  usedIngredientIds: Set<string>
+) {
+  return ingredients
+    .filter((ingredient) => !usedIngredientIds.has(ingredient.id))
+    .map((ingredient) => ({
+      ingredient,
+      score: scoreIngredientForAlias(normalizeMealText(ingredient.name), ingredientAliases),
+    }))
+    .filter((match) => match.score > 0)
+    .sort((a, b) => b.score - a.score || a.ingredient.name.length - b.ingredient.name.length || a.ingredient.name.localeCompare(b.ingredient.name))[0]
+    ?.ingredient.id;
 }
 
 function hasStarchyIngredient(candidate: MealTagCandidate) {
@@ -184,23 +242,30 @@ export function parseMealWish(raw: string, ingredients: { id: string; name: stri
 
   const ingredientIds = new Set<string>();
   const matchedIngredientTerms = new Set<string>();
-  for (const ingredient of ingredients) {
-    const ingredientName = normalizeMealText(ingredient.name);
-    const mainName = ingredientName.split(" ")[0];
-    const aliasMatches = Object.entries(INGREDIENT_ALIASES).some(
-      ([wishAlias, ingredientAliases]) =>
-        normalized.includes(wishAlias) && ingredientAliases.some((alias) => ingredientName.includes(normalizeMealText(alias)))
-    );
-    if (
-      ingredientName &&
-      (normalized.includes(ingredientName) ||
-        (mainName.length >= 3 && normalized.includes(mainName)) ||
-        aliasMatches)
-    ) {
-      ingredientIds.add(ingredient.id);
-      matchedIngredientTerms.add(mainName);
-      for (const alias of Object.keys(INGREDIENT_ALIASES)) matchedIngredientTerms.add(alias);
-    }
+  const usedIngredientIds = new Set<string>();
+  const directIngredientMatches = ingredients
+    .map((ingredient) => ({ ingredient, score: rankIngredientMatch(ingredient.name, normalized) }))
+    .filter((match) => match.score > 0)
+    .sort((a, b) => b.score - a.score || a.ingredient.name.localeCompare(b.ingredient.name));
+
+  for (const match of directIngredientMatches) {
+    if (usedIngredientIds.has(match.ingredient.id)) continue;
+    ingredientIds.add(match.ingredient.id);
+    usedIngredientIds.add(match.ingredient.id);
+    matchedIngredientTerms.add(normalizeMealText(match.ingredient.name).split(" ")[0]);
+  }
+
+  for (const group of INGREDIENT_ALIAS_GROUPS) {
+    const matchedTrigger = group.triggers.find((trigger) => {
+      const normalizedTrigger = normalizeMealText(trigger);
+      return containsNormalizedPhrase(normalized, normalizedTrigger);
+    });
+    if (!matchedTrigger) continue;
+    const ingredientId = pickBestIngredientIdForAlias(ingredients, group.ingredientAliases, usedIngredientIds);
+    if (!ingredientId) continue;
+    ingredientIds.add(ingredientId);
+    usedIngredientIds.add(ingredientId);
+    for (const trigger of group.triggers) matchedIngredientTerms.add(normalizeMealText(trigger));
   }
 
   const knownWords = new Set([
@@ -213,6 +278,7 @@ export function parseMealWish(raw: string, ingredients: { id: string; name: stri
     "voor",
     "zin",
     ...MEAL_TAGS.flatMap((tag) => TAG_ALIASES[tag].flatMap((alias) => normalizeMealText(alias).split(" "))),
+    ...INGREDIENT_ALIAS_GROUPS.flatMap((group) => group.triggers.flatMap((trigger) => normalizeMealText(trigger).split(" "))),
     ...matchedIngredientTerms,
   ]);
   const unknownTerms = normalized
