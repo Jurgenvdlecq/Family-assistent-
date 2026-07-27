@@ -148,13 +148,16 @@ export default async function ReceptenPage() {
         <BookOpen size={18} className="text-ink-muted" />
       </header>
 
-      <div className="min-w-0 px-6 pt-4">
-        <h1 className="mb-1 text-[1.6rem] font-semibold leading-tight text-ink">Recepten beheren</h1>
+      <div className="flex min-w-0 flex-col px-6 pt-4">
+        <h1 className="mb-1 text-[1.6rem] font-semibold leading-tight text-ink">Recepten</h1>
         <p className="mb-6 text-[15px] text-ink-muted">
-          Voeg recepten toe of corrigeer hoe de planner ze gebruikt.
+          Bekijk wat de assistent kan plannen. Bewerken en technisch beheer staan rustig ingeklapt.
         </p>
 
-        <details className="mb-4 min-w-0 rounded-xl border border-line bg-surface p-4">
+        <details className="order-3 mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <summary className="cursor-pointer font-medium text-ink">Geavanceerd ingrediënt- en productbeheer</summary>
+          <div className="mt-4 grid gap-4">
+        <details className="min-w-0 rounded-xl border border-line bg-surface p-4">
           <summary className="flex cursor-pointer items-center gap-2 font-medium text-ink">
             <Plus size={16} className="text-accent" />
             Nieuw ingrediënt
@@ -194,7 +197,7 @@ export default async function ReceptenPage() {
           </form>
         </details>
 
-        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+        <details className="min-w-0 rounded-xl border border-line bg-surface p-4">
           <summary className="font-medium text-ink">Ingrediënten beheren</summary>
           <div className="mt-4 grid gap-3">
             {ingredients.map((ingredient) => {
@@ -360,8 +363,10 @@ export default async function ReceptenPage() {
             })}
           </div>
         </details>
+          </div>
+        </details>
 
-        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+        <details className="order-1 mb-5 min-w-0 rounded-xl border border-line bg-surface p-4">
           <summary className="flex cursor-pointer items-center gap-2 font-medium text-ink">
             <Plus size={16} className="text-accent" />
             Nieuw recept
@@ -435,7 +440,7 @@ export default async function ReceptenPage() {
           </form>
         </details>
 
-        <div className="mb-8 grid gap-3">
+        <div className="order-2 mb-8 grid gap-3">
           {recipes.map((recipe) => {
             const editable = recipe.householdId === household.id;
             const scopeLabel = editable
@@ -469,7 +474,9 @@ export default async function ReceptenPage() {
                     .join(", ")}
                 </p>
                 {editable ? (
-                  <form action={updateRecipeDetails} className="grid gap-2">
+                  <details className="rounded-lg border border-line bg-surface-2 p-3">
+                    <summary className="cursor-pointer text-sm font-medium text-ink">Recept bewerken</summary>
+                  <form action={updateRecipeDetails} className="mt-3 grid gap-2">
                     <input type="hidden" name="householdId" value={household.id} />
                     <input type="hidden" name="recipeId" value={recipe.id} />
                     <input
@@ -534,6 +541,7 @@ export default async function ReceptenPage() {
                       Recept opslaan
                     </button>
                   </form>
+                  </details>
                 ) : (
                   <form action={copyRecipeToHousehold}>
                     <input type="hidden" name="householdId" value={household.id} />
@@ -545,9 +553,9 @@ export default async function ReceptenPage() {
                 )}
 
                 {editable && (
-                  <div className="mt-4 grid gap-2 border-t border-line pt-4">
-                    <h3 className="text-xs font-semibold text-ink-faint">Ingrediënten</h3>
-                    <form action={updateRecipeIngredients} className="grid gap-2">
+                  <details className="mt-3 rounded-lg border border-line bg-surface-2 p-3">
+                    <summary className="cursor-pointer text-sm font-medium text-ink">Ingrediënten aanpassen</summary>
+                    <form action={updateRecipeIngredients} className="mt-3 grid gap-2">
                       <input type="hidden" name="householdId" value={household.id} />
                       <input type="hidden" name="recipeId" value={recipe.id} />
                       <IngredientRows
@@ -559,11 +567,12 @@ export default async function ReceptenPage() {
                         Ingrediënten opslaan
                       </button>
                     </form>
-                  </div>
+                  </details>
                 )}
 
-                {editable && <div className="mt-4 grid gap-2 border-t border-line pt-4">
-                  <h3 className="text-xs font-semibold text-ink-faint">Varianten</h3>
+                {editable && <details className="mt-3 rounded-lg border border-line bg-surface-2 p-3">
+                  <summary className="cursor-pointer text-sm font-medium text-ink">Varianten aanpassen</summary>
+                  <div className="mt-3 grid gap-3">
                   {recipe.variants.map((variant) => (
                     <form key={variant.id} action={updateRecipeVariant} className="grid gap-2">
                       <input type="hidden" name="householdId" value={household.id} />
@@ -604,7 +613,8 @@ export default async function ReceptenPage() {
                       </button>
                     </form>
                   </details>
-                </div>}
+                  </div>
+                </details>}
               </article>
             );
           })}
