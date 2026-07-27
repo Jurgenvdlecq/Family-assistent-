@@ -8,6 +8,7 @@ import { recipeConflictsWithRestrictions } from "@/lib/dietaryRestrictions";
 import { accessibleRecipeWhere } from "@/lib/recipeScope";
 import { DAY_KEYS, DAY_ENUM, DAY_LABELS, getCurrentWeekStart, type DayKey } from "@/lib/week";
 import { CATEGORY_GRADIENT, STATUS_LABELS, statusTone } from "@/lib/categoryStyle";
+import { parseMealWish, scoreMealWish } from "@/domain/meal-tags/mealTags";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
 import { replaceMealPlanEntry } from "./actions";
@@ -48,7 +49,7 @@ function addStance(map: Map<string, string[]>, key: string, stance: string) {
 export default async function GerechtenPage({
   searchParams,
 }: {
-  searchParams: Promise<{ day?: string; direction?: string }>;
+  searchParams: Promise<{ day?: string; direction?: string; q?: string }>;
 }) {
   const params = await searchParams;
 
@@ -58,6 +59,7 @@ export default async function GerechtenPage({
     ? (params.day as DayKey)
     : "monday";
   const direction = params.direction ?? "all";
+  const wishText = String(params.q ?? "").trim();
 
   const weekStart = getCurrentWeekStart();
   const mealPlan = await getMealPlanForWeek(household.id, weekStart);
@@ -90,6 +92,14 @@ export default async function GerechtenPage({
       allVariants.flatMap((variant) => variant.recipe.ingredients.map((ri) => ri.ingredientId))
     ),
   ];
+  const allIngredients = [
+    ...new Map(
+      allVariants.flatMap((variant) =>
+        variant.recipe.ingredients.map((ri) => [ri.ingredientId, { id: ri.ingredientId, name: ri.ingredient.name }] as const)
+      )
+    ).values(),
+  ];
+  const mealWish = parseMealWish(wishText, allIngredients);
   const allCategories = [...new Set(allVariants.map((variant) => variant.recipe.category))];
   const personalPreferences = await prisma.preference.findMany({
     where: {
@@ -143,10 +153,42 @@ export default async function GerechtenPage({
       (v) => v.variantType === "FAST" || v.recipe.category === "QUICK_AND_EASY"
     );
   }
+  const wishScoresByVariantId = new Map(
+    variants.map((variant) => [
+      variant.id,
+      scoreMealWish(
+        {
+          recipeCategory: variant.recipe.category,
+          recipeProperties: variant.recipe.properties,
+          variantType: variant.variantType,
+          contextFit: variant.contextFit,
+          ingredients: variant.recipe.ingredients.map((ri) => ({ id: ri.ingredientId, name: ri.ingredient.name })),
+        },
+        mealWish
+      ),
+    ])
+  );
+  const hasWish = mealWish.tags.length > 0 || mealWish.ingredientIds.length > 0;
+  const wishLabelParts = [
+    ...mealWish.tags.map((tag) => tag.toLowerCase().replaceAll("_", " ")),
+    ...mealWish.ingredientIds
+      .map((id) => allIngredients.find((ingredient) => ingredient.id === id)?.name.toLowerCase())
+      .filter((name): name is string => Boolean(name)),
+  ];
+  const directionHref = (key: string) => {
+    const q = new URLSearchParams({ day: dayKey, direction: key });
+    if (wishText) q.set("q", wishText);
+    return `/gerechten?${q.toString()}`;
+  };
+  if (hasWish) {
+    const matching = filtered.filter((variant) => (wishScoresByVariantId.get(variant.id)?.score ?? 0) > 0);
+    filtered = matching.length > 0 ? matching : filtered;
+  }
   filtered = filtered
     .filter((v) => v.id !== currentEntry?.recipeVariantId)
     .sort(
       (a, b) =>
+        (wishScoresByVariantId.get(b.id)?.score ?? 0) - (wishScoresByVariantId.get(a.id)?.score ?? 0) ||
         personalPreferenceScore(personalStancesForVariant(b)) -
           personalPreferenceScore(personalStancesForVariant(a)) ||
         (confidenceByVariantId.get(b.id) ?? 0.5) - (confidenceByVariantId.get(a.id) ?? 0.5)
@@ -180,11 +222,34 @@ export default async function GerechtenPage({
           Ik heb deze gerechten voor jullie uitgekozen.
         </p>
 
+        <form action="/gerechten" className="mb-4 grid gap-2">
+          <input type="hidden" name="day" value={dayKey} />
+          <input type="hidden" name="direction" value={direction} />
+          <input
+            name="q"
+            defaultValue={wishText}
+            placeholder="Bijv. AVG met sperziebonen en kip"
+            className="rounded-lg border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none focus:border-accent"
+          />
+          <button
+            type="submit"
+            className="w-fit rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent"
+          >
+            Zoek passend gerecht
+          </button>
+        </form>
+
+        {hasWish && (
+          <p className="mb-5 text-xs text-ink-muted">
+            Ik zoek op {wishLabelParts.join(", ")}.
+          </p>
+        )}
+
         <div className="mb-6 flex flex-wrap gap-2">
           {DIRECTIONS.map((d) => (
             <a
               key={d.key}
-              href={`/gerechten?day=${dayKey}&direction=${d.key}`}
+              href={directionHref(d.key)}
               className={`rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors ${
                 direction === d.key
                   ? "border-accent bg-accent-soft text-accent"
@@ -207,6 +272,7 @@ export default async function GerechtenPage({
             title="Nieuwe suggesties voor jullie"
             icon={<Sparkles size={16} className="text-tag-purple-ink" />}
             variants={newSuggestions}
+            wishScoresByVariantId={wishScoresByVariantId}
             household={household.id}
             dayKey={dayKey}
             weekStart={weekStart}
@@ -218,6 +284,7 @@ export default async function GerechtenPage({
             title="Jullie favorieten"
             icon={<Heart size={16} className="text-tag-green-ink" fill="currentColor" />}
             variants={favorites}
+            wishScoresByVariantId={wishScoresByVariantId}
             household={household.id}
             dayKey={dayKey}
             weekStart={weekStart}
@@ -228,6 +295,7 @@ export default async function GerechtenPage({
           <RecipeSection
             title={direction === "all" ? "Meer opties" : DIRECTIONS.find((d) => d.key === direction)!.label}
             variants={direction === "all" ? rest : filtered}
+            wishScoresByVariantId={wishScoresByVariantId}
             household={household.id}
             dayKey={dayKey}
             weekStart={weekStart}
@@ -244,6 +312,7 @@ function RecipeSection({
   title,
   icon,
   variants,
+  wishScoresByVariantId,
   household,
   dayKey,
   weekStart,
@@ -251,6 +320,7 @@ function RecipeSection({
   title: string;
   icon?: React.ReactNode;
   variants: VariantWithRecipe[];
+  wishScoresByVariantId: Map<string, { score: number; reasons: string[] }>;
   household: string;
   dayKey: DayKey;
   weekStart: Date;
@@ -266,6 +336,7 @@ function RecipeSection({
         {variants.map((variant) => {
           const statusLabel = STATUS_LABELS[variant.recipe.status];
           const gradient = CATEGORY_GRADIENT[variant.recipe.category];
+          const wishScore = wishScoresByVariantId.get(variant.id);
           return (
             <form key={variant.id} action={replaceMealPlanEntry}>
               <input type="hidden" name="householdId" value={household} />
@@ -287,6 +358,11 @@ function RecipeSection({
                       </span>
                     ))}
                   </div>
+                  {wishScore && wishScore.score > 0 && (
+                    <p className="mt-1 truncate text-[11px] text-accent">
+                      Past bij {wishScore.reasons.slice(0, 3).join(", ")}
+                    </p>
+                  )}
                 </div>
                 <ChevronRight size={18} className="shrink-0 text-ink-faint" />
               </button>

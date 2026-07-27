@@ -1,5 +1,6 @@
 import type { ConfidenceLevel } from "@/generated/prisma/enums";
 import type { DayKey } from "@/lib/week";
+import { tagsForMealCandidate } from "@/domain/meal-tags/mealTags";
 
 type RecipeStatus = "FOUND" | "ADAPTED" | "PROVEN" | "SAFE_CHOICE";
 type VariantType = "FAST" | "FRESH" | "REHEATABLE" | "KID_FRIENDLY";
@@ -127,7 +128,16 @@ function scoreCandidate(input: MealPlanScoringInput, candidate: MealPlanCandidat
   const signal = { score: 100, hasDoubt: false, reasons };
 
   const dayLabel = DAY_LABELS[input.dayKey];
-  const busyFit = BUSY_VARIANT_TYPES.has(candidate.variantType) || candidate.contextFit.includes("drukke_dag");
+  const candidateTags = new Set(
+    tagsForMealCandidate({
+      recipeCategory: candidate.recipeCategory,
+      recipeProperties: candidate.recipeProperties,
+      variantType: candidate.variantType,
+      contextFit: candidate.contextFit,
+      ingredients: candidate.ingredients,
+    })
+  );
+  const busyFit = candidateTags.has("FAST") || candidateTags.has("LOW_EFFORT") || BUSY_VARIANT_TYPES.has(candidate.variantType);
   const preferred = input.preferredCategories.has(candidate.recipeCategory);
   const variantPreference = input.variantPreferences.get(candidate.id);
   const personalPreferences = input.personalVariantPreferences?.get(candidate.id) ?? [];
@@ -217,7 +227,7 @@ function scoreCandidate(input: MealPlanScoringInput, candidate: MealPlanCandidat
     reasons.push(`heeft zich eerder bewezen`);
   }
 
-  if (candidate.variantType === "KID_FRIENDLY" || candidate.contextFit.includes("kindvriendelijk")) {
+  if (candidateTags.has("KID_FRIENDLY")) {
     signal.score += 8;
     reasons.push(`is kindvriendelijk`);
   }
