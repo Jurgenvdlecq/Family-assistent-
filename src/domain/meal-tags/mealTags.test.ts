@@ -4,8 +4,13 @@ import { parseMealWish, scoreMealWish, tagsForMealCandidate } from "./mealTags";
 
 const ingredients = [
   { id: "kip", name: "Kipfilet" },
+  { id: "kipworst", name: "Kipworst" },
+  { id: "pulled-chicken", name: "Pulled chicken" },
+  { id: "kipdijfilet", name: "Kipdijfilet" },
   { id: "sperziebonen", name: "Sperziebonen" },
   { id: "aardappel", name: "Aardappelen" },
+  { id: "rijst", name: "Rijst" },
+  { id: "paprika", name: "Paprika" },
   { id: "pasta", name: "Pasta" },
 ];
 
@@ -16,13 +21,25 @@ test("parseMealWish herkent AVG, kip en sperziebonen uit natuurlijke tekst", () 
   assert.deepEqual(wish.ingredientIds, ["kip", "sperziebonen"]);
 });
 
+test("parseMealWish kiest bij een algemene kipwens maar een kip-ingrediënt", () => {
+  const wish = parseMealWish("kip rijst boontjes", ingredients);
+
+  assert.deepEqual(wish.ingredientIds, ["kip", "rijst", "sperziebonen"]);
+});
+
+test("parseMealWish respecteert een specifiek kip-ingrediënt", () => {
+  const wish = parseMealWish("kipdijfilet rijst paprika", ingredients);
+
+  assert.deepEqual(wish.ingredientIds, ["kipdijfilet", "paprika", "rijst"]);
+});
+
 test("tagsForMealCandidate leidt AVG af uit aardappel/groente/proteine", () => {
   const tags = tagsForMealCandidate({
     recipeCategory: "OTHER",
     recipeProperties: [],
     variantType: "FRESH",
     contextFit: [],
-    ingredients: ingredients.slice(0, 3),
+    ingredients: [ingredients[0], ingredients[4], ingredients[5]],
   });
 
   assert.ok(tags.includes("AVG"));
@@ -37,7 +54,7 @@ test("scoreMealWish beloont tag- en ingredientmatches", () => {
       recipeProperties: ["snel"],
       variantType: "FAST",
       contextFit: ["drukke_dag"],
-      ingredients: [ingredients[0], ingredients[1], ingredients[2]],
+      ingredients: [ingredients[0], ingredients[4], ingredients[5]],
     },
     wish
   );
