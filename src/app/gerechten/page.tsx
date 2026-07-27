@@ -8,7 +8,7 @@ import { recipeConflictsWithRestrictions } from "@/lib/dietaryRestrictions";
 import { accessibleRecipeWhere } from "@/lib/recipeScope";
 import { DAY_KEYS, DAY_ENUM, DAY_LABELS, getCurrentWeekStart, type DayKey } from "@/lib/week";
 import { STATUS_LABELS, statusTone } from "@/lib/categoryStyle";
-import { parseMealWish, scoreMealWish } from "@/domain/meal-tags/mealTags";
+import { normalizeMealText, parseMealWish, scoreMealWish } from "@/domain/meal-tags/mealTags";
 import { MEAL_REPLACEMENT_REASONS } from "@/domain/learning/feedbackReasons";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
@@ -46,6 +46,19 @@ function addStance(map: Map<string, string[]>, key: string, stance: string) {
   const list = map.get(key) ?? [];
   list.push(stance);
   map.set(key, list);
+}
+
+function titleSearchScore(title: string, query: string) {
+  const normalizedTitle = normalizeMealText(title);
+  const normalizedQuery = normalizeMealText(query);
+  if (!normalizedQuery) return 0;
+  if (normalizedTitle === normalizedQuery) return 200;
+  if (` ${normalizedTitle} `.includes(` ${normalizedQuery} `)) return 170;
+  const queryWords = normalizedQuery.split(" ").filter((word) => word.length >= 3);
+  if (queryWords.length === 0) return 0;
+  const matchedWords = queryWords.filter((word) => normalizedTitle.includes(word));
+  if (matchedWords.length === 0) return 0;
+  return 80 + matchedWords.length * 20;
 }
 
 export default async function GerechtenPage({
@@ -170,7 +183,11 @@ export default async function GerechtenPage({
       ),
     ])
   );
+  const titleScoresByVariantId = new Map(
+    variants.map((variant) => [variant.id, titleSearchScore(variant.recipe.title, wishText)])
+  );
   const hasWish = mealWish.tags.length > 0 || mealWish.ingredientIds.length > 0;
+  const hasExplicitSearch = normalizeMealText(wishText).length > 0;
   const literalWishIngredients = mealWish.ingredientIds
     .map((id) => allIngredients.find((ingredient) => ingredient.id === id))
     .filter((ingredient): ingredient is (typeof allIngredients)[number] => Boolean(ingredient));
@@ -186,14 +203,19 @@ export default async function GerechtenPage({
     if (wishText) q.set("q", wishText);
     return `/gerechten?${q.toString()}`;
   };
-  if (hasWish) {
-    const matching = filtered.filter((variant) => (wishScoresByVariantId.get(variant.id)?.score ?? 0) > 0);
+  if (hasExplicitSearch) {
+    const matching = filtered.filter(
+      (variant) =>
+        (titleScoresByVariantId.get(variant.id) ?? 0) > 0 ||
+        (wishScoresByVariantId.get(variant.id)?.score ?? 0) > 0
+    );
     filtered = matching.length > 0 ? matching : filtered;
   }
   filtered = filtered
     .filter((v) => v.id !== currentEntry?.recipeVariantId)
     .sort(
       (a, b) =>
+        (titleScoresByVariantId.get(b.id) ?? 0) - (titleScoresByVariantId.get(a.id) ?? 0) ||
         (wishScoresByVariantId.get(b.id)?.score ?? 0) - (wishScoresByVariantId.get(a.id)?.score ?? 0) ||
         personalPreferenceScore(personalStancesForVariant(b)) -
           personalPreferenceScore(personalStancesForVariant(a)) ||
@@ -248,6 +270,11 @@ export default async function GerechtenPage({
         {hasWish && (
           <p className="mb-5 text-xs text-ink-muted">
             Ik zoek op {wishLabelParts.join(", ")}.
+          </p>
+        )}
+        {hasExplicitSearch && !hasWish && (
+          <p className="mb-5 text-xs text-ink-muted">
+            Ik zoek letterlijk op receptnamen met “{wishText}”.
           </p>
         )}
 
@@ -306,6 +333,7 @@ export default async function GerechtenPage({
             icon={<Sparkles size={16} className="text-tag-purple-ink" />}
             variants={newSuggestions}
             wishScoresByVariantId={wishScoresByVariantId}
+            titleScoresByVariantId={titleScoresByVariantId}
             household={household.id}
             dayKey={dayKey}
             weekStart={weekStart}
@@ -318,6 +346,7 @@ export default async function GerechtenPage({
             icon={<Heart size={16} className="text-tag-green-ink" fill="currentColor" />}
             variants={favorites}
             wishScoresByVariantId={wishScoresByVariantId}
+            titleScoresByVariantId={titleScoresByVariantId}
             household={household.id}
             dayKey={dayKey}
             weekStart={weekStart}
@@ -329,6 +358,7 @@ export default async function GerechtenPage({
             title={direction === "all" ? "Meer opties" : DIRECTIONS.find((d) => d.key === direction)!.label}
             variants={direction === "all" ? rest : filtered}
             wishScoresByVariantId={wishScoresByVariantId}
+            titleScoresByVariantId={titleScoresByVariantId}
             household={household.id}
             dayKey={dayKey}
             weekStart={weekStart}
@@ -346,6 +376,7 @@ function RecipeSection({
   icon,
   variants,
   wishScoresByVariantId,
+  titleScoresByVariantId,
   household,
   dayKey,
   weekStart,
@@ -354,6 +385,7 @@ function RecipeSection({
   icon?: React.ReactNode;
   variants: VariantWithRecipe[];
   wishScoresByVariantId: Map<string, { score: number; reasons: string[] }>;
+  titleScoresByVariantId: Map<string, number>;
   household: string;
   dayKey: DayKey;
   weekStart: Date;
@@ -369,6 +401,7 @@ function RecipeSection({
         {variants.map((variant) => {
           const statusLabel = STATUS_LABELS[variant.recipe.status];
           const wishScore = wishScoresByVariantId.get(variant.id);
+          const titleScore = titleScoresByVariantId.get(variant.id) ?? 0;
           return (
             <form key={variant.id} action={replaceMealPlanEntry}>
               <input type="hidden" name="householdId" value={household} />
@@ -391,6 +424,11 @@ function RecipeSection({
                     {wishScore && wishScore.score > 0 && (
                       <p className="mt-1 truncate text-[11px] text-accent">
                         Past bij {wishScore.reasons.slice(0, 3).join(", ")}
+                      </p>
+                    )}
+                    {titleScore > 0 && (
+                      <p className="mt-1 truncate text-[11px] text-accent">
+                        Gevonden op receptnaam
                       </p>
                     )}
                   </div>
