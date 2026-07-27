@@ -280,7 +280,7 @@ function LineControlCard({
         {alternatives.length > 0 && (
           <details className="rounded-lg border border-line bg-surface p-3">
             <summary className="cursor-pointer text-sm font-medium text-ink">
-              {alternatives.length} alternatief{alternatives.length === 1 ? "" : "en"}
+              {alternatives.length} {alternatives.length === 1 ? "alternatief" : "alternatieven"}
             </summary>
             <div className="mt-3 grid gap-2">
               {alternatives.map((candidate) => (
