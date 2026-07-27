@@ -33,6 +33,14 @@ test("parseMealWish respecteert een specifiek kip-ingrediënt", () => {
   assert.deepEqual(wish.ingredientIds, ["kipdijfilet", "paprika", "rijst"]);
 });
 
+test("parseMealWish laat onbekende receptnaam beschikbaar voor titelzoeken", () => {
+  const wish = parseMealWish("kofta", ingredients);
+
+  assert.deepEqual(wish.tags, []);
+  assert.deepEqual(wish.ingredientIds, []);
+  assert.deepEqual(wish.unknownTerms, ["kofta"]);
+});
+
 test("tagsForMealCandidate leidt AVG af uit aardappel/groente/proteine", () => {
   const tags = tagsForMealCandidate({
     recipeCategory: "OTHER",
