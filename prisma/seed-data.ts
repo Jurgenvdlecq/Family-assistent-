@@ -145,6 +145,9 @@ export interface RecipeSeed {
   title: string;
   category: RecipeCategory;
   source: string;
+  imageUrl?: string | null;
+  imageSourceUrl?: string | null;
+  imageAttribution?: string | null;
   properties: string[];
   status: RecipeStatus;
   instructions: string[];

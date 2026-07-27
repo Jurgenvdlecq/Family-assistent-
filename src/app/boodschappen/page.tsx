@@ -5,8 +5,11 @@ import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { getCurrentWeekStart } from "@/lib/week";
 import { ensureShoppingList } from "@/lib/shoppingList";
+import { prisma } from "@/lib/prisma";
 import { getFixedGroceries, getIngredientsWithoutFixedGrocery } from "@/lib/fixedGroceries";
 import { getInventoryChecklist } from "@/lib/inventory";
+import { enrichShoppingListProductImages } from "@/lib/picnic/productEnrichment";
+import { picnicImageUrl } from "@/lib/picnic/products";
 import { preparePicnicTransfer } from "@/lib/picnicAdapter";
 import NavBar from "@/components/NavBar";
 import PicnicTransfer from "./PicnicTransfer";
@@ -38,6 +41,23 @@ function formatQuantity(quantity: number, unit: string) {
   return `${quantity}x`;
 }
 
+function ProductThumb({
+  line,
+}: {
+  line: { ingredient: { name: string }; product: { name: string; picnicImageId: string | null } | null };
+}) {
+  const imageUrl = picnicImageUrl(line.product?.picnicImageId, "small");
+  return (
+    <div
+      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-line bg-white bg-contain bg-center bg-no-repeat text-ink-faint"
+      style={imageUrl ? { backgroundImage: `url(${imageUrl})` } : undefined}
+      aria-label={line.product?.name ?? line.ingredient.name}
+    >
+      {!imageUrl && <ShoppingCart size={16} />}
+    </div>
+  );
+}
+
 export default async function BoodschappenPage() {
   const household = await requireCurrentHousehold();
 
@@ -45,7 +65,16 @@ export default async function BoodschappenPage() {
   const mealPlan = await getMealPlanForWeek(household.id, weekStart);
   if (!mealPlan) redirect("/");
 
-  const shoppingList = await ensureShoppingList(mealPlan.id, household.id);
+  const initialShoppingList = await ensureShoppingList(mealPlan.id, household.id);
+  await enrichShoppingListProductImages(household.id, initialShoppingList.id);
+  const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
+    where: { id: initialShoppingList.id },
+    include: {
+      lines: {
+        include: { ingredient: true, product: true },
+      },
+    },
+  });
   const sortedLines = [...shoppingList.lines].sort((a, b) =>
     a.ingredient.name.localeCompare(b.ingredient.name)
   );
@@ -101,17 +130,20 @@ export default async function BoodschappenPage() {
         <div className="flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
           {mealLines.map((line) => (
             <div key={line.id} className="flex min-w-0 items-center justify-between gap-4 p-4">
-              <div className="min-w-0">
-                <p className="truncate text-ink">{line.product?.name ?? line.ingredient.name}</p>
-                {line.product?.brand && (
-                  <p className="truncate text-xs text-ink-faint">
-                    {line.product.brand}
-                    {line.product.packageSize ? ` · ${line.product.packageSize}` : ""}
-                  </p>
-                )}
-                {line.needsReview && (
-                  <p className="mt-0.5 text-xs font-medium text-tag-amber-ink">Nog te bevestigen</p>
-                )}
+              <div className="flex min-w-0 items-center gap-3">
+                <ProductThumb line={line} />
+                <div className="min-w-0">
+                  <p className="truncate text-ink">{line.product?.name ?? line.ingredient.name}</p>
+                  {line.product?.brand && (
+                    <p className="truncate text-xs text-ink-faint">
+                      {line.product.brand}
+                      {line.product.packageSize ? ` · ${line.product.packageSize}` : ""}
+                    </p>
+                  )}
+                  {line.needsReview && (
+                    <p className="mt-0.5 text-xs font-medium text-tag-amber-ink">Nog te bevestigen</p>
+                  )}
+                </div>
               </div>
               <span className="shrink-0 text-sm text-ink-muted">
                 {formatQuantity(line.quantity, line.unit)}

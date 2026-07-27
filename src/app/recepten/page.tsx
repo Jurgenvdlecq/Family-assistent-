@@ -4,7 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { CATEGORY_LABELS, STATUS_LABELS, VARIANT_LABELS } from "@/lib/categoryStyle";
 import { accessibleRecipeWhere } from "@/lib/recipeScope";
+import { picnicImageUrl } from "@/lib/picnic/products";
 import NavBar from "@/components/NavBar";
+import RecipePhoto from "@/components/RecipePhoto";
 import {
   allowProductForIngredient,
   copyRecipeToHousehold,
@@ -43,6 +45,23 @@ const UNIT_OPTIONS = Object.entries(UNIT_LABELS);
 function formatPrice(price: unknown) {
   if (price === null || price === undefined) return null;
   return `€ ${Number(price).toFixed(2)}`;
+}
+
+function ProductImage({
+  product,
+}: {
+  product: { name: string; picnicImageId: string | null };
+}) {
+  const imageUrl = picnicImageUrl(product.picnicImageId, "small");
+  return (
+    <div
+      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-line bg-white bg-contain bg-center bg-no-repeat text-ink-faint"
+      style={imageUrl ? { backgroundImage: `url(${imageUrl})` } : undefined}
+      aria-label={product.name}
+    >
+      {!imageUrl && <BookOpen size={15} />}
+    </div>
+  );
 }
 
 function IngredientRows({
@@ -233,16 +252,19 @@ export default async function ReceptenPage() {
                         const isRejected = product.rejections.length > 0;
                         return (
                           <div key={product.id} className="grid gap-2 rounded-lg border border-line p-3">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium text-ink">
-                                {product.name}
-                                {product.brand && <span className="text-ink-faint"> — {product.brand}</span>}
-                              </p>
-                              <p className="truncate text-xs text-ink-faint">
-                                {[product.packageSize, formatPrice(product.price), product.externalRef ? "Picnic-id bekend" : null]
-                                  .filter(Boolean)
-                                  .join(" · ") || "Geen extra productinfo"}
-                              </p>
+                            <div className="flex min-w-0 items-center gap-3">
+                              <ProductImage product={product} />
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium text-ink">
+                                  {product.name}
+                                  {product.brand && <span className="text-ink-faint"> - {product.brand}</span>}
+                                </p>
+                                <p className="truncate text-xs text-ink-faint">
+                                  {[product.packageSize, formatPrice(product.price), product.externalRef ? "Picnic-id bekend" : null]
+                                    .filter(Boolean)
+                                    .join(" · ") || "Geen extra productinfo"}
+                                </p>
+                              </div>
                             </div>
                             <div className="flex flex-wrap gap-2">
                               {isDefault ? (
@@ -369,6 +391,23 @@ export default async function ReceptenPage() {
               placeholder="Bron of notitie"
               className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
             />
+            <input
+              name="imageUrl"
+              placeholder="Echte foto-URL van het gerecht"
+              className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                name="imageAttribution"
+                placeholder="Fotocredit"
+                className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+              />
+              <input
+                name="imageSourceUrl"
+                placeholder="Link naar fotobron"
+                className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+              />
+            </div>
             <textarea
               name="properties"
               rows={2}
@@ -406,16 +445,22 @@ export default async function ReceptenPage() {
                 : "Basisrecept";
             return (
               <article key={recipe.id} className="min-w-0 rounded-xl border border-line bg-surface p-4">
-                <div className="mb-3 min-w-0">
-                  <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
-                    <h2 className="truncate font-semibold text-ink">{recipe.title}</h2>
-                    <span className="shrink-0 rounded-md bg-tag-blue-bg px-2 py-1 text-[11px] font-medium text-tag-blue-ink">
-                      {scopeLabel}
-                    </span>
+                <div className="mb-3 flex min-w-0 items-start gap-3">
+                  <RecipePhoto recipe={recipe} className="h-16 w-16 rounded-lg" />
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
+                      <h2 className="truncate font-semibold text-ink">{recipe.title}</h2>
+                      <span className="shrink-0 rounded-md bg-tag-blue-bg px-2 py-1 text-[11px] font-medium text-tag-blue-ink">
+                        {scopeLabel}
+                      </span>
+                    </div>
+                    <p className="text-xs text-ink-faint">
+                      {recipe.ingredients.length} ingrediënten · {recipe.variants.length} varianten
+                    </p>
+                    {recipe.imageAttribution && (
+                      <p className="mt-1 truncate text-[11px] text-ink-faint">{recipe.imageAttribution}</p>
+                    )}
                   </div>
-                  <p className="text-xs text-ink-faint">
-                    {recipe.ingredients.length} ingrediënten · {recipe.variants.length} varianten
-                  </p>
                 </div>
                 <p className="mb-3 text-sm text-ink-muted">
                   {recipe.ingredients
@@ -451,6 +496,26 @@ export default async function ReceptenPage() {
                       placeholder="Bron of notitie"
                       className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
                     />
+                    <input
+                      name="imageUrl"
+                      defaultValue={recipe.imageUrl ?? ""}
+                      placeholder="Echte foto-URL van het gerecht"
+                      className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        name="imageAttribution"
+                        defaultValue={recipe.imageAttribution ?? ""}
+                        placeholder="Fotocredit"
+                        className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                      />
+                      <input
+                        name="imageSourceUrl"
+                        defaultValue={recipe.imageSourceUrl ?? ""}
+                        placeholder="Link naar fotobron"
+                        className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                      />
+                    </div>
                     <textarea
                       name="properties"
                       rows={2}

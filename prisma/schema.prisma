@@ -182,6 +182,9 @@ model Recipe {
   title             String
   category          RecipeCategory
   source            String?
+  imageUrl          String?        @map("image_url")
+  imageAttribution  String?        @map("image_attribution")
+  imageSourceUrl    String?        @map("image_source_url")
   properties        String[]       @default([])
   instructions      String[]       @default([])
   status            RecipeStatus   @default(FOUND)
