@@ -4,8 +4,9 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { assertCurrentHousehold } from "@/lib/auth";
 import { logFeedbackEvent } from "@/lib/feedback";
+import { ensureMealPlan } from "@/lib/mealPlan";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "@/lib/scoring";
-import { DAY_ENUM, DAY_KEYS, type DayKey } from "@/lib/week";
+import { DAY_ENUM, DAY_KEYS, dateForDay, getCurrentWeekStart, type DayKey } from "@/lib/week";
 
 const PERSONAL_STANCES = ["LIKED", "SOMETIMES", "RATHER_NOT", "NEVER"] as const;
 const PERSONAL_SUBJECT_TYPES = ["RECIPE_VARIANT", "RECIPE_CATEGORY", "INGREDIENT"] as const;
@@ -126,4 +127,31 @@ export async function setPersonMealPreference(formData: FormData) {
 
   revalidatePath("/");
   revalidatePath("/gerechten");
+}
+
+export async function regenerateCurrentWeekPlan(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const weekStart = getCurrentWeekStart();
+  const weekEnd = dateForDay(weekStart, "sunday");
+
+  const existingPlan = await prisma.mealPlan.findUnique({
+    where: { householdId_weekStart: { householdId, weekStart } },
+    select: { id: true },
+  });
+
+  if (existingPlan) {
+    await prisma.shoppingList.deleteMany({ where: { mealPlanId: existingPlan.id } });
+    await prisma.mealPlan.delete({ where: { id: existingPlan.id } });
+  }
+  await prisma.mealSuggestion.deleteMany({
+    where: { householdId, targetSlot: { gte: weekStart, lte: weekEnd } },
+  });
+
+  await ensureMealPlan(householdId, weekStart);
+
+  revalidatePath("/");
+  revalidatePath("/gerechten");
+  revalidatePath("/boodschappen");
+  revalidatePath("/controle");
 }

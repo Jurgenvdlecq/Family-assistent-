@@ -50,14 +50,14 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 | WP11 | Persoonsvoorkeuren per gerecht | Persoonlijke voorkeuren worden opgeslagen via bestaande `Preference(ownerType=PERSON, subjectType=RECIPE_VARIANT)` — op `/` kan per aanwezige eter favoriet/oké/liever niet/nooit worden gekozen; planning en `/gerechten` wegen dit per dag mee en sluiten persoonlijke `NEVER` uit. Geen nieuwe migratie nodig. |
 | WP12 | Persoonsvoorkeuren per categorie/ingrediënt | De weekplanning kan per aanwezige eter nu ook voorkeuren voor receptcategorieën en ingrediënten vastleggen via dezelfde `Preference`-tabel. Planning en `/gerechten` wegen `RECIPE_CATEGORY` en `INGREDIENT` mee; persoonlijke `NEVER` sluit ook categorieën/ingrediënten uit. Geen nieuwe migratie nodig. |
 | WP13 | Voorkeurenbeheer op Ons gezin | `/ons-gezin` toont nu een beheerblok voor alle persoonlijke voorkeuren per gezinslid, met leesbare labels voor gerecht/categorie/ingrediënt. Voorkeuren kunnen daar worden aangepast of verwijderd, met household-validatie in server actions. Geen nieuwe migratie nodig. |
+| WP14 | Weekplanning opnieuw genereren | Op `/` staat een uitklapbare actie "Week opnieuw plannen". Deze verwijdert alleen de huidige weekplanning, bijbehorende boodschappenlijst en suggesties van het huidige huishouden, en bouwt de week opnieuw op met actuele voorkeuren. Geen nieuwe migratie nodig. |
 
 ## Nog te doen (roadmap, nog niet gestart)
 
-- **WP14 — Weekplanning regenereren / voorkeuren direct toepassen.** WP11-WP13
-  leggen voorkeuren vast en beheren ze, maar een bestaande weekplanning blijft
-  bewust staan. Logische vervolgstap: een veilige actie om de huidige week
-  opnieuw te laten plannen nadat voorkeuren zijn aangepast, inclusief
-  boodschappenlijst-invalidering en duidelijke bevestiging.
+- **WP15 — Recepten/varianten beheren.** Nu planning, voorkeuren en herplanning
+  werkbaar zijn, is de volgende logische stap een beheerflow om nieuwe
+  recepten of varianten toe te voegen, bestaande recepten te corrigeren en
+  hard te markeren waarom iets wel/niet geschikt is.
 
 ## Niet-voor-de-hand-liggende operationele kennis
 
