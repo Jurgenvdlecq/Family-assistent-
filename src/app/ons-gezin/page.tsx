@@ -5,12 +5,17 @@ import { requireCurrentHousehold } from "@/lib/auth";
 import type { DayKey } from "@/lib/week";
 import { CATEGORY_LABELS } from "@/lib/categoryStyle";
 import { accessibleRecipeWhere } from "@/lib/recipeScope";
+import {
+  PRODUCT_CHOICE_LABELS,
+  PRODUCT_CHOICE_PREFERENCES,
+  productChoicePreferenceFromDeliveryPreference,
+} from "@/domain/product-matching/productChoicePreference";
 import NavBar from "@/components/NavBar";
 import AddPersonForm from "./AddPersonForm";
 import PersonalPreferencesManager, { labelPersonalPreferenceSubject } from "./PersonalPreferencesManager";
 import PersonPreferencesCard from "./PersonPreferencesCard";
 import WeeklyRhythmEditor from "./WeeklyRhythmEditor";
-import { logout, updateAccessCode } from "./actions";
+import { logout, updateAccessCode, updateProductChoicePreference } from "./actions";
 
 // Leest live gezinsdata — nooit statisch prerenderen.
 export const dynamic = "force-dynamic";
@@ -114,6 +119,7 @@ export default async function OnsGezinPage() {
   const stanceByVariantId = new Map(variantPrefs.map((p) => [p.subjectId, p.stance]));
 
   const rhythm = (household.weeklyRhythm ?? {}) as Partial<Record<DayKey, "busy" | "quiet">>;
+  const productChoicePreference = productChoicePreferenceFromDeliveryPreference(household.deliveryPreference);
 
   return (
     <div className="mx-auto flex min-h-screen w-full min-w-0 max-w-2xl flex-col pb-24">
@@ -157,6 +163,45 @@ export default async function OnsGezinPage() {
         </div>
 
         <PersonalPreferencesManager householdId={household.id} preferences={personalPreferenceItems} />
+
+        <h2 className="mb-3 text-sm font-semibold text-ink">Productkeuze</h2>
+        <form action={updateProductChoicePreference} className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <input type="hidden" name="householdId" value={household.id} />
+          <p className="mb-3 text-sm text-ink-muted">
+            Als er nog geen vaste productvoorkeur is, gebruik ik deze voorkeur om kandidaten te rangschikken.
+          </p>
+          <div className="grid gap-2">
+            {PRODUCT_CHOICE_PREFERENCES.map((preference) => (
+              <label
+                key={preference}
+                className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm transition-colors hover:border-accent/70 hover:bg-surface-2 ${
+                  productChoicePreference === preference ? "border-accent bg-accent/10" : "border-line"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="productChoicePreference"
+                  value={preference}
+                  defaultChecked={productChoicePreference === preference}
+                  className="mt-0.5 h-4 w-4 accent-accent"
+                />
+                <span className="min-w-0">
+                  <span className="block font-medium text-ink">{PRODUCT_CHOICE_LABELS[preference]}</span>
+                  <span className="block text-xs text-ink-faint">
+                    {preference === "LOW_PRICE"
+                      ? "Bij twijfel liever een voordeliger product."
+                      : preference === "KNOWN_PACKAGE"
+                        ? "Bij twijfel liever een product waarvan de verpakking goed te berekenen is."
+                        : "Eerst eerdere keuzes, daarna beschikbaarheid, verpakking en lichte prijs-tiebreak."}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+          <button type="submit" className="mt-3 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink hover:bg-accent/90">
+            Productkeuze opslaan
+          </button>
+        </form>
 
         <h2 className="mb-3 text-sm font-semibold text-ink">Jullie weekritme</h2>
         <div className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">

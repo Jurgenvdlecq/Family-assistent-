@@ -1,3 +1,4 @@
+import { describeProductChoicePreference, normalizeProductChoicePreference } from "./productChoicePreference";
 import type { MatchCandidate, ProductMatchInput, ProductMatchResult, TrustedPreference } from "./types";
 
 /**
@@ -40,15 +41,29 @@ function buildSingleCandidateReasons(candidate: MatchCandidate, hadRejections: b
  * volgorde van voorstellen, nooit automatische acceptatie (status blijft
  * MATCHED_REVIEW_REQUIRED).
  */
-function scoreCandidate(candidate: MatchCandidate): { score: number; reasons: string[] } {
+function scoreCandidate(
+  candidate: MatchCandidate,
+  productChoicePreference: NonNullable<ProductMatchInput["productChoicePreference"]>
+): { score: number; reasons: string[] } {
   let score = 0.4;
   const reasons = ["Is momenteel beschikbaar."];
   if (candidate.packageQuantity != null) {
     score += 0.1;
     reasons.push("Heeft een bekende verpakkingsgrootte.");
   }
-  // Prijs is bewust een kleine, niet-dominante tiebreak (nooit de enige reden).
-  if (candidate.price != null) score -= candidate.price * 0.0001;
+
+  if (productChoicePreference === "LOW_PRICE" && candidate.price != null) {
+    score += Math.max(0, 0.18 - candidate.price * 0.02);
+    reasons.push(describeProductChoicePreference(productChoicePreference));
+  } else if (productChoicePreference === "KNOWN_PACKAGE" && candidate.packageQuantity != null) {
+    score += 0.12;
+    reasons.push(describeProductChoicePreference(productChoicePreference));
+  } else if (productChoicePreference === "BALANCED") {
+    reasons.push(describeProductChoicePreference(productChoicePreference));
+  }
+
+  // Prijs blijft bij gebalanceerd een kleine tiebreak, geen dominante reden.
+  if (productChoicePreference === "BALANCED" && candidate.price != null) score -= candidate.price * 0.0001;
   return { score: Math.min(0.7, score), reasons };
 }
 
@@ -59,6 +74,7 @@ function scoreCandidate(candidate: MatchCandidate): { score: number; reasons: st
  */
 export function matchProduct(input: ProductMatchInput): ProductMatchResult {
   const now = input.now ?? new Date();
+  const productChoicePreference = normalizeProductChoicePreference(input.productChoicePreference);
   const hadRejections = input.rejectedProductIds.size > 0;
   const candidates = input.candidates.filter((c) => !input.rejectedProductIds.has(c.id));
 
@@ -118,7 +134,7 @@ export function matchProduct(input: ProductMatchInput): ProductMatchResult {
   }
 
   const scored = available
-    .map((candidate) => ({ candidate, ...scoreCandidate(candidate) }))
+    .map((candidate) => ({ candidate, ...scoreCandidate(candidate, productChoicePreference) }))
     .sort((a, b) => b.score - a.score || a.candidate.id.localeCompare(b.candidate.id));
   const best = scored[0];
 

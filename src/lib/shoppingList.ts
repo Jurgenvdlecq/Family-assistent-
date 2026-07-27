@@ -11,6 +11,7 @@ import { matchProduct } from "@/domain/product-matching/matchProduct";
 import { matchProductForIngredient } from "@/domain/product-matching/matchIngredient";
 import { getRejectedProductIds, getTrustedPreferences, toMatchCandidate } from "@/domain/product-matching/repository";
 import type { ProductMatchResult } from "@/domain/product-matching/types";
+import { productChoicePreferenceFromDeliveryPreference } from "@/domain/product-matching/productChoicePreference";
 import { calculatePackageRequirement, type PackageRequirementResult } from "./quantity/packages";
 
 type InventoryLookup = Awaited<ReturnType<typeof getInventoryMap>>;
@@ -61,7 +62,7 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
   });
   if (existing) return existing;
 
-  const [mealPlan, fixedGroceries, inventory, likelyInStockIngredients, portionScaleByDay] = await Promise.all([
+  const [mealPlan, fixedGroceries, inventory, likelyInStockIngredients, portionScaleByDay, household] = await Promise.all([
     prisma.mealPlan.findUniqueOrThrow({
       where: { id: mealPlanId },
       include: {
@@ -80,7 +81,9 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
     getInventoryMap(householdId),
     prisma.ingredient.findMany({ where: { likelyInStock: true }, select: { id: true, unit: true } }),
     getHouseholdPortionScaleByDay(householdId),
+    prisma.household.findUniqueOrThrow({ where: { id: householdId }, select: { deliveryPreference: true } }),
   ]);
+  const productChoicePreference = productChoicePreferenceFromDeliveryPreference(household.deliveryPreference);
 
   type Agg = { ingredientId: string; quantity: number; unit: Unit };
   const totals = new Map<string, Agg>();
@@ -134,6 +137,7 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
       candidates: candidates.map(toMatchCandidate),
       trusted: trustedByIngredient.get(ingredientId) ?? null,
       rejectedProductIds: rejectedByIngredient.get(ingredientId) ?? new Set(),
+      productChoicePreference,
     });
   }
 

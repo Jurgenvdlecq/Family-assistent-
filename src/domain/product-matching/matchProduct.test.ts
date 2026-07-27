@@ -88,6 +88,38 @@ test("volledig gelijke kandidaten worden deterministisch getiebreakt op id", () 
   assert.equal(result.productId, "a-product");
 });
 
+test("huishouden-voorkeur voordelig rangschikt goedkoper product hoger bij twijfel", () => {
+  const result = matchProduct({
+    candidates: [
+      candidate({ id: "duurder", packageQuantity: 500, price: 6.99 }),
+      candidate({ id: "goedkoper", packageQuantity: 500, price: 1.99 }),
+    ],
+    trusted: null,
+    rejectedProductIds: new Set(),
+    productChoicePreference: "LOW_PRICE",
+    now: NOW,
+  });
+  assert.equal(result.status, "MATCHED_REVIEW_REQUIRED");
+  assert.equal(result.productId, "goedkoper");
+  assert.ok(result.reasons.some((reason) => reason.includes("voordelig")));
+});
+
+test("huishouden-voorkeur bekende verpakking geeft voorkeur aan berekenbare verpakking", () => {
+  const result = matchProduct({
+    candidates: [
+      candidate({ id: "zonder-verpakking", packageQuantity: null, price: 1 }),
+      candidate({ id: "met-verpakking", packageQuantity: 500, price: 3 }),
+    ],
+    trusted: null,
+    rejectedProductIds: new Set(),
+    productChoicePreference: "KNOWN_PACKAGE",
+    now: NOW,
+  });
+  assert.equal(result.status, "MATCHED_REVIEW_REQUIRED");
+  assert.equal(result.productId, "met-verpakking");
+  assert.ok(result.reasons.some((reason) => reason.includes("verpakkingsgrootte")));
+});
+
 test("vertrouwde keuze die is afgewezen: valt terug op de resterende kandidaten", () => {
   // Drie kandidaten, niet twee: na het wegfilteren van de afgewezen
   // vertrouwde keuze blijven er twee over — dus nog steeds een echt

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { assertCurrentHousehold, clearHouseholdSession, setHouseholdAccessCode } from "@/lib/auth";
 import { defaultPortionMultiplierForRole } from "@/domain/household/presence";
+import { normalizeProductChoicePreference } from "@/domain/product-matching/productChoicePreference";
 import { DAY_ENUM, DAY_KEYS, getCurrentWeekStart, type DayKey } from "@/lib/week";
 
 const ROLES = ["PARENT", "CHILD", "OTHER"] as const;
@@ -139,6 +140,31 @@ export async function updateWeeklyRhythm(formData: FormData) {
 
   revalidatePath("/ons-gezin");
   revalidatePath("/");
+}
+
+export async function updateProductChoicePreference(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const productChoicePreference = normalizeProductChoicePreference(formData.get("productChoicePreference"));
+
+  const household = await prisma.household.findUniqueOrThrow({
+    where: { id: householdId },
+    select: { deliveryPreference: true },
+  });
+  const deliveryPreference =
+    typeof household.deliveryPreference === "object" && household.deliveryPreference !== null
+      ? (household.deliveryPreference as Record<string, unknown>)
+      : {};
+
+  await prisma.household.update({
+    where: { id: householdId },
+    data: { deliveryPreference: { ...deliveryPreference, productChoicePreference } },
+  });
+
+  await invalidateCurrentShoppingList(householdId);
+  revalidatePath("/ons-gezin");
+  revalidatePath("/boodschappen");
+  revalidatePath("/controle");
 }
 
 async function loadPersonalPreferenceForCurrentHousehold(preferenceId: string, householdId: string) {

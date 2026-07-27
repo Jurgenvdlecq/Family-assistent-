@@ -26,6 +26,7 @@ export interface ProductMatchInput {
   candidates: MatchCandidate[];
   trusted: TrustedPreference | null;
   rejectedProductIds: Set<string>;
+  productChoicePreference?: "BALANCED" | "LOW_PRICE" | "KNOWN_PACKAGE";
   /** Injecteerbaar voor tests; default de echte huidige tijd. */
   now?: Date;
 }

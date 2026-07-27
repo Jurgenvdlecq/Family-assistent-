@@ -1,11 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { assertCurrentHousehold } from "@/lib/auth";
 import { matchProductForIngredient } from "@/domain/product-matching/matchIngredient";
+import { recordProductChosen } from "@/domain/product-matching/repository";
 import { upsertFixedGrocery, removeFixedGrocery } from "@/lib/fixedGroceries";
 import { Unit } from "@/generated/prisma/enums";
+import { inferFixedGroceryQuantity, inferIngredientCategory, titleCaseSearchTerm } from "@/lib/fixedGroceryProductChoice";
+import { parsePackageQuantity } from "@/lib/quantity/parsePackageSize";
 
 function matchToLineFields(match: Awaited<ReturnType<typeof matchProductForIngredient>>) {
   return {
@@ -33,6 +37,14 @@ function parseUnit(raw: FormDataEntryValue | null): Unit {
     throw new Error("Onbekende eenheid.");
   }
   return value as Unit;
+}
+
+function parseOptionalPrice(raw: FormDataEntryValue | null) {
+  const value = String(raw ?? "").trim();
+  if (!value) return null;
+  const parsed = Number(value.replace(",", "."));
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed;
 }
 
 /** Haalt householdId + product-kandidaten op via de regel, voor acties die alleen een lineId krijgen. */
@@ -130,6 +142,86 @@ export async function addFixedGrocery(formData: FormData) {
     });
   }
   revalidatePath("/boodschappen");
+}
+
+export async function addFixedPicnicProduct(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+
+  const shoppingListId = String(formData.get("shoppingListId") ?? "");
+  const searchTerm = String(formData.get("searchTerm") ?? "").trim();
+  const productName = String(formData.get("productName") ?? "").trim();
+  const externalRef = String(formData.get("externalRef") ?? "").trim();
+  const packageSize = String(formData.get("packageSize") ?? "").trim() || null;
+  const picnicImageId = String(formData.get("picnicImageId") ?? "").trim() || null;
+  const quantity = parseQuantity(formData.get("quantity"));
+  const unit = parseUnit(formData.get("unit"));
+  const price = parseOptionalPrice(formData.get("price"));
+
+  if (!productName || !externalRef) {
+    throw new Error("Kies een geldig Picnic-product.");
+  }
+
+  const ingredientName = titleCaseSearchTerm(searchTerm || productName);
+  const inferred = inferFixedGroceryQuantity(packageSize);
+  const existingIngredient = await prisma.ingredient.findUnique({ where: { name: ingredientName } });
+  const ingredient =
+    existingIngredient ??
+    (await prisma.ingredient.create({
+      data: {
+        name: ingredientName,
+        unit: inferred.unit,
+        category: inferIngredientCategory(ingredientName),
+      },
+    }));
+
+  const productData = {
+    ingredientId: ingredient.id,
+    externalRef,
+    picnicImageId,
+    name: productName,
+    packageSize,
+    packageQuantity: packageSize ? parsePackageQuantity(packageSize, ingredient.unit) : null,
+    price,
+    lastSeenAvailable: new Date(),
+  };
+  const existingProduct = await prisma.product.findFirst({
+    where: { ingredientId: ingredient.id, externalRef },
+    select: { id: true },
+  });
+  const product = existingProduct
+    ? await prisma.product.update({ where: { id: existingProduct.id }, data: productData })
+    : await prisma.product.create({ data: productData });
+
+  await upsertFixedGrocery(householdId, ingredient.id, quantity, unit);
+  await recordProductChosen(householdId, ingredient.id, product.id, "MANUAL");
+
+  if (shoppingListId) {
+    const existingLine = await prisma.shoppingListLine.findFirst({
+      where: { shoppingListId, ingredientId: ingredient.id, source: "FIXED" },
+      select: { id: true },
+    });
+    const lineData = {
+      ingredientId: ingredient.id,
+      productId: product.id,
+      quantity,
+      unit,
+      source: "FIXED" as const,
+      needsReview: false,
+      matchStatus: "MANUALLY_SELECTED" as const,
+      matchConfidence: 1,
+      matchReasons: ["Handmatig als vaste boodschap gekozen en onthouden."],
+    };
+    if (existingLine) {
+      await prisma.shoppingListLine.update({ where: { id: existingLine.id }, data: lineData });
+    } else {
+      await prisma.shoppingListLine.create({ data: { shoppingListId, ...lineData } });
+    }
+  }
+
+  revalidatePath("/boodschappen");
+  revalidatePath("/controle");
+  redirect("/boodschappen#fixed-groceries");
 }
 
 /** Verwijdert een vaste boodschap definitief uit de standaardlijst (niet alleen deze week). */
