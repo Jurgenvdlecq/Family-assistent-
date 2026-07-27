@@ -2,8 +2,9 @@
 
 Dit bestand is bedoeld voor een AI-coding-agent (Claude Code, Codex, of wie
 dan ook) die dit project overneemt in een nieuwe sessie zonder chatgeschiedenis.
-Lees eerst `AGENTS.md` (de volledige productspecificatie), en dan dit bestand
-voor de actuele status en de manier van werken die tot nu toe is gevolgd.
+Lees eerst `AGENTS.md` (de oorspronkelijke productspecificatie),
+`PRODUCT_VISION.md` (het actuele productkompas) en dan dit bestand voor de
+actuele status en de manier van werken die tot nu toe is gevolgd.
 
 ## Manier van werken (belangrijk — hou dit aan)
 
@@ -54,13 +55,14 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 | WP15 | Recepten/varianten beheren | Nieuwe pagina `/recepten` met navigatietab. Daar kan een recept met ingrediënten en eerste variant worden toegevoegd, kunnen titel/bron/categorie/status/eigenschappen/bereiding worden gecorrigeerd en kunnen varianten met context-signalen worden toegevoegd of bijgewerkt. Server actions valideren het huidige huishouden. Geen nieuwe migratie nodig. |
 | WP16 | Ingrediëntenbeheer en receptingrediënten bewerken | `/recepten` heeft nu beheer voor ingrediënten: aanmaken, hernoemen, categorie/dieettags/voorraadcontrole aanpassen. Per bestaand recept kunnen ingrediëntregels en hoeveelheden worden vervangen; dubbele regels worden samengevoegd en de huidige boodschappenlijst wordt ongeldig gemaakt zodat nieuwe receptdata doorwerkt. Geen nieuwe migratie nodig. |
 | WP17 | Productkeuzes per ingrediënt beheren | In `/recepten` kan per ingrediënt nu ook de productmatching worden beheerd: bekende producten bekijken, handmatig productkandidaten toevoegen, een standaardproduct vastleggen, producten uitsluiten of weer toestaan. Wijzigingen maken de huidige boodschappenlijst ongeldig zodat de volgende lijst de nieuwe standaardkeuze gebruikt. Geen nieuwe migratie nodig. |
+| WP18 | Productvisie vastleggen | `PRODUCT_VISION.md` legt de aangescherpte richting vast: de app leert wat een huishouden eet en regelt boodschappen, met algemene slimme basis, huishouden-personalisatie, waarom-signalen, korte onboarding, expliciete bevestiging voor Picnic en beheer als secundaire route. Geen code- of migratiewijziging. |
 
 ## Nog te doen (roadmap, nog niet gestart)
 
 - **Volgende WP nog kiezen.** Logische vervolgstappen zijn bijvoorbeeld
-  UX-polish op het beheercluster, echte Picnic-zoekresultaten direct kunnen
-  importeren als productkandidaten, of de controle-/boodschappenflow verder
-  aanscherpen.
+  het datamodel toetsen aan `PRODUCT_VISION.md`, de hoofdflow terugbrengen
+  naar een assistent-ervaring, onboarding ontwerpen, waarom-signalen bouwen
+  of slimme wens-invoer toevoegen.
 
 ## Niet-voor-de-hand-liggende operationele kennis
 
