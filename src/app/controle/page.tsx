@@ -34,6 +34,8 @@ import { picnicImageUrl } from "@/lib/picnic/products";
 export const dynamic = "force-dynamic";
 
 const UNIT_LABELS: Record<string, string> = { GRAM: "gram", ML: "ml", PIECE: "stuks" };
+const ACTION_BUTTON_FOCUS =
+  "shadow-sm transition-all duration-150 hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:translate-y-0 active:scale-[0.98]";
 
 function formatPrice(price: unknown) {
   if (price === null || price === undefined) return null;
@@ -153,7 +155,7 @@ function ProductChoiceCard({
                 <input type="hidden" name="householdId" value={householdId} />
                 <PendingSubmitButton
                   pendingText="Opslaan..."
-                  className="rounded-md bg-accent px-2.5 py-1.5 text-xs font-medium text-accent-ink hover:opacity-90"
+                  className={`rounded-md bg-accent px-2.5 py-1.5 text-xs font-medium text-accent-ink hover:bg-accent/90 ${ACTION_BUTTON_FOCUS}`}
                 >
                   {selected ? "Goed, onthouden" : "Kies en onthoud"}
                 </PendingSubmitButton>
@@ -165,7 +167,7 @@ function ProductChoiceCard({
               <input type="hidden" name="householdId" value={householdId} />
               <PendingSubmitButton
                 pendingText="Kiezen..."
-                className="rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink hover:border-accent/50"
+                className={`rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink hover:border-accent/70 hover:bg-surface-2 ${ACTION_BUTTON_FOCUS}`}
               >
                 Alleen deze week
               </PendingSubmitButton>
@@ -176,7 +178,7 @@ function ProductChoiceCard({
               <input type="hidden" name="householdId" value={householdId} />
               <PendingSubmitButton
                 pendingText="Wegzetten..."
-                className="rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink-faint hover:border-red-300 hover:text-red-600"
+                className={`rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink-faint hover:border-red-300 hover:bg-red-50 hover:text-red-600 ${ACTION_BUTTON_FOCUS}`}
               >
                 Nooit
               </PendingSubmitButton>
@@ -210,7 +212,8 @@ function LineControlCard({
 
   return (
     <div
-      className={`min-w-0 rounded-xl border p-4 ${
+      id={`line-${line.id}`}
+      className={`min-w-0 scroll-mt-6 rounded-xl border p-4 transition-colors target:border-accent target:ring-2 target:ring-accent/20 ${
         line.needsReview ? "border-tag-amber-ink/25 bg-tag-amber-bg" : "border-line bg-surface"
       }`}
     >
@@ -241,7 +244,7 @@ function LineControlCard({
         <span className="text-xs text-ink-faint">{UNIT_LABELS[line.unit] ?? line.unit}</span>
         <PendingSubmitButton
           pendingText="Bijwerken..."
-          className="rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink hover:border-accent/50"
+          className={`rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink hover:border-accent/70 hover:bg-surface-2 ${ACTION_BUTTON_FOCUS}`}
         >
           Hoeveelheid
         </PendingSubmitButton>
@@ -258,7 +261,7 @@ function LineControlCard({
           pendingText="..."
           ariaLabel="Zoeken bij Picnic"
           title="Zoeken bij Picnic"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-line bg-surface text-ink hover:border-accent/50"
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-line bg-surface text-ink hover:border-accent/70 hover:bg-surface-2 ${ACTION_BUTTON_FOCUS}`}
         >
           <Search size={16} />
         </PendingSubmitButton>
@@ -299,7 +302,7 @@ function LineControlCard({
             <input type="hidden" name="lineId" value={line.id} />
             <PendingSubmitButton
               pendingText="Opslaan..."
-              className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink"
+              className={`rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink hover:border-accent/70 hover:bg-surface-2 ${ACTION_BUTTON_FOCUS}`}
             >
               Zonder product doorgaan
             </PendingSubmitButton>
@@ -308,7 +311,7 @@ function LineControlCard({
             <input type="hidden" name="lineId" value={line.id} />
             <PendingSubmitButton
               pendingText="Verwijderen..."
-              className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink-faint hover:text-red-600"
+              className={`rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink-faint hover:border-red-300 hover:bg-red-50 hover:text-red-600 ${ACTION_BUTTON_FOCUS}`}
             >
               Van lijst verwijderen
             </PendingSubmitButton>
@@ -319,7 +322,12 @@ function LineControlCard({
   );
 }
 
-export default async function ControlePage() {
+export default async function ControlePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ focus?: string }>;
+}) {
+  const params = await searchParams;
   const household = await requireCurrentHousehold();
 
   const weekStart = getCurrentWeekStart();
@@ -341,6 +349,7 @@ export default async function ControlePage() {
   const reviewLines = shoppingList.lines.filter((l) => l.needsReview);
   const sortedReviewLines = [...reviewLines].sort((a, b) => a.ingredient.name.localeCompare(b.ingredient.name));
   const sortedTrustedLines = [...trustedLines].sort((a, b) => a.ingredient.name.localeCompare(b.ingredient.name));
+  const focusedTrustedLine = sortedTrustedLines.some((line) => line.id === params.focus);
 
   const candidatesByLine = new Map<string, Awaited<ReturnType<typeof getShoppingListCandidates>>>();
   for (const line of [...sortedReviewLines, ...sortedTrustedLines]) {
@@ -406,7 +415,7 @@ export default async function ControlePage() {
         )}
 
         {trustedLines.length > 0 && (
-          <details className="mb-8 rounded-xl border border-line bg-surface p-4">
+          <details className="mb-8 rounded-xl border border-line bg-surface p-4" open={focusedTrustedLine || undefined}>
             <summary className="cursor-pointer text-sm font-medium text-ink">
               {trustedLines.length} vertrouwde keuze{trustedLines.length === 1 ? "" : "s"} bekijken
             </summary>
@@ -428,7 +437,7 @@ export default async function ControlePage() {
           <PendingSubmitButton
             pendingText="Bevestigen..."
             disabled={reviewLines.length > 0}
-            className="w-full rounded-xl bg-accent px-4 py-3.5 text-center font-medium text-accent-ink transition-opacity hover:opacity-90"
+            className={`w-full rounded-xl bg-accent px-4 py-3.5 text-center font-medium text-accent-ink hover:bg-accent/90 ${ACTION_BUTTON_FOCUS}`}
           >
             {reviewLines.length > 0 ? "Los eerst de twijfelgevallen op" : "Bevestigen"}
           </PendingSubmitButton>

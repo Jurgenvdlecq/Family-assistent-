@@ -26,7 +26,9 @@ export default function NavBar() {
             <Link
               key={item.href}
               href={item.href}
-              className="flex min-w-0 flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium"
+              className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-1 py-2.5 text-[11px] font-medium transition-all duration-150 hover:-translate-y-0.5 hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:translate-y-0 active:scale-[0.97] ${
+                active ? "bg-accent/10" : ""
+              }`}
             >
               <Icon
                 size={22}
