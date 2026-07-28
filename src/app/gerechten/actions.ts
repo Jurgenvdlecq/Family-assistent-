@@ -106,11 +106,27 @@ export async function replaceMealPlanEntry(formData: FormData) {
     await recalculateVariantConfidence(householdId, currentEntry.recipeVariantId);
     await prisma.mealPlanEntry.update({
       where: { id: currentEntry.id },
-      data: { recipeVariantId },
+      data: {
+        recipeVariantId,
+        source: "MANUAL",
+        status: "ACCEPTED",
+        reason: "Je hebt dit zelf gekozen.",
+        score: null,
+        confidenceLevel: "CERTAIN",
+        replacedFromRecipeVariantId: currentEntry.recipeVariantId,
+      },
     });
   } else {
     await prisma.mealPlanEntry.create({
-      data: { mealPlanId: mealPlan.id, dayOfWeek: dayEnum, recipeVariantId },
+      data: {
+        mealPlanId: mealPlan.id,
+        dayOfWeek: dayEnum,
+        recipeVariantId,
+        source: "MANUAL",
+        status: "ACCEPTED",
+        reason: "Je hebt dit zelf gekozen.",
+        confidenceLevel: "CERTAIN",
+      },
     });
   }
 
@@ -257,11 +273,27 @@ export async function chooseLiteralMealPlanEntry(formData: FormData) {
   if (currentEntry) {
     await prisma.mealPlanEntry.update({
       where: { id: currentEntry.id },
-      data: { recipeVariantId },
+      data: {
+        recipeVariantId,
+        source: "ASSISTANT",
+        status: "ACCEPTED",
+        reason: "Gemaakt op basis van je wens.",
+        score: null,
+        confidenceLevel: "CERTAIN",
+        replacedFromRecipeVariantId: currentEntry.recipeVariantId,
+      },
     });
   } else {
     await prisma.mealPlanEntry.create({
-      data: { mealPlanId: mealPlan.id, dayOfWeek: dayEnum, recipeVariantId },
+      data: {
+        mealPlanId: mealPlan.id,
+        dayOfWeek: dayEnum,
+        recipeVariantId,
+        source: "ASSISTANT",
+        status: "ACCEPTED",
+        reason: "Gemaakt op basis van je wens.",
+        confidenceLevel: "CERTAIN",
+      },
     });
   }
 

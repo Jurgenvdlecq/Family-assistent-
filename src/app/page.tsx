@@ -10,7 +10,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { getHouseholdMealParticipantsByDay } from "@/lib/household";
-import { ensureMealPlan, getReasonsForPlan } from "@/lib/mealPlan";
+import { ensureMealPlan } from "@/lib/mealPlan";
 import {
   getCurrentWeekStart,
   formatWeekRange,
@@ -170,8 +170,7 @@ export default async function Home() {
   if (!mealPlan) {
     throw new Error("Weekplanning kon niet worden geladen.");
   }
-  const [reasons, participantsByDay, learningPrompts, dayRoutines] = await Promise.all([
-    getReasonsForPlan(household.id, weekStart),
+  const [participantsByDay, learningPrompts, dayRoutines] = await Promise.all([
     getHouseholdMealParticipantsByDay(household.id),
     getPendingLearningPrompts(household.id, household.maxSmartQuestionsPerSession),
     prisma.dayRoutine.findMany({
@@ -364,7 +363,7 @@ export default async function Home() {
             recipe?.ingredients
               .filter((ri, index, list) => list.findIndex((item) => item.ingredientId === ri.ingredientId) === index)
               .slice(0, 4) ?? [];
-          const reason = entry ? reasons.get(entry.recipeVariantId) : undefined;
+          const reason = entry?.reason ?? undefined;
           const routine = routineByDay.get(DAY_ENUM[dayKey]);
           const routineMatchesEntry = Boolean(entry && routine && routine.recipeVariantId === entry.recipeVariantId);
           const participants = participantsByDay[dayKey];
