@@ -254,6 +254,57 @@ test("bevestigd acceptatiepatroon geeft een zachte categoriebonus op die dag", (
   assert.ok(result.reasons.some((reason) => reason.includes("vaker op dinsdag")));
 });
 
+test("daggerichte gerechtvoorkeur geeft concrete gezinsopties voorrang", () => {
+  const generalFavorite = candidate({
+    id: "general",
+    recipeTitle: "Algemene favoriet",
+    recipeStatus: "SAFE_CHOICE",
+  });
+  const mondayOption = candidate({
+    id: "monday-option",
+    recipeTitle: "Maandag AVG",
+    recipeStatus: "FOUND",
+    recipeCategory: "ALL_VEGGIE_DAY",
+  });
+
+  const result = chooseMealPlanCandidate({
+    candidates: [generalFavorite, mondayOption],
+    dayKey: "monday",
+    busy: false,
+    preferredCategories: new Set(),
+    variantPreferences: new Map(),
+    dayRecipePreferences: new Map([["monday-option", { stance: "LIKED", confidence: 1 }]]),
+    lastPlannedByRecipeId: new Map(),
+    usedRecipeIds: new Set(),
+    targetDate: TARGET_DATE,
+  });
+
+  assert.equal(result.candidate.id, "monday-option");
+  assert.ok(result.reasons.some((reason) => reason.includes("vaste opties voor maandag")));
+});
+
+test("daggerichte gerechtvoorkeur blijft zacht en wint niet van persoonlijke nooit-voorkeur", () => {
+  const mondayOption = candidate({ id: "monday-option", recipeTitle: "Maandag pasta" });
+  const fallback = candidate({ id: "fallback", recipeTitle: "Veilige rijst", recipeCategory: "RICE_DISH" });
+
+  const result = chooseMealPlanCandidate({
+    candidates: [mondayOption, fallback],
+    dayKey: "monday",
+    busy: false,
+    preferredCategories: new Set(),
+    variantPreferences: new Map(),
+    dayRecipePreferences: new Map([["monday-option", { stance: "LIKED", confidence: 1 }]]),
+    personalVariantPreferences: new Map([
+      ["monday-option", [{ personName: "Kai", stance: "NEVER", confidence: 1 }]],
+    ]),
+    lastPlannedByRecipeId: new Map(),
+    usedRecipeIds: new Set(),
+    targetDate: TARGET_DATE,
+  });
+
+  assert.equal(result.candidate.id, "fallback");
+});
+
 test("bevestigd acceptatiepatroon blijft zacht en wint niet van persoonlijke nooit-voorkeur", () => {
   const pasta = candidate({ id: "pasta", recipeTitle: "Dinsdagpasta", recipeCategory: "PASTA" });
   const rice = candidate({ id: "rice", recipeTitle: "Rijstschotel", recipeCategory: "RICE_DISH" });

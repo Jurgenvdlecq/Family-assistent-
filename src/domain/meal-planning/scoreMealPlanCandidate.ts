@@ -43,6 +43,7 @@ export interface MealPlanScoringInput {
   busy: boolean;
   preferredCategories: Set<string>;
   variantPreferences: Map<string, RecipeVariantPreference>;
+  dayRecipePreferences?: Map<string, RecipeVariantPreference>;
   confirmedCategoryDayPatterns?: Map<string, ConfirmedCategoryDayPattern>;
   personalVariantPreferences?: Map<string, PersonalRecipeVariantPreference[]>;
   personalCategoryPreferences?: Map<string, PersonalSubjectPreference[]>;
@@ -147,6 +148,7 @@ function scoreCandidate(input: MealPlanScoringInput, candidate: MealPlanCandidat
   const busyFit = candidateTags.has("FAST") || candidateTags.has("LOW_EFFORT") || BUSY_VARIANT_TYPES.has(candidate.variantType);
   const preferred = input.preferredCategories.has(candidate.recipeCategory);
   const variantPreference = input.variantPreferences.get(candidate.id);
+  const dayRecipePreference = input.dayRecipePreferences?.get(candidate.id);
   const confirmedCategoryDayPattern = input.confirmedCategoryDayPatterns?.get(candidate.recipeCategory);
   const personalPreferences = input.personalVariantPreferences?.get(candidate.id) ?? [];
   const lastPlannedAt = input.lastPlannedByRecipeId.get(candidate.recipeId);
@@ -193,6 +195,18 @@ function scoreCandidate(input: MealPlanScoringInput, candidate: MealPlanCandidat
     signal.score -= 60;
     signal.hasDoubt = true;
     reasons.push(`staat als te vermijden gerechtvariant geregistreerd`);
+  }
+
+  if (dayRecipePreference?.stance === "LIKED") {
+    signal.score += 40 * Math.max(0.5, dayRecipePreference.confidence);
+    reasons.push(`staat in jullie vaste opties voor ${dayLabel}`);
+  } else if (dayRecipePreference?.stance === "SOMETIMES") {
+    signal.score += 18 * Math.max(0.5, dayRecipePreference.confidence);
+    reasons.push(`past bij jullie opties voor ${dayLabel}`);
+  } else if (dayRecipePreference?.stance === "RATHER_NOT") {
+    signal.score -= 28 * Math.max(0.5, dayRecipePreference.confidence);
+    signal.hasDoubt = true;
+    reasons.push(`kiezen jullie minder graag op ${dayLabel}`);
   }
 
   const favorites = personalPreferences.filter((preference) => preference.stance === "LIKED");

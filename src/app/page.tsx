@@ -489,7 +489,7 @@ export default async function Home({
                 </div>
 
                 <a
-                  href={`/gerechten?day=${dayKey}`}
+                  href={`/gerechten?day=${dayKey}&direction=day`}
                   aria-label={`Vervang ${DAY_LABELS[dayKey].toLowerCase()}`}
                   className="shrink-0 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:border-accent/60 hover:bg-surface-2 hover:text-accent"
                 >

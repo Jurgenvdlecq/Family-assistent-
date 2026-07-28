@@ -8,6 +8,11 @@ import { defaultPortionMultiplierForRole } from "@/domain/household/presence";
 import { normalizeProductChoicePreference } from "@/domain/product-matching/productChoicePreference";
 import { RecipeCategory } from "@/generated/prisma/enums";
 import { DAY_ENUM, DAY_KEYS, getCurrentWeekStart, type DayKey } from "@/lib/week";
+import {
+  dayRecipePreferenceOwnerId,
+  isDayRecipePreferenceStance,
+} from "@/domain/meal-planning/dayRecipePreferences";
+import { accessibleRecipeWhere } from "@/lib/recipeScope";
 
 const ROLES = ["PARENT", "CHILD", "OTHER"] as const;
 const STANCES = ["LIKED", "SOMETIMES", "RATHER_NOT", "NEVER", "UNKNOWN"] as const;
@@ -226,6 +231,75 @@ export async function updateHouseholdCategoryPreference(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/gerechten");
   redirectToOnsGezin("category-preference-updated");
+}
+
+export async function setDayRecipePreference(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const dayKey = String(formData.get("dayKey")) as DayKey;
+  const recipeVariantId = String(formData.get("recipeVariantId"));
+  const stance = String(formData.get("stance") ?? "LIKED");
+
+  if (!DAY_KEYS.includes(dayKey)) {
+    throw new Error("Onbekende dag.");
+  }
+  if (!isDayRecipePreferenceStance(stance)) {
+    throw new Error("Onbekende dagvoorkeur.");
+  }
+
+  await prisma.recipeVariant.findUniqueOrThrow({
+    where: { id: recipeVariantId, recipe: accessibleRecipeWhere(householdId) },
+    select: { id: true },
+  });
+
+  await prisma.preference.upsert({
+    where: {
+      ownerType_ownerId_subjectType_subjectId: {
+        ownerType: "HOUSEHOLD",
+        ownerId: dayRecipePreferenceOwnerId(householdId, dayKey),
+        subjectType: "RECIPE_VARIANT",
+        subjectId: recipeVariantId,
+      },
+    },
+    update: { stance, source: "EXPLICIT", confidence: 1 },
+    create: {
+      ownerType: "HOUSEHOLD",
+      ownerId: dayRecipePreferenceOwnerId(householdId, dayKey),
+      subjectType: "RECIPE_VARIANT",
+      subjectId: recipeVariantId,
+      stance,
+      source: "EXPLICIT",
+      confidence: 1,
+    },
+  });
+
+  revalidatePath("/");
+  revalidatePath("/gerechten");
+  redirectToOnsGezin("day-recipe-preference-updated");
+}
+
+export async function deleteDayRecipePreference(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const dayKey = String(formData.get("dayKey")) as DayKey;
+  const recipeVariantId = String(formData.get("recipeVariantId"));
+
+  if (!DAY_KEYS.includes(dayKey)) {
+    throw new Error("Onbekende dag.");
+  }
+
+  await prisma.preference.deleteMany({
+    where: {
+      ownerType: "HOUSEHOLD",
+      ownerId: dayRecipePreferenceOwnerId(householdId, dayKey),
+      subjectType: "RECIPE_VARIANT",
+      subjectId: recipeVariantId,
+    },
+  });
+
+  revalidatePath("/");
+  revalidatePath("/gerechten");
+  redirectToOnsGezin("day-recipe-preference-deleted");
 }
 
 export async function forgetProductPreference(formData: FormData) {

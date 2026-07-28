@@ -12,6 +12,7 @@ import {
 } from "@/domain/product-matching/productChoicePreference";
 import NavBar from "@/components/NavBar";
 import AddPersonForm from "./AddPersonForm";
+import DayRecipePreferencesManager from "./DayRecipePreferencesManager";
 import LearnedPatternsPanel from "./LearnedPatternsPanel";
 import PersonalPreferencesManager, { labelPersonalPreferenceSubject } from "./PersonalPreferencesManager";
 import PersonPreferencesCard from "./PersonPreferencesCard";
@@ -52,6 +53,8 @@ const STATUS_MESSAGES: Record<string, string> = {
   "product-preference-forgotten": "Onthouden productkeuze vergeten.",
   "personal-preference-updated": "Voorkeur opgeslagen.",
   "personal-preference-deleted": "Voorkeur verwijderd.",
+  "day-recipe-preference-updated": "Dagoptie opgeslagen.",
+  "day-recipe-preference-deleted": "Dagoptie verwijderd.",
   "learned-pattern-dismissed": "Geleerd patroon vergeten.",
   "access-code-updated": "Toegangscode opgeslagen.",
 };
@@ -205,6 +208,9 @@ export default async function OnsGezinPage({
         <PersonalPreferencesManager householdId={household.id} preferences={personalPreferenceItems} />
 
         <LearnedPatternsPanel householdId={household.id} />
+
+        <h2 className="mb-3 text-sm font-semibold text-ink">Jullie vaste gerechten per dag</h2>
+        <DayRecipePreferencesManager householdId={household.id} />
 
         <h2 className="mb-3 text-sm font-semibold text-ink">Favorieten en eetstijl</h2>
         <section className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">

@@ -12,6 +12,7 @@ import {
   type PersonalRecipeVariantPreference,
   type PersonalSubjectPreference,
 } from "@/domain/meal-planning/scoreMealPlanCandidate";
+import { dayRecipePreferenceOwnerId } from "@/domain/meal-planning/dayRecipePreferences";
 import { entriesForSilentAcceptance } from "@/domain/meal-planning/silentAcceptance";
 import { recordRepeatedMealAcceptance } from "@/domain/learning/patterns";
 import type { ConfidenceLevel } from "@/generated/prisma/enums";
@@ -73,6 +74,7 @@ export async function ensureMealPlan(
     household,
     preferences,
     variantPreferences,
+    dayRecipePreferences,
     recentSuggestions,
     allVariants,
     hardRestrictionsByDayEntries,
@@ -93,6 +95,13 @@ export async function ensureMealPlan(
       where: {
         ownerType: "HOUSEHOLD",
         ownerId: householdId,
+        subjectType: "RECIPE_VARIANT",
+      },
+    }),
+    prisma.preference.findMany({
+      where: {
+        ownerType: "HOUSEHOLD",
+        ownerId: { in: DAY_KEYS.map((dayKey) => dayRecipePreferenceOwnerId(householdId, dayKey)) },
         subjectType: "RECIPE_VARIANT",
       },
     }),
@@ -227,6 +236,20 @@ export async function ensureMealPlan(
       { stance: preference.stance, confidence: preference.confidence },
     ])
   );
+  const dayRecipePreferencesByDay = new Map<DayKey, Map<string, { stance: typeof dayRecipePreferences[number]["stance"]; confidence: number }>>();
+  for (const dayKey of DAY_KEYS) {
+    const ownerId = dayRecipePreferenceOwnerId(householdId, dayKey);
+    const preferencesForDay = dayRecipePreferences.filter((preference) => preference.ownerId === ownerId);
+    dayRecipePreferencesByDay.set(
+      dayKey,
+      new Map(
+        preferencesForDay.map((preference) => [
+          preference.subjectId,
+          { stance: preference.stance, confidence: preference.confidence },
+        ])
+      )
+    );
+  }
   const lastPlannedByRecipeId = new Map<string, Date>();
   for (const suggestion of recentSuggestions) {
     if (!lastPlannedByRecipeId.has(suggestion.recipeVariant.recipeId)) {
@@ -315,6 +338,7 @@ export async function ensureMealPlan(
       busy,
       preferredCategories,
       variantPreferences: variantPreferenceById,
+      dayRecipePreferences: dayRecipePreferencesByDay.get(dayKey),
       confirmedCategoryDayPatterns: confirmedCategoryPatternsByDay.get(dayKey),
       personalVariantPreferences: personalPreferencesForPresentPersons.byVariant,
       personalCategoryPreferences: personalPreferencesForPresentPersons.byCategory,
