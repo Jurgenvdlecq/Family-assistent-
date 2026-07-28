@@ -13,10 +13,7 @@ import {
   type PersonalSubjectPreference,
 } from "@/domain/meal-planning/scoreMealPlanCandidate";
 import { entriesForSilentAcceptance } from "@/domain/meal-planning/silentAcceptance";
-<<<<<<< ours
-=======
 import { recordRepeatedMealAcceptance } from "@/domain/learning/patterns";
->>>>>>> theirs
 import type { ConfidenceLevel } from "@/generated/prisma/enums";
 
 type WeeklyRhythm = Partial<Record<DayKey, "busy" | "quiet">>;
@@ -396,11 +393,7 @@ export async function ensureMealPlan(
 export async function acceptProposedMealPlanEntries(householdId: string, mealPlanId: string) {
   const mealPlan = await prisma.mealPlan.findFirstOrThrow({
     where: { id: mealPlanId, householdId },
-<<<<<<< ours
-    include: { entries: true },
-=======
     include: { entries: { include: { recipeVariant: { include: { recipe: { select: { category: true, title: true } } } } } } },
->>>>>>> theirs
   });
   const acceptedEntries = entriesForSilentAcceptance(mealPlan.entries);
   if (acceptedEntries.length === 0) {
@@ -444,8 +437,6 @@ export async function acceptProposedMealPlanEntries(householdId: string, mealPla
     await recalculateVariantConfidence(householdId, recipeVariantId);
     await maybePromoteRecipeStatus(recipeVariantId, householdId);
   }
-<<<<<<< ours
-=======
   for (const entry of acceptedEntries) {
     await recordRepeatedMealAcceptance({
       householdId,
@@ -455,7 +446,6 @@ export async function acceptProposedMealPlanEntries(householdId: string, mealPla
       acceptedRecipeTitle: entry.recipeVariant.recipe.title,
     });
   }
->>>>>>> theirs
 
   return { acceptedCount: acceptedEntries.length };
 }
