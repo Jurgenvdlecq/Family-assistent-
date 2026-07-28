@@ -101,7 +101,26 @@ test("huishouden-voorkeur voordelig rangschikt goedkoper product hoger bij twijf
   });
   assert.equal(result.status, "MATCHED_REVIEW_REQUIRED");
   assert.equal(result.productId, "goedkoper");
-  assert.ok(result.reasons.some((reason) => reason.includes("voordelig")));
+  // De reden noemt specifiek dat dit de goedkoopste van de opties is, niet
+  // alleen een herhaling van de huishoudinstelling (Fase 12: geen
+  // herhaalde algemene redenen).
+  assert.ok(result.reasons.some((reason) => reason.includes("Goedkoopste van 2 beschikbare opties")));
+});
+
+test("gebalanceerde voorkeur legt specifiek uit dat dit de beste van meerdere opties is, geen algemene herhaling", () => {
+  const result = matchProduct({
+    candidates: [candidate({ id: "p2", packageQuantity: null }), candidate({ id: "p1", packageQuantity: 500 })],
+    trusted: null,
+    rejectedProductIds: new Set(),
+    productChoicePreference: "BALANCED",
+    now: NOW,
+  });
+  assert.equal(result.status, "MATCHED_REVIEW_REQUIRED");
+  assert.ok(result.reasons.some((reason) => reason.includes("Beste van 2 beschikbare opties")));
+  assert.ok(
+    result.reasons.every((reason) => !reason.includes("gebalanceerde productkeuze")),
+    "geen vaste, niets-zeggende herhaling van de huishoudinstelling"
+  );
 });
 
 test("huishouden-voorkeur bekende verpakking geeft voorkeur aan berekenbare verpakking", () => {

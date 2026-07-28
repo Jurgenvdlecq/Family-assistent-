@@ -1,4 +1,4 @@
-import { describeProductChoicePreference, normalizeProductChoicePreference } from "./productChoicePreference";
+import { normalizeProductChoicePreference } from "./productChoicePreference";
 import type { MatchCandidate, ProductMatchInput, ProductMatchResult, TrustedPreference } from "./types";
 
 /**
@@ -40,10 +40,16 @@ function buildSingleCandidateReasons(candidate: MatchCandidate, hadRejections: b
  * producten, geen eerdere keuze om op te varen. De score bepaalt alleen de
  * volgorde van voorstellen, nooit automatische acceptatie (status blijft
  * MATCHED_REVIEW_REQUIRED).
+ *
+ * De redenen moeten per kandidaat verschillen (Fase 12: geen herhaalde
+ * algemene redenen) — daarom vertelt dit expliciet hóe deze kandidaat zich
+ * verhoudt tot de andere beschikbare opties (goedkoopst, of gewoon "beste
+ * van N"), in plaats van alleen de huishoudinstelling te herhalen.
  */
 function scoreCandidate(
   candidate: MatchCandidate,
-  productChoicePreference: NonNullable<ProductMatchInput["productChoicePreference"]>
+  productChoicePreference: NonNullable<ProductMatchInput["productChoicePreference"]>,
+  context: { totalAvailable: number; cheapestPrice: number | null }
 ): { score: number; reasons: string[] } {
   let score = 0.4;
   const reasons = ["Is momenteel beschikbaar."];
@@ -54,12 +60,14 @@ function scoreCandidate(
 
   if (productChoicePreference === "LOW_PRICE" && candidate.price != null) {
     score += Math.max(0, 0.18 - candidate.price * 0.02);
-    reasons.push(describeProductChoicePreference(productChoicePreference));
+    if (context.cheapestPrice != null && candidate.price <= context.cheapestPrice) {
+      reasons.push(`Goedkoopste van ${context.totalAvailable} beschikbare opties.`);
+    }
   } else if (productChoicePreference === "KNOWN_PACKAGE" && candidate.packageQuantity != null) {
     score += 0.12;
-    reasons.push(describeProductChoicePreference(productChoicePreference));
-  } else if (productChoicePreference === "BALANCED") {
-    reasons.push(describeProductChoicePreference(productChoicePreference));
+    reasons.push("Heeft een duidelijke verpakkingsgrootte — dat is jullie voorkeur.");
+  } else if (context.totalAvailable > 1) {
+    reasons.push(`Beste van ${context.totalAvailable} beschikbare opties.`);
   }
 
   // Prijs blijft bij gebalanceerd een kleine tiebreak, geen dominante reden.
@@ -133,8 +141,13 @@ export function matchProduct(input: ProductMatchInput): ProductMatchResult {
     };
   }
 
+  const availablePrices = available.map((c) => c.price).filter((p): p is number => p != null);
+  const scoreContext = {
+    totalAvailable: available.length,
+    cheapestPrice: availablePrices.length > 0 ? Math.min(...availablePrices) : null,
+  };
   const scored = available
-    .map((candidate) => ({ candidate, ...scoreCandidate(candidate, productChoicePreference) }))
+    .map((candidate) => ({ candidate, ...scoreCandidate(candidate, productChoicePreference, scoreContext) }))
     .sort((a, b) => b.score - a.score || a.candidate.id.localeCompare(b.candidate.id));
   const best = scored[0];
 

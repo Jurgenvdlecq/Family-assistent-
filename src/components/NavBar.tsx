@@ -5,13 +5,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, UtensilsCrossed, BookOpen, ShoppingCart, ClipboardCheck, Users, Loader2 } from "lucide-react";
 
+// label is de volledige naam (voor aria-label); shortLabel is wat er
+// echt staat. Op een gewone telefoonbreedte (~375-390px) werden "Jouw
+// week" en "Boodschappen" afgekapt tot onleesbare "Jouw wee…"/"Boodsch…"
+// — de balk staat op elk scherm in beeld, dus dit moet altijd passen.
 const ITEMS = [
-  { href: "/", label: "Jouw week", icon: Home },
-  { href: "/gerechten", label: "Gerechten", icon: UtensilsCrossed },
-  { href: "/recepten", label: "Recepten", icon: BookOpen },
-  { href: "/boodschappen", label: "Boodschappen", icon: ShoppingCart },
-  { href: "/controle", label: "Controle", icon: ClipboardCheck },
-  { href: "/ons-gezin", label: "Ons gezin", icon: Users },
+  { href: "/", label: "Jouw week", shortLabel: "Week", icon: Home },
+  { href: "/gerechten", label: "Gerechten", shortLabel: "Gerechten", icon: UtensilsCrossed },
+  { href: "/recepten", label: "Recepten", shortLabel: "Recepten", icon: BookOpen },
+  { href: "/boodschappen", label: "Boodschappen", shortLabel: "Lijst", icon: ShoppingCart },
+  { href: "/controle", label: "Controle", shortLabel: "Controle", icon: ClipboardCheck },
+  { href: "/ons-gezin", label: "Ons gezin", shortLabel: "Gezin", icon: Users },
 ];
 
 export default function NavBar() {
@@ -30,6 +34,7 @@ export default function NavBar() {
               key={item.href}
               href={item.href}
               prefetch
+              aria-label={item.label}
               onClick={() => {
                 if (!active) setPendingHref(item.href);
               }}
@@ -47,7 +52,7 @@ export default function NavBar() {
                 />
               )}
               <span className={`max-w-full truncate text-center ${active || pending ? "text-accent" : "text-ink-muted"}`}>
-                {item.label}
+                {item.shortLabel}
               </span>
             </Link>
           );

@@ -172,31 +172,46 @@ export default async function Home() {
   }
   const [participantsByDay, learningPrompts, dayRoutines] = await Promise.all([
     getHouseholdMealParticipantsByDay(household.id),
-    getPendingLearningPrompts(household.id, household.maxSmartQuestionsPerSession),
+    getPendingLearningPrompts(
+      household.id,
+      household.maxSmartQuestionsPerSession,
+    ),
     prisma.dayRoutine.findMany({
       where: { householdId: household.id },
       include: { recipeVariant: { include: { recipe: true } } },
     }),
   ]);
-  const routineByDay = new Map(dayRoutines.map((routine) => [routine.dayOfWeek, routine]));
+  const routineByDay = new Map(
+    dayRoutines.map((routine) => [routine.dayOfWeek, routine]),
+  );
   const shoppingList = await prisma.shoppingList.findUnique({
     where: { mealPlanId: mealPlan.id },
     select: { id: true, status: true },
   });
   const reviewCount = shoppingList
-    ? await prisma.shoppingListLine.count({ where: { shoppingListId: shoppingList.id, needsReview: true } })
+    ? await prisma.shoppingListLine.count({
+        where: { shoppingListId: shoppingList.id, needsReview: true },
+      })
     : 0;
   const mealVariantIds = mealPlan.entries.map((entry) => entry.recipeVariantId);
-  const mealCategoryIds = [...new Set(mealPlan.entries.map((entry) => entry.recipeVariant.recipe.category))];
+  const mealCategoryIds = [
+    ...new Set(
+      mealPlan.entries.map((entry) => entry.recipeVariant.recipe.category),
+    ),
+  ];
   const mealIngredientIds = [
     ...new Set(
       mealPlan.entries.flatMap((entry) =>
-        entry.recipeVariant.recipe.ingredients.map((ri) => ri.ingredientId)
-      )
+        entry.recipeVariant.recipe.ingredients.map((ri) => ri.ingredientId),
+      ),
     ),
   ];
   const participantIds = [
-    ...new Set(DAY_KEYS.flatMap((dayKey) => participantsByDay[dayKey].map((person) => person.id))),
+    ...new Set(
+      DAY_KEYS.flatMap((dayKey) =>
+        participantsByDay[dayKey].map((person) => person.id),
+      ),
+    ),
   ];
   const personalPreferences = await prisma.preference.findMany({
     where: {
@@ -213,7 +228,7 @@ export default async function Home() {
     personalPreferences.map((preference) => [
       `${preference.ownerId}:${preference.subjectType}:${preference.subjectId}`,
       preference.stance,
-    ])
+    ]),
   );
 
   const entryByDay = new Map(mealPlan.entries.map((e) => [e.dayOfWeek, e]));
@@ -244,7 +259,11 @@ export default async function Home() {
       <header className="flex items-center justify-between px-6 pt-6 pb-2">
         <Menu size={20} className="text-ink-muted" />
         <span className="text-sm font-semibold">Jouw week</span>
-        <Link href="/ons-gezin" aria-label="Gezinsinstellingen" className="text-ink-muted hover:text-ink">
+        <Link
+          href="/ons-gezin"
+          aria-label="Gezinsinstellingen"
+          className="text-ink-muted hover:text-ink"
+        >
           <Sparkles size={18} />
         </Link>
       </header>
@@ -254,7 +273,8 @@ export default async function Home() {
           Goedemorgen, {greetingName}
         </h1>
         <p className="mb-5 text-[15px] text-ink-muted">
-          Dit is jullie week. Corrigeer alleen wat niet klopt, dan regel ik de rest.
+          Dit is jullie week. Corrigeer alleen wat niet klopt, dan regel ik de
+          rest.
         </p>
 
         <section className="mb-4 rounded-xl border border-accent/30 bg-surface p-4">
@@ -276,7 +296,9 @@ export default async function Home() {
         </section>
 
         <section className="mb-5 rounded-xl border border-line bg-surface p-4">
-          <p className="mb-2 text-sm font-semibold text-ink">Toch ergens anders zin in?</p>
+          <p className="mb-2 text-sm font-semibold text-ink">
+            Toch ergens anders zin in?
+          </p>
           <form action="/gerechten" className="grid gap-2">
             <div className="grid grid-cols-[112px_1fr] gap-2">
               <select
@@ -310,16 +332,36 @@ export default async function Home() {
         {learningPrompts.length > 0 && (
           <div id="leervragen" className="mb-6 grid gap-3">
             {learningPrompts.map((prompt) => (
-              <div key={prompt.id} className="rounded-xl border border-line bg-surface p-4">
-                <p className="mb-1 text-sm font-semibold text-ink">{prompt.title}</p>
+              <div
+                key={prompt.id}
+                className="rounded-xl border border-line bg-surface p-4"
+              >
+                <p className="mb-1 text-sm font-semibold text-ink">
+                  {prompt.title}
+                </p>
                 <p className="mb-3 text-sm text-ink-muted">{prompt.question}</p>
                 <div className="grid gap-2">
                   <div className="grid grid-cols-2 gap-2">
                     {MEAL_REPLACEMENT_REASONS.slice(1, 5).map((reason) => (
-                      <form key={reason.value} action={answerSmartLearningPrompt}>
-                        <input type="hidden" name="householdId" value={household.id} />
-                        <input type="hidden" name="promptId" value={prompt.id} />
-                        <input type="hidden" name="answer" value={reason.value} />
+                      <form
+                        key={reason.value}
+                        action={answerSmartLearningPrompt}
+                      >
+                        <input
+                          type="hidden"
+                          name="householdId"
+                          value={household.id}
+                        />
+                        <input
+                          type="hidden"
+                          name="promptId"
+                          value={prompt.id}
+                        />
+                        <input
+                          type="hidden"
+                          name="answer"
+                          value={reason.value}
+                        />
                         <button
                           type="submit"
                           className="w-full rounded-lg border border-line px-2 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent"
@@ -330,9 +372,16 @@ export default async function Home() {
                     ))}
                   </div>
                   <form action={dismissSmartLearningPrompt}>
-                    <input type="hidden" name="householdId" value={household.id} />
+                    <input
+                      type="hidden"
+                      name="householdId"
+                      value={household.id}
+                    />
                     <input type="hidden" name="promptId" value={prompt.id} />
-                    <button type="submit" className="text-xs font-medium text-ink-faint hover:text-ink-muted">
+                    <button
+                      type="submit"
+                      className="text-xs font-medium text-ink-faint hover:text-ink-muted"
+                    >
                       Nu niet
                     </button>
                   </form>
@@ -351,7 +400,9 @@ export default async function Home() {
             </p>
             <h2 className="text-lg font-semibold text-ink">Jullie weekmenu</h2>
           </div>
-          <span className="text-xs text-ink-muted">{mealPlan.entries.length} maaltijden</span>
+          <span className="text-xs text-ink-muted">
+            {mealPlan.entries.length} maaltijden
+          </span>
         </div>
       </div>
 
@@ -361,11 +412,20 @@ export default async function Home() {
           const recipe = entry?.recipeVariant.recipe;
           const visibleIngredients =
             recipe?.ingredients
-              .filter((ri, index, list) => list.findIndex((item) => item.ingredientId === ri.ingredientId) === index)
+              .filter(
+                (ri, index, list) =>
+                  list.findIndex(
+                    (item) => item.ingredientId === ri.ingredientId,
+                  ) === index,
+              )
               .slice(0, 4) ?? [];
           const reason = entry?.reason ?? undefined;
           const routine = routineByDay.get(DAY_ENUM[dayKey]);
-          const routineMatchesEntry = Boolean(entry && routine && routine.recipeVariantId === entry.recipeVariantId);
+          const routineMatchesEntry = Boolean(
+            entry &&
+            routine &&
+            routine.recipeVariantId === entry.recipeVariantId,
+          );
           const participants = participantsByDay[dayKey];
           const isNew =
             entry &&
@@ -387,7 +447,9 @@ export default async function Home() {
                 <RecipePhoto recipe={recipe} />
 
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-ink">{recipe?.title ?? "—"}</p>
+                  <p className="line-clamp-2 font-medium text-ink">
+                    {recipe?.title ?? "—"}
+                  </p>
                   <div className="mt-1 flex flex-wrap gap-1.5">
                     {entry && (
                       <Tag tone={variantTone(entry.recipeVariant.variantType)}>
@@ -395,7 +457,9 @@ export default async function Home() {
                       </Tag>
                     )}
                     {recipe && (
-                      <Tag tone={statusTone(recipe.status)}>{STATUS_LABELS[recipe.status]}</Tag>
+                      <Tag tone={statusTone(recipe.status)}>
+                        {STATUS_LABELS[recipe.status]}
+                      </Tag>
                     )}
                   </div>
                 </div>
@@ -423,10 +487,15 @@ export default async function Home() {
                   {routineMatchesEntry ? (
                     <>
                       <span className="inline-flex items-center gap-1 font-medium text-tag-green-ink">
-                        <CheckCircle2 size={13} /> Vaste gewoonte op {DAY_LABELS[dayKey].toLowerCase()}
+                        <CheckCircle2 size={13} /> Vaste gewoonte op{" "}
+                        {DAY_LABELS[dayKey].toLowerCase()}
                       </span>
                       <form action={removeDayRoutine}>
-                        <input type="hidden" name="householdId" value={household.id} />
+                        <input
+                          type="hidden"
+                          name="householdId"
+                          value={household.id}
+                        />
                         <input type="hidden" name="dayKey" value={dayKey} />
                         <button
                           type="submit"
@@ -444,14 +513,24 @@ export default async function Home() {
                         </span>
                       )}
                       <form action={setDayRoutine}>
-                        <input type="hidden" name="householdId" value={household.id} />
+                        <input
+                          type="hidden"
+                          name="householdId"
+                          value={household.id}
+                        />
                         <input type="hidden" name="dayKey" value={dayKey} />
-                        <input type="hidden" name="recipeVariantId" value={entry.recipeVariantId} />
+                        <input
+                          type="hidden"
+                          name="recipeVariantId"
+                          value={entry.recipeVariantId}
+                        />
                         <button
                           type="submit"
                           className="font-medium text-ink-faint underline decoration-dotted hover:text-ink"
                         >
-                          {routine ? "Onthoud dit i.p.v." : `Onthoud voor elke ${DAY_LABELS[dayKey].toLowerCase()}`}
+                          {routine
+                            ? "Onthoud dit i.p.v."
+                            : `Onthoud voor elke ${DAY_LABELS[dayKey].toLowerCase()}`}
                         </button>
                       </form>
                     </>
@@ -461,113 +540,151 @@ export default async function Home() {
 
               <details className="ml-14 rounded-lg border border-line bg-surface-2 px-3 py-2">
                 <summary className="cursor-pointer text-xs font-medium text-ink-muted">
-                  Losse maaltijd invullen
+                  Meer voor deze dag
                 </summary>
-                <form action={setLooseMealForDay} className="mt-3 grid gap-2">
-                  <input type="hidden" name="householdId" value={household.id} />
-                  <input type="hidden" name="dayKey" value={dayKey} />
-                  <input
-                    name="title"
-                    defaultValue={recipe?.properties.includes("losse_maaltijd") ? recipe.title : ""}
-                    placeholder="Bijv. Airfryeravond"
-                    className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-                  />
-                  <textarea
-                    name="lineText"
-                    rows={5}
-                    defaultValue={recipe?.properties.includes("losse_maaltijd") ? recipe.instructions.join("\n") : ""}
-                    placeholder={"Patatjes\nKai: frikandel\nLynn: kaasstengels\nJurgen en Ellen: Carrero\nEllen: mini kaassouffle"}
-                    className="min-h-28 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-                  />
-                  <button
-                    type="submit"
-                    className="w-fit rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-ink transition-all duration-150 hover:-translate-y-0.5 hover:bg-accent/90 active:translate-y-0 active:scale-[0.98]"
-                  >
-                    Zet op deze dag
-                  </button>
-                </form>
-              </details>
+                <div className="mt-3 flex min-w-0 flex-col gap-4">
+                  <div>
+                    <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                      Losse maaltijd invullen
+                    </p>
+                    <form action={setLooseMealForDay} className="grid gap-2">
+                      <input
+                        type="hidden"
+                        name="householdId"
+                        value={household.id}
+                      />
+                      <input type="hidden" name="dayKey" value={dayKey} />
+                      <input
+                        name="title"
+                        defaultValue={
+                          recipe?.properties.includes("losse_maaltijd")
+                            ? recipe.title
+                            : ""
+                        }
+                        placeholder="Bijv. Airfryeravond"
+                        className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                      />
+                      <textarea
+                        name="lineText"
+                        rows={5}
+                        defaultValue={
+                          recipe?.properties.includes("losse_maaltijd")
+                            ? recipe.instructions.join("\n")
+                            : ""
+                        }
+                        placeholder={
+                          "Patatjes\nKai: frikandel\nLynn: kaasstengels\nJurgen en Ellen: Carrero\nEllen: mini kaassouffle"
+                        }
+                        className="min-h-28 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                      />
+                      <button
+                        type="submit"
+                        className="w-fit rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-ink transition-all duration-150 hover:-translate-y-0.5 hover:bg-accent/90 active:translate-y-0 active:scale-[0.98]"
+                      >
+                        Zet op deze dag
+                      </button>
+                    </form>
+                  </div>
 
-              {entry && participants.length > 0 && (
-                <details className="ml-14 rounded-lg border border-line bg-surface-2 px-3 py-2">
-                  <summary className="cursor-pointer text-xs font-medium text-ink-muted">
-                    Voorkeuren aanpassen
-                  </summary>
-                  <div className="mt-3 flex min-w-0 flex-col gap-3">
-                    {participants.map((person) => {
-                      const currentStance = personalPreferenceByPersonAndVariant.get(
-                        `${person.id}:RECIPE_VARIANT:${entry.recipeVariantId}`
-                      );
-                      const categoryStance = personalPreferenceByPersonAndVariant.get(
-                        `${person.id}:RECIPE_CATEGORY:${recipe?.category}`
-                      );
-                      return (
-                        <div key={person.id} className="min-w-0">
-                          <p className="mb-1.5 truncate text-xs font-medium text-ink">{person.name}</p>
-                          <div className="flex min-w-0 flex-col gap-2">
-                            <div>
-                              <p className="mb-1 text-[11px] text-ink-faint">Dit gerecht</p>
-                              <PreferenceButtons
-                                householdId={household.id}
-                                personId={person.id}
-                                dayKey={dayKey}
-                                subjectType="RECIPE_VARIANT"
-                                subjectId={entry.recipeVariantId}
-                                currentStance={currentStance}
-                              />
-                            </div>
-                            {recipe && (
-                              <div>
-                                <p className="mb-1 text-[11px] text-ink-faint">
-                                  {CATEGORY_LABELS[recipe.category] ?? recipe.category}
-                                </p>
-                                <PreferenceButtons
-                                  householdId={household.id}
-                                  personId={person.id}
-                                  dayKey={dayKey}
-                                  subjectType="RECIPE_CATEGORY"
-                                  subjectId={recipe.category}
-                                  currentStance={categoryStance}
-                                />
-                              </div>
-                            )}
-                            {visibleIngredients.map((ri) => {
-                              const ingredientStance = personalPreferenceByPersonAndVariant.get(
-                                `${person.id}:INGREDIENT:${ri.ingredientId}`
-                              );
-                              return (
-                                <div key={ri.ingredientId}>
-                                  <p className="mb-1 truncate text-[11px] text-ink-faint">
-                                    {ri.ingredient.name}
+                  {entry && participants.length > 0 && (
+                    <div>
+                      <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                        Voorkeuren aanpassen
+                      </p>
+                      <div className="flex min-w-0 flex-col gap-3">
+                        {participants.map((person) => {
+                          const currentStance =
+                            personalPreferenceByPersonAndVariant.get(
+                              `${person.id}:RECIPE_VARIANT:${entry.recipeVariantId}`,
+                            );
+                          const categoryStance =
+                            personalPreferenceByPersonAndVariant.get(
+                              `${person.id}:RECIPE_CATEGORY:${recipe?.category}`,
+                            );
+                          return (
+                            <div key={person.id} className="min-w-0">
+                              <p className="mb-1.5 truncate text-xs font-medium text-ink">
+                                {person.name}
+                              </p>
+                              <div className="flex min-w-0 flex-col gap-2">
+                                <div>
+                                  <p className="mb-1 text-[11px] text-ink-faint">
+                                    Dit gerecht
                                   </p>
                                   <PreferenceButtons
                                     householdId={household.id}
                                     personId={person.id}
                                     dayKey={dayKey}
-                                    subjectType="INGREDIENT"
-                                    subjectId={ri.ingredientId}
-                                    currentStance={ingredientStance}
+                                    subjectType="RECIPE_VARIANT"
+                                    subjectId={entry.recipeVariantId}
+                                    currentStance={currentStance}
                                   />
                                 </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </details>
-              )}
+                                {recipe && (
+                                  <div>
+                                    <p className="mb-1 text-[11px] text-ink-faint">
+                                      {CATEGORY_LABELS[recipe.category] ??
+                                        recipe.category}
+                                    </p>
+                                    <PreferenceButtons
+                                      householdId={household.id}
+                                      personId={person.id}
+                                      dayKey={dayKey}
+                                      subjectType="RECIPE_CATEGORY"
+                                      subjectId={recipe.category}
+                                      currentStance={categoryStance}
+                                    />
+                                  </div>
+                                )}
+                                {visibleIngredients.map((ri) => {
+                                  const ingredientStance =
+                                    personalPreferenceByPersonAndVariant.get(
+                                      `${person.id}:INGREDIENT:${ri.ingredientId}`,
+                                    );
+                                  return (
+                                    <div key={ri.ingredientId}>
+                                      <p className="mb-1 truncate text-[11px] text-ink-faint">
+                                        {ri.ingredient.name}
+                                      </p>
+                                      <PreferenceButtons
+                                        householdId={household.id}
+                                        personId={person.id}
+                                        dayKey={dayKey}
+                                        subjectType="INGREDIENT"
+                                        subjectId={ri.ingredientId}
+                                        currentStance={ingredientStance}
+                                      />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </details>
 
               {isNew && entry && (
                 <div className="ml-14 flex items-center justify-between rounded-lg bg-tag-blue-bg px-3 py-2">
                   <span className="text-xs text-tag-blue-ink">
-                    Nieuw gerecht — hoe was dit voor {DAY_LABELS[dayKey].toLowerCase()}?
+                    Nieuw gerecht — hoe was dit voor{" "}
+                    {DAY_LABELS[dayKey].toLowerCase()}?
                   </span>
                   <div className="flex gap-1.5">
                     <form action={submitMealFeedback}>
-                      <input type="hidden" name="householdId" value={household.id} />
-                      <input type="hidden" name="recipeVariantId" value={entry.recipeVariantId} />
+                      <input
+                        type="hidden"
+                        name="householdId"
+                        value={household.id}
+                      />
+                      <input
+                        type="hidden"
+                        name="recipeVariantId"
+                        value={entry.recipeVariantId}
+                      />
                       <input type="hidden" name="dayKey" value={dayKey} />
                       <input type="hidden" name="positive" value="true" />
                       <button
@@ -578,8 +695,16 @@ export default async function Home() {
                       </button>
                     </form>
                     <form action={submitMealFeedback}>
-                      <input type="hidden" name="householdId" value={household.id} />
-                      <input type="hidden" name="recipeVariantId" value={entry.recipeVariantId} />
+                      <input
+                        type="hidden"
+                        name="householdId"
+                        value={household.id}
+                      />
+                      <input
+                        type="hidden"
+                        name="recipeVariantId"
+                        value={entry.recipeVariantId}
+                      />
                       <input type="hidden" name="dayKey" value={dayKey} />
                       <input type="hidden" name="positive" value="false" />
                       <button
@@ -606,10 +731,13 @@ export default async function Home() {
         </Link>
 
         <details className="mt-4 rounded-xl border border-line bg-surface px-4 py-3">
-          <summary className="cursor-pointer text-sm font-medium text-ink-muted">Meer weekacties</summary>
+          <summary className="cursor-pointer text-sm font-medium text-ink-muted">
+            Meer weekacties
+          </summary>
           <div className="mt-3 flex min-w-0 flex-col gap-3">
             <p className="text-xs text-ink-muted">
-              Maak alleen opnieuw als het hele voorstel niet lekker voelt. Losse dagen pas je sneller aan via de dag zelf.
+              Maak alleen opnieuw als het hele voorstel niet lekker voelt. Losse
+              dagen pas je sneller aan via de dag zelf.
             </p>
             <form action={regenerateCurrentWeekPlan}>
               <input type="hidden" name="householdId" value={household.id} />
