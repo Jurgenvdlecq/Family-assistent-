@@ -470,9 +470,40 @@ export default async function BoodschappenPage({
       </div>
 
       <div className="min-w-0 px-6">
-        <section id="daily-review" className="mb-8 min-w-0 scroll-mt-6">
-          <h2 className="mb-3 text-sm font-semibold text-ink">Per dag controleren</h2>
-          <div className="grid gap-4">
+        <div id="jullie-boodschappenlijst" className="mb-3 scroll-mt-6 flex items-baseline justify-between gap-3">
+          <h2 className="text-sm font-semibold text-ink">Jullie boodschappenlijst</h2>
+          <span className="text-xs font-medium text-ink-muted">
+            {mealTotalCost > 0 ? `€ ${mealTotalCost.toFixed(2)}` : "Prijs onbekend"}
+          </span>
+        </div>
+        <div className="flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
+          {mealLines.map((line) => (
+            <div key={line.id} className="flex min-w-0 items-center justify-between gap-4 p-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <ProductThumb line={line} />
+                <div className="min-w-0">
+                  <p className="truncate text-ink">{line.product?.name ?? line.ingredient.name}</p>
+                  {line.product?.brand && (
+                    <p className="truncate text-xs text-ink-faint">
+                      {line.product.brand}
+                      {line.product.packageSize ? ` · ${line.product.packageSize}` : ""}
+                    </p>
+                  )}
+                  {line.needsReview && (
+                    <p className="mt-0.5 text-xs font-medium text-tag-amber-ink">Nog te bevestigen</p>
+                  )}
+                </div>
+              </div>
+              <span className="shrink-0 text-sm text-ink-muted">
+                {formatOrderQuantity(line)}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <details id="daily-review" className="mb-8 mt-4 min-w-0 scroll-mt-6" open={focusedLineId ? true : undefined}>
+          <summary className="cursor-pointer text-sm font-semibold text-ink">Bekijk per dag</summary>
+          <div className="mt-3 grid gap-4">
             {mealPlan.entries.map((entry) => {
               const dayKey = DAY_KEY_BY_ENUM[entry.dayOfWeek];
               const scale = portionScaleByDay[dayKey]?.scale ?? 1;
@@ -671,38 +702,7 @@ export default async function BoodschappenPage({
               );
             })}
           </div>
-        </section>
-
-        <div className="mb-3 flex items-baseline justify-between gap-3">
-          <h2 className="text-sm font-semibold text-ink">Totaalbestelling</h2>
-          <span className="text-xs font-medium text-ink-muted">
-            {mealTotalCost > 0 ? `Maaltijden: € ${mealTotalCost.toFixed(2)}` : "Maaltijdprijzen onbekend"}
-          </span>
-        </div>
-        <div className="flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
-          {mealLines.map((line) => (
-            <div key={line.id} className="flex min-w-0 items-center justify-between gap-4 p-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <ProductThumb line={line} />
-                <div className="min-w-0">
-                  <p className="truncate text-ink">{line.product?.name ?? line.ingredient.name}</p>
-                  {line.product?.brand && (
-                    <p className="truncate text-xs text-ink-faint">
-                      {line.product.brand}
-                      {line.product.packageSize ? ` · ${line.product.packageSize}` : ""}
-                    </p>
-                  )}
-                  {line.needsReview && (
-                    <p className="mt-0.5 text-xs font-medium text-tag-amber-ink">Nog te bevestigen</p>
-                  )}
-                </div>
-              </div>
-              <span className="shrink-0 text-sm text-ink-muted">
-                {formatOrderQuantity(line)}
-              </span>
-            </div>
-          ))}
-        </div>
+        </details>
 
         <details
           id="fixed-groceries"
