@@ -155,7 +155,7 @@ export async function removeBoodschappenLineThisWeek(formData: FormData) {
   await prisma.shoppingListLine.delete({ where: { id: line.id } });
   revalidatePath("/boodschappen");
   revalidatePath("/controle");
-  redirect("/boodschappen#daily-review");
+  redirect("/boodschappen#jullie-boodschappenlijst");
 }
 
 /** Bevestigingssamenvatting vóór het echt vullen van het Picnic-mandje (Fase 7/8). */
