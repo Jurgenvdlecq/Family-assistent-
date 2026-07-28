@@ -10,6 +10,7 @@ import { DAY_KEYS, DAY_ENUM, DAY_LABELS, getCurrentWeekStart, type DayKey } from
 import { STATUS_LABELS, statusTone } from "@/lib/categoryStyle";
 import { normalizeMealText, parseMealWish, scoreMealWish } from "@/domain/meal-tags/mealTags";
 import { MEAL_REPLACEMENT_REASONS } from "@/domain/learning/feedbackReasons";
+import { dayRecipePreferenceOwnerId } from "@/domain/meal-planning/dayRecipePreferences";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
 import RecipePhoto from "@/components/RecipePhoto";
@@ -19,10 +20,12 @@ import { chooseLiteralMealPlanEntry, replaceMealPlanEntry } from "./actions";
 export const dynamic = "force-dynamic";
 
 const DIRECTIONS = [
+  { key: "day", label: "Deze dag" },
   { key: "all", label: "Alle suggesties" },
   { key: "favorites", label: "Favorieten" },
   { key: "quick", label: "Snel & makkelijk" },
 ] as const;
+const DIRECTION_KEYS = DIRECTIONS.map((direction) => direction.key);
 
 const VARIANT_INCLUDE = {
   recipe: { include: { ingredients: { include: { ingredient: true } } } },
@@ -40,6 +43,13 @@ function personalPreferenceScore(stances: string[]): number {
     if (stance === "NEVER") return score - 100;
     return score;
   }, 0);
+}
+
+function dayPreferenceScore(stance: string | undefined): number {
+  if (stance === "LIKED") return 8;
+  if (stance === "SOMETIMES") return 4;
+  if (stance === "RATHER_NOT") return -8;
+  return 0;
 }
 
 function addStance(map: Map<string, string[]>, key: string, stance: string) {
@@ -73,7 +83,9 @@ export default async function GerechtenPage({
   const dayKey: DayKey = (DAY_KEYS as readonly string[]).includes(params.day ?? "")
     ? (params.day as DayKey)
     : "monday";
-  const direction = params.direction ?? "all";
+  const direction = DIRECTION_KEYS.includes(params.direction as (typeof DIRECTION_KEYS)[number])
+    ? params.direction!
+    : "all";
   const wishText = String(params.q ?? "").trim();
 
   const weekStart = getCurrentWeekStart();
@@ -93,14 +105,24 @@ export default async function GerechtenPage({
     preferences.filter((p) => p.subjectType === "RECIPE_VARIANT").map((p) => [p.subjectId, p.confidence])
   );
 
-  const [allVariants, hardRestrictions, participantsByDay] = await Promise.all([
+  const [allVariants, hardRestrictions, participantsByDay, dayRecipePreferences] = await Promise.all([
     prisma.recipeVariant.findMany({
       where: { recipe: accessibleRecipeWhere(household.id) },
       include: VARIANT_INCLUDE,
     }),
     getHouseholdHardRestrictions(household.id, dayKey),
     getHouseholdMealParticipantsByDay(household.id),
+    prisma.preference.findMany({
+      where: {
+        ownerType: "HOUSEHOLD",
+        ownerId: dayRecipePreferenceOwnerId(household.id, dayKey),
+        subjectType: "RECIPE_VARIANT",
+      },
+    }),
   ]);
+  const dayPreferenceByVariantId = new Map(
+    dayRecipePreferences.map((preference) => [preference.subjectId, preference])
+  );
   const participants = participantsByDay[dayKey];
   const allIngredientIds = [
     ...new Set(
@@ -167,6 +189,11 @@ export default async function GerechtenPage({
     filtered = variants.filter(
       (v) => v.variantType === "FAST" || v.recipe.category === "QUICK_AND_EASY"
     );
+  } else if (direction === "day") {
+    filtered = variants.filter((v) => {
+      const preference = dayPreferenceByVariantId.get(v.id);
+      return preference?.stance === "LIKED" || preference?.stance === "SOMETIMES";
+    });
   }
   const wishScoresByVariantId = new Map(
     variants.map((variant) => [
@@ -217,6 +244,8 @@ export default async function GerechtenPage({
       (a, b) =>
         (titleScoresByVariantId.get(b.id) ?? 0) - (titleScoresByVariantId.get(a.id) ?? 0) ||
         (wishScoresByVariantId.get(b.id)?.score ?? 0) - (wishScoresByVariantId.get(a.id)?.score ?? 0) ||
+        dayPreferenceScore(dayPreferenceByVariantId.get(b.id)?.stance) -
+          dayPreferenceScore(dayPreferenceByVariantId.get(a.id)?.stance) ||
         personalPreferenceScore(personalStancesForVariant(b)) -
           personalPreferenceScore(personalStancesForVariant(a)) ||
         (confidenceByVariantId.get(b.id) ?? 0.5) - (confidenceByVariantId.get(a.id) ?? 0.5)
@@ -334,6 +363,7 @@ export default async function GerechtenPage({
             variants={newSuggestions}
             wishScoresByVariantId={wishScoresByVariantId}
             titleScoresByVariantId={titleScoresByVariantId}
+            dayPreferenceByVariantId={dayPreferenceByVariantId}
             household={household.id}
             dayKey={dayKey}
             weekStart={weekStart}
@@ -347,6 +377,7 @@ export default async function GerechtenPage({
             variants={favorites}
             wishScoresByVariantId={wishScoresByVariantId}
             titleScoresByVariantId={titleScoresByVariantId}
+            dayPreferenceByVariantId={dayPreferenceByVariantId}
             household={household.id}
             dayKey={dayKey}
             weekStart={weekStart}
@@ -359,6 +390,7 @@ export default async function GerechtenPage({
             variants={direction === "all" ? rest : filtered}
             wishScoresByVariantId={wishScoresByVariantId}
             titleScoresByVariantId={titleScoresByVariantId}
+            dayPreferenceByVariantId={dayPreferenceByVariantId}
             household={household.id}
             dayKey={dayKey}
             weekStart={weekStart}
@@ -377,6 +409,7 @@ function RecipeSection({
   variants,
   wishScoresByVariantId,
   titleScoresByVariantId,
+  dayPreferenceByVariantId,
   household,
   dayKey,
   weekStart,
@@ -386,6 +419,7 @@ function RecipeSection({
   variants: VariantWithRecipe[];
   wishScoresByVariantId: Map<string, { score: number; reasons: string[] }>;
   titleScoresByVariantId: Map<string, number>;
+  dayPreferenceByVariantId: Map<string, { stance: string }>;
   household: string;
   dayKey: DayKey;
   weekStart: Date;
@@ -402,6 +436,7 @@ function RecipeSection({
           const statusLabel = STATUS_LABELS[variant.recipe.status];
           const wishScore = wishScoresByVariantId.get(variant.id);
           const titleScore = titleScoresByVariantId.get(variant.id) ?? 0;
+          const dayPreference = dayPreferenceByVariantId.get(variant.id);
           return (
             <form key={variant.id} action={replaceMealPlanEntry}>
               <input type="hidden" name="householdId" value={household} />
@@ -420,6 +455,11 @@ function RecipeSection({
                           {p.replace(/_/g, " ")}
                         </span>
                       ))}
+                      {(dayPreference?.stance === "LIKED" || dayPreference?.stance === "SOMETIMES") && (
+                        <span className="text-[11px] whitespace-nowrap text-tag-green-ink">
+                          {dayPreference.stance === "LIKED" ? "vaak op deze dag" : "soms op deze dag"}
+                        </span>
+                      )}
                     </div>
                     {wishScore && wishScore.score > 0 && (
                       <p className="mt-1 truncate text-[11px] text-accent">
