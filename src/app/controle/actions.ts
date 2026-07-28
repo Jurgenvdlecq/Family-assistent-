@@ -274,7 +274,7 @@ export async function skipReview(formData: FormData) {
   refreshControle(lineId, "skipped");
 }
 
-export async confirmShoppingList(formData: FormData) {
+export async function confirmShoppingList(formData: FormData) {
   const shoppingListId = String(formData.get("shoppingListId"));
   const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
     where: { id: shoppingListId },
