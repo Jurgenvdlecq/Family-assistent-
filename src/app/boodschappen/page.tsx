@@ -52,6 +52,15 @@ const STATUS_MESSAGES: Record<string, string> = {
   quantity: "Weekaantal bijgewerkt.",
   "shortfall-filled": "Aangevuld tot de benodigde hoeveelheid.",
   "shortfall-accepted": "Oké, dat laten we deze week zo.",
+  "fixed-added": "Vaste boodschap toegevoegd.",
+  "fixed-bulk-added": "Vaste boodschappen opgeslagen.",
+  "fixed-disabled": "Vaste boodschap staat deze week uit.",
+  "fixed-restored": "Vaste boodschap weer toegevoegd voor deze week.",
+  "fixed-quantity": "Vaste boodschap bijgewerkt voor deze week.",
+  "fixed-quantity-remembered": "Vaste boodschap bijgewerkt en onthouden.",
+  "fixed-replaced": "Vaste boodschap vervangen.",
+  "fixed-removed": "Vaste boodschap verwijderd.",
+  "inventory-updated": "Voorraadstatus opgeslagen.",
 };
 
 const INVENTORY_STATUS_OPTIONS = [
@@ -392,6 +401,7 @@ export default async function BoodschappenPage({
     bulkFixed?: string;
     focusLine?: string;
     shortfallLine?: string;
+    inventory?: string;
     status?: string;
   }>;
 }) {
@@ -403,6 +413,11 @@ export default async function BoodschappenPage({
   const fixedReplaceLineId = String(params.fixedReplaceLineId ?? "").trim();
   const focusedLineId = String(params.focusLine ?? "").trim();
   const focusedShortfallLineId = String(params.shortfallLine ?? "").trim();
+  const focusedInventoryId = String(params.inventory ?? "").trim();
+  const generalStatusMessage =
+    params.status && !focusedLineId && !focusedShortfallLineId && !focusedFixedLineId && !focusedInventoryId
+      ? STATUS_MESSAGES[params.status]
+      : undefined;
 
   const weekStart = getCurrentWeekStart();
   const mealPlan = await getMealPlanForWeek(household.id, weekStart);
@@ -478,6 +493,12 @@ export default async function BoodschappenPage({
           </span>
           <span>{sortedLines.length} producten</span>
         </div>
+
+        {generalStatusMessage && (
+          <p className="mb-6 rounded-lg border border-tag-green-ink/20 bg-tag-green-bg px-3 py-2 text-sm font-medium text-tag-green-ink">
+            {generalStatusMessage}
+          </p>
+        )}
 
         {reviewCount > 0 && (
           <Link
@@ -780,6 +801,11 @@ export default async function BoodschappenPage({
             {activeFixedLines.length + inactiveFixedItems.length} vaste boodschap
             {activeFixedLines.length + inactiveFixedItems.length === 1 ? "" : "pen"}
           </summary>
+          {focusedFixedLineId && params.status && STATUS_MESSAGES[params.status] && (
+            <p className="mt-3 rounded-md border border-tag-green-ink/20 bg-tag-green-bg px-2.5 py-1.5 text-xs font-medium text-tag-green-ink">
+              {STATUS_MESSAGES[params.status]}
+            </p>
+          )}
           <div className="mt-3 flex min-w-0 flex-col divide-y divide-line">
           {activeFixedLines.length === 0 && inactiveFixedItems.length === 0 && (
             <p className="p-4 text-sm text-ink-muted">
@@ -1150,10 +1176,19 @@ export default async function BoodschappenPage({
           )}
         </details>
 
-        <details className="mt-6 rounded-xl border border-line bg-surface p-4">
+        <details
+          id="inventory-check"
+          className="mt-6 scroll-mt-6 rounded-xl border border-line bg-surface p-4"
+          open={focusedInventoryId ? true : undefined}
+        >
           <summary className="cursor-pointer text-sm font-semibold text-ink">
             Voorraadcheck voor {inventoryChecklist.length} basisproducten
           </summary>
+          {focusedInventoryId && params.status && STATUS_MESSAGES[params.status] && (
+            <p className="mt-3 rounded-md border border-tag-green-ink/20 bg-tag-green-bg px-2.5 py-1.5 text-xs font-medium text-tag-green-ink">
+              {STATUS_MESSAGES[params.status]}
+            </p>
+          )}
           <p className="mt-2 text-sm text-ink-muted">
             Hoe staat het met deze basisproducten? Ik onthoud je antwoord voor volgende keren.
           </p>
@@ -1161,7 +1196,10 @@ export default async function BoodschappenPage({
           {inventoryChecklist.map((item) => (
             <div
               key={item.ingredientId}
-              className="flex min-w-0 flex-wrap items-center justify-between gap-2 p-4"
+              id={`inventory-${item.ingredientId}`}
+              className={`flex min-w-0 scroll-mt-6 flex-wrap items-center justify-between gap-2 p-4 transition-colors ${
+                item.ingredientId === focusedInventoryId ? "bg-accent-soft" : ""
+              }`}
             >
               <p className="min-w-0 truncate text-ink">{item.name}</p>
               <div className="flex shrink-0 gap-1 rounded-lg bg-surface-2 p-1">

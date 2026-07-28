@@ -59,6 +59,9 @@ const STATUS_MESSAGES: Record<string, string> = {
   "learning-dismissed": "Vraag overgeslagen.",
   "routine-set": "Onthouden als vaste gewoonte.",
   "routine-removed": "Vaste gewoonte gestopt.",
+  "meal-replaced": "Gerecht gewisseld.",
+  "meal-wish-planned": "Maaltijdwens ingepland.",
+  "meal-unchanged": "Dit gerecht stond al op die dag.",
 };
 
 const PERSONAL_STANCE_LABELS = {

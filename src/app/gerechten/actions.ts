@@ -15,6 +15,11 @@ import { parseFeedbackReason, labelFeedbackReason } from "@/domain/learning/feed
 import { recordRepeatedMealReplacement } from "@/domain/learning/patterns";
 import type { IngredientCategory, Unit } from "@/generated/prisma/enums";
 
+function redirectToHome(status: string): never {
+  revalidatePath("/");
+  redirect(`/?status=${encodeURIComponent(status)}`);
+}
+
 export async function replaceMealPlanEntry(formData: FormData) {
   const householdId = String(formData.get("householdId"));
   await assertCurrentHousehold(householdId);
@@ -79,7 +84,7 @@ export async function replaceMealPlanEntry(formData: FormData) {
 
   if (currentEntry) {
     if (currentEntry.recipeVariantId === recipeVariantId) {
-      redirect("/");
+      redirectToHome("meal-unchanged");
     }
     const replacedVariant = await prisma.recipeVariant.findUniqueOrThrow({
       where: { id: currentEntry.recipeVariantId },
@@ -144,9 +149,8 @@ export async function replaceMealPlanEntry(formData: FormData) {
   // De boodschappenlijst hoort mee te veranderen zodra een gerecht wijzigt.
   await invalidateShoppingList(mealPlan.id);
 
-  revalidatePath("/");
   revalidatePath("/boodschappen");
-  redirect("/");
+  redirectToHome("meal-replaced");
 }
 
 function defaultQuantityForIngredient(category: IngredientCategory, unit: Unit) {
@@ -307,7 +311,6 @@ export async function chooseLiteralMealPlanEntry(formData: FormData) {
   });
   await invalidateShoppingList(mealPlan.id);
 
-  revalidatePath("/");
   revalidatePath("/boodschappen");
-  redirect("/");
+  redirectToHome("meal-wish-planned");
 }

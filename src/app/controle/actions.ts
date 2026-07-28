@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { assertCurrentHousehold } from "@/lib/auth";
 import { logFeedbackEvent } from "@/lib/feedback";
+import { acceptProposedMealPlanEntries } from "@/lib/mealPlan";
 import { recordProductChosen, recordProductRejected } from "@/domain/product-matching/repository";
 import { matchProductForIngredient } from "@/domain/product-matching/matchIngredient";
 import { PicnicClient } from "@/lib/picnic/client";
@@ -277,13 +278,15 @@ export async function confirmShoppingList(formData: FormData) {
   const shoppingListId = String(formData.get("shoppingListId"));
   const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
     where: { id: shoppingListId },
-    include: { mealPlan: { select: { householdId: true } } },
+    include: { mealPlan: { select: { id: true, householdId: true } } },
   });
   await assertCurrentHousehold(shoppingList.mealPlan.householdId);
+  await acceptProposedMealPlanEntries(shoppingList.mealPlan.householdId, shoppingList.mealPlan.id);
   await prisma.shoppingList.update({
     where: { id: shoppingListId },
     data: { status: "REVIEWED" },
   });
   revalidatePath("/boodschappen");
-  redirect("/boodschappen");
+  revalidatePath("/");
+  redirect("/boodschappen?status=shopping-reviewed#jullie-boodschappenlijst");
 }
