@@ -29,9 +29,3 @@ export async function getHouseholdProductChoicePreference(householdId: string) {
   });
   return productChoicePreferenceFromDeliveryPreference(household.deliveryPreference);
 }
-
-export function describeProductChoicePreference(preference: ProductChoicePreference) {
-  if (preference === "LOW_PRICE") return "Huishouden kiest bij twijfel liever voordelig.";
-  if (preference === "KNOWN_PACKAGE") return "Huishouden kiest bij twijfel liever producten met duidelijke verpakkingsgrootte.";
-  return "Huishouden gebruikt de gebalanceerde productkeuze.";
-}

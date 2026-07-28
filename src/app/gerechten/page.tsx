@@ -412,7 +412,7 @@ function RecipeSection({
                 <div className="flex min-w-0 items-center gap-3">
                   <RecipePhoto recipe={variant.recipe} className="h-14 w-14 rounded-lg" />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium text-ink">{variant.recipe.title}</p>
+                    <p className="line-clamp-2 font-medium text-ink">{variant.recipe.title}</p>
                     <div className="mt-1 flex flex-wrap gap-1.5">
                       {statusLabel && <Tag tone={statusTone(variant.recipe.status)}>{statusLabel}</Tag>}
                       {variant.recipe.properties.slice(0, 2).map((p) => (
