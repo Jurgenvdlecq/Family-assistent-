@@ -15,6 +15,7 @@ import {
   createQuickRecipe,
   createRecipe,
   createRecipeVariant,
+  deleteRecipe,
   rejectProductForIngredient,
   setDefaultProductForIngredient,
   updateIngredient,
@@ -46,6 +47,7 @@ const UNIT_OPTIONS = Object.entries(UNIT_LABELS);
 const STATUS_MESSAGES: Record<string, string> = {
   "recipe-created": "Recept toegevoegd.",
   "recipe-updated": "Recept opgeslagen.",
+  "recipe-deleted": "Recept verwijderd.",
   "ingredients-updated": "Ingrediënten opgeslagen.",
   "variant-updated": "Variant opgeslagen.",
   "variant-created": "Variant toegevoegd.",
@@ -592,6 +594,13 @@ export default async function ReceptenPage({
                     />
                     <button type="submit" className="w-fit rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
                       Recept opslaan
+                    </button>
+                  </form>
+                  <form action={deleteRecipe} className="mt-3 border-t border-line pt-3">
+                    <input type="hidden" name="householdId" value={household.id} />
+                    <input type="hidden" name="recipeId" value={recipe.id} />
+                    <button type="submit" className="w-fit rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:border-red-300 hover:bg-red-50">
+                      Recept verwijderen
                     </button>
                   </form>
                   </details>
