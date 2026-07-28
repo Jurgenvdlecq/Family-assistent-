@@ -46,7 +46,11 @@ export async function getMealPlanForWeek(householdId: string, weekStart: Date) {
  * Genereert er bewust één zodra de assistent gevraagd wordt, i.p.v. dat
  * de gebruiker een "plan"-knop moet indrukken (sectie 10 van de Blueprint).
  */
-export async function ensureMealPlan(householdId: string, weekStart: Date) {
+export async function ensureMealPlan(
+  householdId: string,
+  weekStart: Date,
+  entrySource: "AUTO" | "REGENERATED" = "AUTO"
+) {
   const existing = await getMealPlanForWeek(householdId, weekStart);
   if (existing) return existing;
 
@@ -210,7 +214,7 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
 
   const usedRecipeIds = new Set<string>();
   type VariantWithRecipe = (typeof allVariants)[number];
-  type Pick = { variant: VariantWithRecipe; reason: string; confidence: ConfidenceLevel };
+  type Pick = { variant: VariantWithRecipe; reason: string; confidence: ConfidenceLevel; score?: number };
   const picks = {} as Record<DayKey, Pick>;
 
   for (const dayKey of DAY_KEYS) {
@@ -294,6 +298,7 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
       variant: chosen,
       reason: formatMealPlanReason(scored),
       confidence: confidence === "SLIGHT_DOUBT" ? confidence : scored.confidence,
+      score: scored.score,
     };
   }
 
@@ -306,6 +311,11 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
         create: DAY_KEYS.map((dayKey) => ({
           dayOfWeek: DAY_ENUM[dayKey],
           recipeVariantId: picks[dayKey].variant.id,
+          source: entrySource,
+          status: "PROPOSED",
+          reason: picks[dayKey].reason,
+          score: picks[dayKey].score ?? null,
+          confidenceLevel: picks[dayKey].confidence,
         })),
       },
     },
@@ -341,15 +351,3 @@ export async function ensureMealPlan(householdId: string, weekStart: Date) {
   return getMealPlanForWeek(householdId, weekStart);
 }
 
-export async function getReasonsForPlan(householdId: string, weekStart: Date) {
-  const suggestions = await prisma.mealSuggestion.findMany({
-    where: {
-      householdId,
-      targetSlot: {
-        gte: weekStart,
-        lte: dateForDay(weekStart, "sunday"),
-      },
-    },
-  });
-  return new Map(suggestions.map((s) => [s.recipeVariantId, s.reason]));
-}

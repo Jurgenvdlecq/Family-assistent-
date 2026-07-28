@@ -206,11 +206,27 @@ export async function setLooseMealForDay(formData: FormData) {
     });
     await prisma.mealPlanEntry.update({
       where: { id: currentEntry.id },
-      data: { recipeVariantId },
+      data: {
+        recipeVariantId,
+        source: "ASSISTANT",
+        status: "ACCEPTED",
+        reason: "Losse maaltijd die je hebt ingevuld.",
+        score: null,
+        confidenceLevel: "CERTAIN",
+        replacedFromRecipeVariantId: currentEntry.recipeVariantId,
+      },
     });
   } else {
     await prisma.mealPlanEntry.create({
-      data: { mealPlanId: mealPlan.id, dayOfWeek: dayEnum, recipeVariantId },
+      data: {
+        mealPlanId: mealPlan.id,
+        dayOfWeek: dayEnum,
+        recipeVariantId,
+        source: "ASSISTANT",
+        status: "ACCEPTED",
+        reason: "Losse maaltijd die je hebt ingevuld.",
+        confidenceLevel: "CERTAIN",
+      },
     });
   }
 
@@ -343,7 +359,7 @@ export async function regenerateCurrentWeekPlan(formData: FormData) {
     where: { householdId, targetSlot: { gte: weekStart, lte: weekEnd } },
   });
 
-  await ensureMealPlan(householdId, weekStart);
+  await ensureMealPlan(householdId, weekStart, "REGENERATED");
 
   revalidatePath("/");
   revalidatePath("/gerechten");

@@ -16,22 +16,22 @@ datasource db {
 // ── Household ────────────────────────────────────────────────────────────
 
 model Household {
-  id                   String           @id @default(uuid())
-  name                 String
-  weeklyRhythm         Json             @default("{}") @map("weekly_rhythm")
-  deliveryPreference   Json             @default("{}") @map("delivery_preference")
-  onboardingStatus     OnboardingStatus @default(NOT_STARTED) @map("onboarding_status")
-  onboardingMode       OnboardingMode   @default(QUICK) @map("onboarding_mode")
-  planningStyle        PlanningStyle    @default(BALANCED) @map("planning_style")
-  maxSmartQuestionsPerSession Int       @default(2) @map("max_smart_questions_per_session")
-  accessCodeHash       String?          @map("access_code_hash")
+  id                          String           @id @default(uuid())
+  name                        String
+  weeklyRhythm                Json             @default("{}") @map("weekly_rhythm")
+  deliveryPreference          Json             @default("{}") @map("delivery_preference")
+  onboardingStatus            OnboardingStatus @default(NOT_STARTED) @map("onboarding_status")
+  onboardingMode              OnboardingMode   @default(QUICK) @map("onboarding_mode")
+  planningStyle               PlanningStyle    @default(BALANCED) @map("planning_style")
+  maxSmartQuestionsPerSession Int              @default(2) @map("max_smart_questions_per_session")
+  accessCodeHash              String?          @map("access_code_hash")
   // Picnic-integratie (fase 4, verdiept): sessie-token van de niet-officiële
   // Picnic-API. Nooit een wachtwoord — dat komt nooit verder dan het
   // eenmalige login-script van de gebruiker zelf (scripts/picnic-login.ts).
-  picnicAuthToken      String?          @map("picnic_auth_token")
-  picnicTokenUpdatedAt DateTime?        @map("picnic_token_updated_at")
-  createdAt            DateTime         @default(now()) @map("created_at")
-  updatedAt            DateTime         @updatedAt @map("updated_at")
+  picnicAuthToken             String?          @map("picnic_auth_token")
+  picnicTokenUpdatedAt        DateTime?        @map("picnic_token_updated_at")
+  createdAt                   DateTime         @default(now()) @map("created_at")
+  updatedAt                   DateTime         @updatedAt @map("updated_at")
 
   persons                Person[]
   mealPlans              MealPlan[]
@@ -155,14 +155,14 @@ enum InventoryStatus {
 // ── Person ───────────────────────────────────────────────────────────────
 
 model Person {
-  id               String     @id @default(uuid())
-  householdId      String     @map("household_id")
-  name             String
-  role             PersonRole @default(OTHER)
-  hardRestrictions Json       @default("[]") @map("hard_restrictions")
-  defaultPresent   Boolean    @default(true) @map("default_present")
-  portionMultiplier Float     @default(1) @map("portion_multiplier")
-  createdAt        DateTime   @default(now()) @map("created_at")
+  id                String     @id @default(uuid())
+  householdId       String     @map("household_id")
+  name              String
+  role              PersonRole @default(OTHER)
+  hardRestrictions  Json       @default("[]") @map("hard_restrictions")
+  defaultPresent    Boolean    @default(true) @map("default_present")
+  portionMultiplier Float      @default(1) @map("portion_multiplier")
+  createdAt         DateTime   @default(now()) @map("created_at")
 
   household         Household                @relation(fields: [householdId], references: [id], onDelete: Cascade)
   feedbackEvents    FeedbackEvent[]
@@ -214,8 +214,8 @@ model Recipe {
   promotedAt        DateTime?      @map("promoted_at")
   createdAt         DateTime       @default(now()) @map("created_at")
 
-  household       Household? @relation("HouseholdRecipes", fields: [householdId], references: [id], onDelete: Cascade)
-  originHousehold Household? @relation("OriginatedRecipes", fields: [originHouseholdId], references: [id], onDelete: SetNull)
+  household       Household?         @relation("HouseholdRecipes", fields: [householdId], references: [id], onDelete: Cascade)
+  originHousehold Household?         @relation("OriginatedRecipes", fields: [originHouseholdId], references: [id], onDelete: SetNull)
   ingredients     RecipeIngredient[]
   variants        RecipeVariant[]
 
@@ -277,10 +277,11 @@ model RecipeVariant {
   contextFit          String[]    @default([]) @map("context_fit")
   createdAt           DateTime    @default(now()) @map("created_at")
 
-  recipe          Recipe           @relation(fields: [recipeId], references: [id], onDelete: Cascade)
-  mealSuggestions MealSuggestion[]
-  mealPlanEntries MealPlanEntry[]
-  dayRoutines     DayRoutine[]
+  recipe                          Recipe           @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  mealSuggestions                 MealSuggestion[]
+  mealPlanEntries                 MealPlanEntry[]
+  dayRoutines                     DayRoutine[]
+  mealPlanEntriesReplacedFromThis MealPlanEntry[]  @relation("MealPlanEntryReplacedFrom")
 
   @@unique([recipeId, variantType])
   @@map("recipe_variants")
@@ -321,17 +322,49 @@ enum MealPlanStatus {
 }
 
 // De 7 dagregels van een weekplanning
+//
+// source/status/reason/score/confidenceLevel (WP52, DATAMODEL_AUDIT.md
+// punt 6) maken onderscheid tussen "de app heeft dit voorgesteld en de
+// gebruiker heeft er niets aan veranderd" (stilzwijgende bevestiging is
+// zelf ook een signaal, PRODUCT_VISION.md: "Stilte is feedback") en een
+// expliciete, actieve keuze — nodig om daar later verschillend van te
+// kunnen leren.
 model MealPlanEntry {
-  id              String    @id @default(uuid())
-  mealPlanId      String    @map("meal_plan_id")
-  dayOfWeek       DayOfWeek @map("day_of_week")
-  recipeVariantId String    @map("recipe_variant_id")
+  id                          String              @id @default(uuid())
+  mealPlanId                  String              @map("meal_plan_id")
+  dayOfWeek                   DayOfWeek           @map("day_of_week")
+  recipeVariantId             String              @map("recipe_variant_id")
+  source                      MealPlanEntrySource @default(AUTO) @map("source")
+  status                      MealPlanEntryStatus @default(PROPOSED) @map("status")
+  reason                      String?             @map("reason")
+  score                       Float?              @map("score")
+  confidenceLevel             ConfidenceLevel?    @map("confidence_level")
+  replacedFromRecipeVariantId String?             @map("replaced_from_recipe_variant_id")
+  updatedAt                   DateTime            @updatedAt @map("updated_at")
 
-  mealPlan      MealPlan      @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
-  recipeVariant RecipeVariant @relation(fields: [recipeVariantId], references: [id])
+  mealPlan            MealPlan       @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
+  recipeVariant       RecipeVariant  @relation(fields: [recipeVariantId], references: [id])
+  replacedFromVariant RecipeVariant? @relation("MealPlanEntryReplacedFrom", fields: [replacedFromRecipeVariantId], references: [id], onDelete: SetNull)
 
   @@unique([mealPlanId, dayOfWeek])
   @@map("meal_plan_entries")
+}
+
+enum MealPlanEntrySource {
+  AUTO
+  MANUAL
+  ASSISTANT
+  REGENERATED
+
+  @@map("meal_plan_entry_source")
+}
+
+enum MealPlanEntryStatus {
+  PROPOSED
+  ACCEPTED
+  REPLACED
+
+  @@map("meal_plan_entry_status")
 }
 
 enum DayOfWeek {
@@ -445,8 +478,8 @@ model Product {
   householdPreferences HouseholdProductPreference[]
   rejections           RejectedProductMatch[]
 
-  @@index([ingredientId])
   @@unique([ingredientId, externalRef])
+  @@index([ingredientId])
   @@map("products")
 }
 
@@ -600,20 +633,20 @@ model FeedbackEvent {
 // ── Learning ─────────────────────────────────────────────────────────────
 
 model LearnedPattern {
-  id             String              @id @default(uuid())
-  householdId    String              @map("household_id")
-  personId       String?             @map("person_id")
-  patternType    LearnedPatternType  @map("pattern_type")
+  id             String               @id @default(uuid())
+  householdId    String               @map("household_id")
+  personId       String?              @map("person_id")
+  patternType    LearnedPatternType   @map("pattern_type")
   subjectType    FeedbackSubjectType? @map("subject_type")
-  subjectId      String?             @map("subject_id")
-  contextKey     String              @map("context_key")
-  context        Json                @default("{}")
-  confidence     Float               @default(0)
-  evidenceCount  Int                 @default(0) @map("evidence_count")
-  status         LearningStatus      @default(CANDIDATE)
-  lastObservedAt DateTime            @default(now()) @map("last_observed_at")
-  createdAt      DateTime            @default(now()) @map("created_at")
-  updatedAt      DateTime            @updatedAt @map("updated_at")
+  subjectId      String?              @map("subject_id")
+  contextKey     String               @map("context_key")
+  context        Json                 @default("{}")
+  confidence     Float                @default(0)
+  evidenceCount  Int                  @default(0) @map("evidence_count")
+  status         LearningStatus       @default(CANDIDATE)
+  lastObservedAt DateTime             @default(now()) @map("last_observed_at")
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
 
   household Household        @relation(fields: [householdId], references: [id], onDelete: Cascade)
   prompts   LearningPrompt[]

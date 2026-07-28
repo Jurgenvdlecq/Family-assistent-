@@ -7,7 +7,7 @@ import "dotenv/config";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { prisma } from "./prisma";
-import { ensureMealPlan, getReasonsForPlan } from "./mealPlan";
+import { ensureMealPlan } from "./mealPlan";
 import { getCurrentWeekStart } from "./week";
 
 async function makeHousehold(name: string, hardRestrictions: string[] = []) {
@@ -42,9 +42,11 @@ test("een vaste daggewoonte wordt gebruikt in plaats van de gewone scoring", asy
     const mealPlan = await ensureMealPlan(household.id, weekStart);
     const mondayEntry = mealPlan!.entries.find((e) => e.dayOfWeek === "MONDAY");
     assert.equal(mondayEntry?.recipeVariantId, variant.id);
-
-    const reasons = await getReasonsForPlan(household.id, weekStart);
-    assert.match(reasons.get(variant.id) ?? "", /vaste gewoonte/);
+    assert.match(mondayEntry?.reason ?? "", /vaste gewoonte/);
+    assert.equal(mondayEntry?.source, "AUTO");
+    assert.equal(mondayEntry?.status, "PROPOSED");
+    assert.equal(mondayEntry?.confidenceLevel, "CERTAIN");
+    assert.equal(mondayEntry?.score, null, "een daggewoonte doorloopt de scoring niet, dus geen score");
   } finally {
     await cleanup(household.id);
   }
@@ -82,6 +84,41 @@ test("geen vaste daggewoonte laat de gewone scoring gewoon werken", async () => 
     const weekStart = getCurrentWeekStart();
     const mealPlan = await ensureMealPlan(household.id, weekStart);
     assert.equal(mealPlan!.entries.length, 7);
+  } finally {
+    await cleanup(household.id);
+  }
+});
+
+test("WP52: automatisch voorgestelde regels krijgen bron/status/score voor later leren uit stil accepteren", async () => {
+  const household = await makeHousehold("WP52 integratietest — auto-context");
+
+  try {
+    const weekStart = getCurrentWeekStart();
+    const mealPlan = await ensureMealPlan(household.id, weekStart);
+    for (const entry of mealPlan!.entries) {
+      assert.equal(entry.source, "AUTO");
+      assert.equal(entry.status, "PROPOSED");
+      assert.ok(entry.reason && entry.reason.length > 0, "elke regel moet een reden hebben");
+      assert.ok(typeof entry.score === "number", "een normaal gescoorde regel heeft een numerieke score");
+      assert.equal(entry.replacedFromRecipeVariantId, null, "een verse weekplanning heeft nog niets vervangen");
+    }
+  } finally {
+    await cleanup(household.id);
+  }
+});
+
+test("WP52: 'Week opnieuw plannen' markeert nieuwe regels als REGENERATED, niet als AUTO", async () => {
+  const household = await makeHousehold("WP52 integratietest — regenerated");
+
+  try {
+    const weekStart = getCurrentWeekStart();
+    await ensureMealPlan(household.id, weekStart);
+    await prisma.mealPlan.deleteMany({ where: { householdId: household.id } });
+
+    const regenerated = await ensureMealPlan(household.id, weekStart, "REGENERATED");
+    for (const entry of regenerated!.entries) {
+      assert.equal(entry.source, "REGENERATED");
+    }
   } finally {
     await cleanup(household.id);
   }
