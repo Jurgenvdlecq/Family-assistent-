@@ -576,6 +576,14 @@ model ShoppingListLine {
   // overgeslagen in plaats van dubbel toegevoegd.
   transferredToPicnicAt DateTime? @map("transferred_to_picnic_at")
 
+  // Nooit stilzwijgend onder-bestellen (Fase 3/8): als een regel handmatig
+  // (of nog niet bijgewerkt) onder de daadwerkelijke receptbehoefte van deze
+  // week staat, moet de gebruiker dat expliciet zien en bevestigen dat dit
+  // oké is — anders blijft de melding terugkomen. Wordt teruggezet zodra de
+  // hoeveelheid weer handmatig wijzigt, zodat een nieuw tekort niet stil
+  // wordt overgeslagen.
+  shortfallAcknowledged Boolean @default(false) @map("shortfall_acknowledged")
+
   shoppingList ShoppingList @relation(fields: [shoppingListId], references: [id], onDelete: Cascade)
   ingredient   Ingredient   @relation(fields: [ingredientId], references: [id])
   product      Product?     @relation(fields: [productId], references: [id])

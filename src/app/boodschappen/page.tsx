@@ -5,11 +5,16 @@ import { ChevronLeft, ShoppingCart, CheckCircle2, Utensils, ChevronRight, Search
 import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { DAY_KEY_BY_ENUM, DAY_LABELS, getCurrentWeekStart } from "@/lib/week";
-import { describeLinePackaging, ensureShoppingList, getShoppingListCandidatesByIngredient } from "@/lib/shoppingList";
+import {
+  describeLinePackaging,
+  ensureShoppingList,
+  findShoppingListShortfalls,
+  getShoppingListCandidatesByIngredient,
+} from "@/lib/shoppingList";
 import { prisma } from "@/lib/prisma";
 import { getHouseholdPortionScaleByDay } from "@/lib/household";
 import { getFixedGroceries } from "@/lib/fixedGroceries";
-import { getInventoryChecklist } from "@/lib/inventory";
+import { getInventoryChecklist, getInventoryMap } from "@/lib/inventory";
 import { enrichShoppingListProductImages } from "@/lib/picnic/productEnrichment";
 import { picnicImageUrl, picnicPriceToEuros, picnicProductRef } from "@/lib/picnic/products";
 import { PicnicClient } from "@/lib/picnic/client";
@@ -20,8 +25,10 @@ import PendingSubmitButton from "@/components/PendingSubmitButton";
 import PicnicTransfer from "./PicnicTransfer";
 import AddToPicnicCart from "./AddToPicnicCart";
 import {
+  acknowledgeShoppingListShortfall,
   adjustBoodschappenLineQuantity,
   chooseBoodschappenProduct,
+  fillShoppingListShortfall,
   removeBoodschappenLineThisWeek,
   setBoodschappenLinePackageCount,
 } from "./actions";
@@ -43,6 +50,8 @@ const STATUS_MESSAGES: Record<string, string> = {
   remembered: "Opgeslagen en onthouden voor volgende keer.",
   "week-only": "Gekozen voor deze week.",
   quantity: "Weekaantal bijgewerkt.",
+  "shortfall-filled": "Aangevuld tot de benodigde hoeveelheid.",
+  "shortfall-accepted": "Oké, dat laten we deze week zo.",
 };
 
 const INVENTORY_STATUS_OPTIONS = [
@@ -382,6 +391,7 @@ export default async function BoodschappenPage({
     fixedReplaceLineId?: string;
     bulkFixed?: string;
     focusLine?: string;
+    shortfallLine?: string;
     status?: string;
   }>;
 }) {
@@ -392,6 +402,7 @@ export default async function BoodschappenPage({
   const focusedFixedLineId = String(params.fixedLine ?? "").trim();
   const fixedReplaceLineId = String(params.fixedReplaceLineId ?? "").trim();
   const focusedLineId = String(params.focusLine ?? "").trim();
+  const focusedShortfallLineId = String(params.shortfallLine ?? "").trim();
 
   const weekStart = getCurrentWeekStart();
   const mealPlan = await getMealPlanForWeek(household.id, weekStart);
@@ -414,23 +425,30 @@ export default async function BoodschappenPage({
     status: shoppingList.status,
   };
 
-  const [fixedGroceries, inventoryChecklist, fixedProductResults, bulkFixedPreviewLines, portionScaleByDay, candidatesByIngredient] = await Promise.all([
-    getFixedGroceries(household.id),
-    getInventoryChecklist(household.id),
-    fixedSearchQuery && household.picnicAuthToken
-      ? searchFixedProductResults(household.id, household.picnicAuthToken, fixedSearchQuery)
-      : Promise.resolve([]),
-    bulkFixedText && household.picnicAuthToken
-      ? searchBulkFixedProductResults(household.id, household.picnicAuthToken, bulkFixedText)
-      : Promise.resolve([]),
-    getHouseholdPortionScaleByDay(household.id),
-    getShoppingListCandidatesByIngredient(household.id, mealLines.map((line) => line.ingredientId)),
-  ]);
+  const [fixedGroceries, inventoryChecklist, fixedProductResults, bulkFixedPreviewLines, portionScaleByDay, candidatesByIngredient, inventoryMap] =
+    await Promise.all([
+      getFixedGroceries(household.id),
+      getInventoryChecklist(household.id),
+      fixedSearchQuery && household.picnicAuthToken
+        ? searchFixedProductResults(household.id, household.picnicAuthToken, fixedSearchQuery)
+        : Promise.resolve([]),
+      bulkFixedText && household.picnicAuthToken
+        ? searchBulkFixedProductResults(household.id, household.picnicAuthToken, bulkFixedText)
+        : Promise.resolve([]),
+      getHouseholdPortionScaleByDay(household.id),
+      getShoppingListCandidatesByIngredient(household.id, mealLines.map((line) => line.ingredientId)),
+      getInventoryMap(household.id),
+    ]);
   const activeIngredientIds = new Set(activeFixedLines.map((l) => l.ingredientId));
   const inactiveFixedItems = fixedGroceries.filter((f) => !activeIngredientIds.has(f.ingredientId));
   const mealLineByIngredientId = new Map(mealLines.map((line) => [line.ingredientId, line]));
   const mealTotalCost = mealLines.reduce((total, line) => total + estimatedLineCost(line), 0);
   const mealReviewIds = new Set(mealLines.filter((line) => line.needsReview).map((line) => line.ingredientId));
+  const shortfallByLineId = new Map(
+    findShoppingListShortfalls(mealPlan, portionScaleByDay, inventoryMap, sortedLines)
+      .filter((s) => !sortedLines.find((l) => l.id === s.lineId)?.shortfallAcknowledged)
+      .map((s) => [s.lineId, s])
+  );
   const dayReviewCounts = new Map(
     mealPlan.entries.map((entry) => [
       entry.id,
@@ -480,28 +498,74 @@ export default async function BoodschappenPage({
           </span>
         </div>
         <div className="flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
-          {mealLines.map((line) => (
-            <div key={line.id} className="flex min-w-0 items-center justify-between gap-4 p-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <ProductThumb line={line} />
-                <div className="min-w-0">
-                  <p className="truncate text-ink">{line.product?.name ?? line.ingredient.name}</p>
-                  {line.product?.brand && (
-                    <p className="truncate text-xs text-ink-faint">
-                      {line.product.brand}
-                      {line.product.packageSize ? ` · ${line.product.packageSize}` : ""}
-                    </p>
-                  )}
-                  {line.needsReview && (
-                    <p className="mt-0.5 text-xs font-medium text-tag-amber-ink">Nog te bevestigen</p>
-                  )}
+          {mealLines.map((line) => {
+            const shortfall = shortfallByLineId.get(line.id);
+            const statusMessage =
+              line.id === focusedShortfallLineId && params.status ? STATUS_MESSAGES[params.status] : undefined;
+            return (
+              <div
+                key={line.id}
+                id={`meal-line-${line.id}`}
+                className={`scroll-mt-6 p-4 transition-colors ${
+                  line.id === focusedShortfallLineId ? "bg-accent-soft" : ""
+                }`}
+              >
+                <div className="flex min-w-0 items-center justify-between gap-4">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <ProductThumb line={line} />
+                    <div className="min-w-0">
+                      <p className="truncate text-ink">{line.product?.name ?? line.ingredient.name}</p>
+                      {line.product?.brand && (
+                        <p className="truncate text-xs text-ink-faint">
+                          {line.product.brand}
+                          {line.product.packageSize ? ` · ${line.product.packageSize}` : ""}
+                        </p>
+                      )}
+                      {line.needsReview && (
+                        <p className="mt-0.5 text-xs font-medium text-tag-amber-ink">Nog te bevestigen</p>
+                      )}
+                    </div>
+                  </div>
+                  <span className="shrink-0 text-sm text-ink-muted">
+                    {formatOrderQuantity(line)}
+                  </span>
                 </div>
+                {statusMessage && (
+                  <p className="mt-2 rounded-md border border-tag-green-ink/20 bg-tag-green-bg px-2.5 py-1.5 text-xs font-medium text-tag-green-ink">
+                    {statusMessage}
+                  </p>
+                )}
+                {shortfall && (
+                  <div className="mt-3 rounded-lg border border-tag-amber-ink/25 bg-tag-amber-bg p-3">
+                    <p className="text-xs font-medium text-tag-amber-ink">
+                      Dit is {formatQuantity(shortfall.shortBy, shortfall.unit)} minder dan nodig voor de geplande
+                      maaltijden deze week.
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <form action={fillShoppingListShortfall}>
+                        <input type="hidden" name="lineId" value={line.id} />
+                        <PendingSubmitButton
+                          pendingText="Aanvullen..."
+                          className={`rounded-md bg-tag-amber-ink px-3 py-1.5 text-xs font-semibold text-white ${ACTION_BUTTON_FOCUS}`}
+                        >
+                          Aanvullen
+                        </PendingSubmitButton>
+                      </form>
+                      <form action={acknowledgeShoppingListShortfall}>
+                        <input type="hidden" name="lineId" value={line.id} />
+                        <PendingSubmitButton
+                          pendingText="..."
+                          className={`rounded-md border border-tag-amber-ink/40 bg-transparent px-3 py-1.5 text-xs font-medium text-tag-amber-ink ${ACTION_BUTTON_FOCUS}`}
+                        >
+                          Toch doorgaan
+                        </PendingSubmitButton>
+                      </form>
+                    </div>
+                  </div>
+                )}
               </div>
-              <span className="shrink-0 text-sm text-ink-muted">
-                {formatOrderQuantity(line)}
-              </span>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <details id="daily-review" className="mb-8 mt-4 min-w-0 scroll-mt-6" open={focusedLineId ? true : undefined}>
