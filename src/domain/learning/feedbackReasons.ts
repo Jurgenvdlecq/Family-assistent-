@@ -24,6 +24,13 @@ export const MEAL_REPLACEMENT_REASONS: { value: FeedbackReasonValue; label: stri
   { value: "NO_APPETITE_NOW", label: "Nu geen trek in" },
 ];
 
+export const MEAL_ACCEPTANCE_REASONS: { value: FeedbackReasonValue; label: string }[] = [
+  { value: "ALWAYS_USE", label: "Vaker zo plannen" },
+  { value: "WRONG_DAY", label: "Andere dag beter" },
+  { value: "ONLY_THIS_TIME", label: "Alleen deze keer" },
+  { value: "COINCIDENCE", label: "Toeval" },
+];
+
 export function parseFeedbackReason(value: FormDataEntryValue | null | undefined): FeedbackReasonValue | undefined {
   const raw = String(value ?? "");
   return FEEDBACK_REASONS.includes(raw as FeedbackReasonValue) ? (raw as FeedbackReasonValue) : undefined;
@@ -38,5 +45,9 @@ export function replacementPenaltyForReason(reason: FeedbackReasonValue | null |
 }
 
 export function labelFeedbackReason(reason: FeedbackReasonValue | null | undefined): string {
-  return MEAL_REPLACEMENT_REASONS.find((option) => option.value === reason)?.label ?? "Geen reden opgegeven";
+  return (
+    MEAL_REPLACEMENT_REASONS.find((option) => option.value === reason)?.label ??
+    MEAL_ACCEPTANCE_REASONS.find((option) => option.value === reason)?.label ??
+    "Geen reden opgegeven"
+  );
 }
