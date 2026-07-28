@@ -58,7 +58,10 @@ export const dynamic = "force-dynamic";
 function formatQuantity(quantity: number, unit: string) {
   if (unit === "GRAM") return `${quantity} g`;
   if (unit === "ML") return `${quantity} ml`;
-  return `${quantity}x`;
+  // Stuks zijn nooit half te bestellen of te tonen als bestelaantal — ook
+  // niet wanneer de verpakking onbekend is en dit de ruwe (mogelijk door
+  // portieschaling gebroken) receptbehoefte is. Altijd naar boven afronden.
+  return `${Math.ceil(quantity)}x`;
 }
 
 function formatOrderQuantity(line: {
@@ -685,7 +688,7 @@ export default async function BoodschappenPage({
                           {line && alternatives.length > 0 && (
                             <details className="mt-3 rounded-lg border border-line bg-surface p-2">
                               <summary className="cursor-pointer text-xs font-medium text-ink">
-                                {alternatives.length} alternatief{alternatives.length === 1 ? "" : "ven"}
+                                {alternatives.length} {alternatives.length === 1 ? "alternatief" : "alternatieven"}
                               </summary>
                               <div className="mt-2 grid gap-2">
                                 {alternatives.map((candidate) => (
