@@ -11,6 +11,7 @@ import {
   type PersonalRecipeVariantPreference,
   type PersonalSubjectPreference,
 } from "@/domain/meal-planning/scoreMealPlanCandidate";
+import { entriesForSilentAcceptance } from "@/domain/meal-planning/silentAcceptance";
 import type { ConfidenceLevel } from "@/generated/prisma/enums";
 
 type WeeklyRhythm = Partial<Record<DayKey, "busy" | "quiet">>;
@@ -351,3 +352,59 @@ export async function ensureMealPlan(
   return getMealPlanForWeek(householdId, weekStart);
 }
 
+/**
+ * WP53: als de gebruiker de boodschappenlijst bevestigt zonder een
+ * voorgesteld weekmenu-item te wijzigen, telt dat als zachte acceptatie.
+ * Dit is bewust idempotent: alleen nog-PROPOSED AUTO/REGENERATED-regels
+ * krijgen feedback en worden daarna ACCEPTED.
+ */
+export async function acceptProposedMealPlanEntries(householdId: string, mealPlanId: string) {
+  const mealPlan = await prisma.mealPlan.findFirstOrThrow({
+    where: { id: mealPlanId, householdId },
+    include: { entries: true },
+  });
+  const acceptedEntries = entriesForSilentAcceptance(mealPlan.entries);
+  if (acceptedEntries.length === 0) {
+    await prisma.mealPlan.update({
+      where: { id: mealPlan.id },
+      data: { status: "GROCERIES_READY" },
+    });
+    return { acceptedCount: 0 };
+  }
+
+  await prisma.$transaction([
+    prisma.mealPlan.update({
+      where: { id: mealPlan.id },
+      data: { status: "GROCERIES_READY" },
+    }),
+    ...acceptedEntries.map((entry) =>
+      prisma.mealPlanEntry.update({
+        where: { id: entry.id },
+        data: { status: "ACCEPTED" },
+      })
+    ),
+    ...acceptedEntries.map((entry) =>
+      prisma.feedbackEvent.create({
+        data: {
+          householdId,
+          subjectType: "RECIPE_VARIANT",
+          subjectId: entry.recipeVariantId,
+          eventType: "CHOSEN",
+          explicit: false,
+          context: {
+            dayOfWeek: entry.dayOfWeek,
+            source: "silent_week_acceptance",
+            mealPlanId: mealPlan.id,
+          },
+        },
+      })
+    ),
+  ]);
+
+  for (const recipeVariantId of new Set(acceptedEntries.map((entry) => entry.recipeVariantId))) {
+    await recalculateVariantConfidence(householdId, recipeVariantId);
+    await maybePromoteRecipeStatus(recipeVariantId, householdId);
+  }
+
+  return { acceptedCount: acceptedEntries.length };
+}
