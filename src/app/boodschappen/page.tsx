@@ -456,6 +456,15 @@ export default async function BoodschappenPage({
     ]);
   const activeIngredientIds = new Set(activeFixedLines.map((l) => l.ingredientId));
   const inactiveFixedItems = fixedGroceries.filter((f) => !activeIngredientIds.has(f.ingredientId));
+  const inactiveFixedProductPreferences = inactiveFixedItems.length
+    ? await prisma.householdProductPreference.findMany({
+        where: { householdId: household.id, ingredientId: { in: inactiveFixedItems.map((f) => f.ingredientId) } },
+        include: { product: true },
+      })
+    : [];
+  const inactiveFixedProductByIngredientId = new Map(
+    inactiveFixedProductPreferences.map((pref) => [pref.ingredientId, pref.product])
+  );
   const mealLineByIngredientId = new Map(mealLines.map((line) => [line.ingredientId, line]));
   const mealTotalCost = mealLines.reduce((total, line) => total + estimatedLineCost(line), 0);
   const mealReviewIds = new Set(mealLines.filter((line) => line.needsReview).map((line) => line.ingredientId));
@@ -820,45 +829,46 @@ export default async function BoodschappenPage({
                 id={`fixed-line-${line.id}`}
                 className="flex min-w-0 scroll-mt-6 flex-col gap-2 p-4 transition-colors target:bg-accent/10"
               >
-              <div className="flex min-w-0 items-center justify-between gap-4">
-                <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-3">
+                <ProductThumb line={line} />
+                <div className="min-w-0 flex-1">
                   <p className="min-w-0 truncate text-ink">{line.product?.name ?? line.ingredient.name}</p>
                   {line.product?.packageSize && (
                     <p className="mt-0.5 text-xs text-ink-faint">{line.product.packageSize}</p>
                   )}
                 </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <form action="/boodschappen#add-fixed-grocery">
-                    <input type="hidden" name="fixedQ" value={line.ingredient.name} />
-                    <input type="hidden" name="fixedReplaceLineId" value={line.id} />
-                    <button
-                      type="submit"
-                      className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink transition-colors hover:border-accent/60 hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:scale-[0.98]"
-                    >
-                      Wijzigen
-                    </button>
-                  </form>
-                  <form action={removeFixedLineThisWeek}>
-                    <input type="hidden" name="lineId" value={line.id} />
-                    <button
-                      type="submit"
-                      className="shrink-0 text-xs font-medium text-ink-faint transition-colors hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:scale-[0.98]"
-                    >
-                      Deze week niet nodig
-                    </button>
-                  </form>
-                  <form action={removeFixedGroceryPermanently}>
-                    <input type="hidden" name="householdId" value={household.id} />
-                    <input type="hidden" name="ingredientId" value={line.ingredientId} />
-                    <input type="hidden" name="lineId" value={line.id} />
-                    <button
-                      type="submit"
-                      className="shrink-0 text-xs font-medium text-ink-faint transition-colors hover:text-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:scale-[0.98]"
-                    >
-                      Verwijder voorgoed
-                    </button>
-                  </form>
-                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <form action="/boodschappen#add-fixed-grocery">
+                  <input type="hidden" name="fixedQ" value={line.ingredient.name} />
+                  <input type="hidden" name="fixedReplaceLineId" value={line.id} />
+                  <button
+                    type="submit"
+                    className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink transition-colors hover:border-accent/60 hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:scale-[0.98]"
+                  >
+                    Wijzigen
+                  </button>
+                </form>
+                <form action={removeFixedLineThisWeek}>
+                  <input type="hidden" name="lineId" value={line.id} />
+                  <button
+                    type="submit"
+                    className="shrink-0 text-xs font-medium text-ink-faint transition-colors hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:scale-[0.98]"
+                  >
+                    Deze week niet nodig
+                  </button>
+                </form>
+                <form action={removeFixedGroceryPermanently}>
+                  <input type="hidden" name="householdId" value={household.id} />
+                  <input type="hidden" name="ingredientId" value={line.ingredientId} />
+                  <input type="hidden" name="lineId" value={line.id} />
+                  <button
+                    type="submit"
+                    className="shrink-0 text-xs font-medium text-ink-faint transition-colors hover:text-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:scale-[0.98]"
+                  >
+                    Verwijder voorgoed
+                  </button>
+                </form>
               </div>
               <form action={updateFixedLineQuantity} className="flex flex-wrap items-center gap-2">
                 <input type="hidden" name="lineId" value={line.id} />
@@ -887,9 +897,12 @@ export default async function BoodschappenPage({
             );
           })}
           {inactiveFixedItems.map((item) => (
-            <div key={item.id} className="flex min-w-0 items-center justify-between gap-3 p-4">
-              <p className="min-w-0 truncate text-ink-faint line-through">{item.ingredient.name}</p>
-              <div className="flex shrink-0 items-center gap-3">
+            <div key={item.id} className="flex min-w-0 flex-col gap-2 p-4">
+              <div className="flex min-w-0 items-center gap-3 opacity-60">
+                <ProductImage product={inactiveFixedProductByIngredientId.get(item.ingredientId)} label={item.ingredient.name} />
+                <p className="min-w-0 flex-1 truncate text-ink-faint line-through">{item.ingredient.name}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
                 <form action={restoreFixedLineThisWeek}>
                   <input type="hidden" name="shoppingListId" value={shoppingList.id} />
                   <input type="hidden" name="ingredientId" value={item.ingredientId} />
