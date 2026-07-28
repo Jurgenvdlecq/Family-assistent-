@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { assertCurrentHousehold } from "@/lib/auth";
 import { setInventoryStatus } from "@/lib/inventory";
 import { syncShoppingListForInventoryChange } from "@/lib/shoppingList";
@@ -24,4 +25,5 @@ export async function updateInventoryStatus(formData: FormData) {
   // pas volgende week.
   await syncShoppingListForInventoryChange(householdId, ingredientId);
   revalidatePath("/boodschappen");
+  redirect(`/boodschappen?inventory=${encodeURIComponent(ingredientId)}&status=inventory-updated#inventory-${encodeURIComponent(ingredientId)}`);
 }

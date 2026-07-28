@@ -81,6 +81,21 @@ function parseBulkChoice(raw: FormDataEntryValue): FixedPicnicProductInput {
   };
 }
 
+function redirectToFixedGroceries(status: string): never {
+  revalidatePath("/boodschappen");
+  redirect(`/boodschappen?status=${encodeURIComponent(status)}#fixed-groceries`);
+}
+
+function redirectToFixedLine(lineId: string, status: string): never {
+  revalidatePath("/boodschappen");
+  revalidatePath("/controle");
+  redirect(
+    `/boodschappen?fixedLine=${encodeURIComponent(lineId)}&status=${encodeURIComponent(
+      status
+    )}#fixed-line-${encodeURIComponent(lineId)}`
+  );
+}
+
 async function saveFixedPicnicProduct(input: FixedPicnicProductInput) {
   if (!input.productName || !input.externalRef) {
     throw new Error("Kies een geldig Picnic-product.");
@@ -166,7 +181,7 @@ export async function removeFixedLineThisWeek(formData: FormData) {
   const lineId = String(formData.get("lineId"));
   const { line } = await loadFixedLine(lineId);
   await prisma.shoppingListLine.delete({ where: { id: line.id } });
-  revalidatePath("/boodschappen");
+  redirectToFixedGroceries("fixed-disabled");
 }
 
 /** Zet een eerder deze-week-uitgeschakelde vaste boodschap weer aan. */
@@ -185,7 +200,7 @@ export async function restoreFixedLineThisWeek(formData: FormData) {
 
   const match = await matchProductForIngredient(shoppingList.mealPlan.householdId, ingredientId);
 
-  await prisma.shoppingListLine.create({
+  const line = await prisma.shoppingListLine.create({
     data: {
       shoppingListId,
       ingredientId,
@@ -194,8 +209,9 @@ export async function restoreFixedLineThisWeek(formData: FormData) {
       source: "FIXED",
       ...matchToLineFields(match),
     },
+    select: { id: true },
   });
-  revalidatePath("/boodschappen");
+  redirectToFixedLine(line.id, "fixed-restored");
 }
 
 /**
@@ -217,7 +233,7 @@ export async function updateFixedLineQuantity(formData: FormData) {
   if (rememberAsDefault) {
     await upsertFixedGrocery(householdId, line.ingredientId, quantity, targetUnit);
   }
-  revalidatePath("/boodschappen");
+  redirectToFixedLine(line.id, rememberAsDefault ? "fixed-quantity-remembered" : "fixed-quantity");
 }
 
 /** Voegt een nieuwe vaste boodschap toe aan de standaardlijst, en meteen aan de huidige lijst als die al bestaat. */
@@ -233,7 +249,7 @@ export async function addFixedGrocery(formData: FormData) {
 
   if (shoppingListId) {
     const match = await matchProductForIngredient(householdId, ingredientId);
-    await prisma.shoppingListLine.create({
+    const line = await prisma.shoppingListLine.create({
       data: {
         shoppingListId: String(shoppingListId),
         ingredientId,
@@ -242,9 +258,11 @@ export async function addFixedGrocery(formData: FormData) {
         source: "FIXED",
         ...matchToLineFields(match),
       },
+      select: { id: true },
     });
+    redirectToFixedLine(line.id, "fixed-added");
   }
-  revalidatePath("/boodschappen");
+  redirectToFixedGroceries("fixed-added");
 }
 
 export async function addFixedPicnicProduct(formData: FormData) {
@@ -324,13 +342,7 @@ export async function addFixedPicnicProduct(formData: FormData) {
       await prisma.shoppingListLine.delete({ where: { id: lineId } });
     }
 
-    revalidatePath("/boodschappen");
-    revalidatePath("/controle");
-    redirect(
-      `/boodschappen?fixedLine=${encodeURIComponent(replacement.line.id)}#fixed-line-${encodeURIComponent(
-        replacement.line.id
-      )}`
-    );
+    redirectToFixedLine(replacement.line.id, "fixed-replaced");
   }
 
   if (shoppingListId) {
@@ -341,16 +353,14 @@ export async function addFixedPicnicProduct(formData: FormData) {
     if (bulkFixed) {
       const remainingBulkFixed = bulkFixedRaw ? removeBulkFixedGroceryLine(bulkFixed, bulkFixedRaw) : bulkFixed;
       if (remainingBulkFixed) {
-        const params = new URLSearchParams({ bulkFixed: remainingBulkFixed, fixedLine: lineId });
+        const params = new URLSearchParams({ bulkFixed: remainingBulkFixed, fixedLine: lineId, status: "fixed-added" });
         redirect(`/boodschappen?${params.toString()}#bulk-fixed-groceries`);
       }
     }
-    redirect(`/boodschappen?fixedLine=${encodeURIComponent(lineId)}#fixed-line-${encodeURIComponent(lineId)}`);
+    redirectToFixedLine(lineId, "fixed-added");
   }
 
-  revalidatePath("/boodschappen");
-  revalidatePath("/controle");
-  redirect("/boodschappen#add-fixed-grocery");
+  redirectToFixedGroceries("fixed-added");
 }
 
 export async function addBulkFixedPicnicProducts(formData: FormData) {
@@ -371,8 +381,8 @@ export async function addBulkFixedPicnicProducts(formData: FormData) {
 
   revalidatePath("/boodschappen");
   revalidatePath("/controle");
-  if (firstLineId) redirect(`/boodschappen?fixedLine=${encodeURIComponent(firstLineId)}#fixed-line-${encodeURIComponent(firstLineId)}`);
-  redirect("/boodschappen#fixed-groceries");
+  if (firstLineId) redirectToFixedLine(firstLineId, "fixed-bulk-added");
+  redirectToFixedGroceries("fixed-bulk-added");
 }
 
 /** Verwijdert een vaste boodschap definitief uit de standaardlijst (niet alleen deze week). */
@@ -386,5 +396,5 @@ export async function removeFixedGroceryPermanently(formData: FormData) {
   if (lineId) {
     await prisma.shoppingListLine.deleteMany({ where: { id: String(lineId), source: "FIXED" } });
   }
-  revalidatePath("/boodschappen");
+  redirectToFixedGroceries("fixed-removed");
 }
