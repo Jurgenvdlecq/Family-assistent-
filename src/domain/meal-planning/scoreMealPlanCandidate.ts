@@ -33,12 +33,17 @@ export interface PersonalSubjectPreference extends RecipeVariantPreference {
   subjectLabel: string;
 }
 
+export interface ConfirmedCategoryDayPattern {
+  confidence: number;
+}
+
 export interface MealPlanScoringInput {
   candidates: MealPlanCandidate[];
   dayKey: DayKey;
   busy: boolean;
   preferredCategories: Set<string>;
   variantPreferences: Map<string, RecipeVariantPreference>;
+  confirmedCategoryDayPatterns?: Map<string, ConfirmedCategoryDayPattern>;
   personalVariantPreferences?: Map<string, PersonalRecipeVariantPreference[]>;
   personalCategoryPreferences?: Map<string, PersonalSubjectPreference[]>;
   personalIngredientPreferences?: Map<string, PersonalSubjectPreference[]>;
@@ -142,6 +147,7 @@ function scoreCandidate(input: MealPlanScoringInput, candidate: MealPlanCandidat
   const busyFit = candidateTags.has("FAST") || candidateTags.has("LOW_EFFORT") || BUSY_VARIANT_TYPES.has(candidate.variantType);
   const preferred = input.preferredCategories.has(candidate.recipeCategory);
   const variantPreference = input.variantPreferences.get(candidate.id);
+  const confirmedCategoryDayPattern = input.confirmedCategoryDayPatterns?.get(candidate.recipeCategory);
   const personalPreferences = input.personalVariantPreferences?.get(candidate.id) ?? [];
   const lastPlannedAt = input.lastPlannedByRecipeId.get(candidate.recipeId);
   const planningStyle = input.planningStyle ?? "BALANCED";
@@ -169,6 +175,11 @@ function scoreCandidate(input: MealPlanScoringInput, candidate: MealPlanCandidat
       signal.hasDoubt = true;
       reasons.push(`valt niet in jullie favoriete categorieën`);
     }
+  }
+
+  if (confirmedCategoryDayPattern) {
+    signal.score += 18 * Math.max(0.5, confirmedCategoryDayPattern.confidence);
+    reasons.push(`past bij wat jullie vaker op ${dayLabel} willen eten`);
   }
 
   if (variantPreference?.stance === "LIKED") {

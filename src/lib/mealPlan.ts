@@ -8,16 +8,27 @@ import { accessibleRecipeWhere } from "./recipeScope";
 import {
   chooseMealPlanCandidate,
   formatMealPlanReason,
+  type ConfirmedCategoryDayPattern,
   type PersonalRecipeVariantPreference,
   type PersonalSubjectPreference,
 } from "@/domain/meal-planning/scoreMealPlanCandidate";
 import { entriesForSilentAcceptance } from "@/domain/meal-planning/silentAcceptance";
+import { recordRepeatedMealAcceptance } from "@/domain/learning/patterns";
 import type { ConfidenceLevel } from "@/generated/prisma/enums";
 
 type WeeklyRhythm = Partial<Record<DayKey, "busy" | "quiet">>;
 
 const BUSY_VARIANT_TYPES = new Set(["FAST", "REHEATABLE"]);
 const RECENT_PLANNING_WINDOW_DAYS = 56;
+
+function contextHasConfirmedAlwaysUse(value: unknown) {
+  const context = value as { confirmedReason?: unknown } | null;
+  return (
+    context !== null &&
+    typeof context === "object" &&
+    context.confirmedReason === "ALWAYS_USE"
+  );
+}
 
 const MEAL_PLAN_INCLUDE = {
   entries: {
@@ -67,6 +78,7 @@ export async function ensureMealPlan(
     hardRestrictionsByDayEntries,
     participantsByDay,
     dayRoutines,
+    confirmedAcceptancePatterns,
   ] = await Promise.all([
     prisma.household.findUniqueOrThrow({ where: { id: householdId } }),
     prisma.preference.findMany({
@@ -102,6 +114,16 @@ export async function ensureMealPlan(
     Promise.all(DAY_KEYS.map(async (dayKey) => [dayKey, await getHouseholdHardRestrictions(householdId, dayKey)] as const)),
     getHouseholdMealParticipantsByDay(householdId),
     prisma.dayRoutine.findMany({ where: { householdId } }),
+    prisma.learnedPattern.findMany({
+      where: {
+        householdId,
+        patternType: "MEAL_CATEGORY_ACCEPTED_ON_DAY",
+        subjectType: "RECIPE_CATEGORY",
+        status: "CONFIRMED",
+        contextKey: { in: DAY_KEYS.map((dayKey) => `day:${DAY_ENUM[dayKey]}`) },
+      },
+      select: { subjectId: true, contextKey: true, context: true, confidence: true },
+    }),
   ]);
   const dayRoutineByDay = new Map(
     dayRoutines.map((routine) => [DAY_KEY_BY_ENUM[routine.dayOfWeek], routine.recipeVariantId])
@@ -212,6 +234,15 @@ export async function ensureMealPlan(
     }
   }
   const rhythm = (household.weeklyRhythm ?? {}) as unknown as WeeklyRhythm;
+  const confirmedCategoryPatternsByDay = new Map<DayKey, Map<string, ConfirmedCategoryDayPattern>>();
+  for (const pattern of confirmedAcceptancePatterns) {
+    if (!pattern.subjectId || !contextHasConfirmedAlwaysUse(pattern.context)) continue;
+    const dayKey = DAY_KEYS.find((key) => pattern.contextKey === `day:${DAY_ENUM[key]}`);
+    if (!dayKey) continue;
+    const dayPatterns = confirmedCategoryPatternsByDay.get(dayKey) ?? new Map<string, ConfirmedCategoryDayPattern>();
+    dayPatterns.set(pattern.subjectId, { confidence: pattern.confidence });
+    confirmedCategoryPatternsByDay.set(dayKey, dayPatterns);
+  }
 
   const usedRecipeIds = new Set<string>();
   type VariantWithRecipe = (typeof allVariants)[number];
@@ -284,6 +315,7 @@ export async function ensureMealPlan(
       busy,
       preferredCategories,
       variantPreferences: variantPreferenceById,
+      confirmedCategoryDayPatterns: confirmedCategoryPatternsByDay.get(dayKey),
       personalVariantPreferences: personalPreferencesForPresentPersons.byVariant,
       personalCategoryPreferences: personalPreferencesForPresentPersons.byCategory,
       personalIngredientPreferences: personalPreferencesForPresentPersons.byIngredient,
@@ -361,7 +393,7 @@ export async function ensureMealPlan(
 export async function acceptProposedMealPlanEntries(householdId: string, mealPlanId: string) {
   const mealPlan = await prisma.mealPlan.findFirstOrThrow({
     where: { id: mealPlanId, householdId },
-    include: { entries: true },
+    include: { entries: { include: { recipeVariant: { include: { recipe: { select: { category: true, title: true } } } } } } },
   });
   const acceptedEntries = entriesForSilentAcceptance(mealPlan.entries);
   if (acceptedEntries.length === 0) {
@@ -404,6 +436,15 @@ export async function acceptProposedMealPlanEntries(householdId: string, mealPla
   for (const recipeVariantId of new Set(acceptedEntries.map((entry) => entry.recipeVariantId))) {
     await recalculateVariantConfidence(householdId, recipeVariantId);
     await maybePromoteRecipeStatus(recipeVariantId, householdId);
+  }
+  for (const entry of acceptedEntries) {
+    await recordRepeatedMealAcceptance({
+      householdId,
+      dayOfWeek: entry.dayOfWeek,
+      acceptedRecipeVariantId: entry.recipeVariantId,
+      acceptedRecipeCategory: entry.recipeVariant.recipe.category,
+      acceptedRecipeTitle: entry.recipeVariant.recipe.title,
+    });
   }
 
   return { acceptedCount: acceptedEntries.length };

@@ -685,12 +685,14 @@ model LearningPrompt {
 enum LearnedPatternType {
   MEAL_CATEGORY_REPLACED_ON_DAY
   MEAL_VARIANT_REPLACED_ON_DAY
+  MEAL_CATEGORY_ACCEPTED_ON_DAY
 
   @@map("learned_pattern_type")
 }
 
 enum LearningPromptType {
   EXPLAIN_REPEATED_REPLACEMENT
+  CONFIRM_REPEATED_ACCEPTANCE
 
   @@map("learning_prompt_type")
 }

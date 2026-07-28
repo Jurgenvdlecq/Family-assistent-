@@ -1,6 +1,6 @@
 import type { DayOfWeek, FeedbackReason, FeedbackSubjectType } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
-import { labelFeedbackReason } from "./feedbackReasons";
+import { labelFeedbackReason, MEAL_ACCEPTANCE_REASONS, MEAL_REPLACEMENT_REASONS } from "./feedbackReasons";
 
 const PROMPT_THRESHOLD = 3;
 
@@ -96,6 +96,83 @@ export async function recordRepeatedMealReplacement(input: {
   });
 }
 
+export async function recordRepeatedMealAcceptance(input: {
+  householdId: string;
+  dayOfWeek: DayOfWeek;
+  acceptedRecipeVariantId: string;
+  acceptedRecipeCategory: string;
+  acceptedRecipeTitle: string;
+}) {
+  const contextKey = `day:${input.dayOfWeek}`;
+  const existing = await prisma.learnedPattern.findFirst({
+    where: {
+      householdId: input.householdId,
+      patternType: "MEAL_CATEGORY_ACCEPTED_ON_DAY",
+      subjectType: "RECIPE_CATEGORY",
+      subjectId: input.acceptedRecipeCategory,
+      contextKey,
+    },
+    select: { id: true, evidenceCount: true, status: true },
+  });
+  const evidenceCount = (existing?.evidenceCount ?? 0) + 1;
+  const context: PatternContext = {
+    dayOfWeek: input.dayOfWeek,
+    label: input.acceptedRecipeCategory.toLowerCase().replaceAll("_", " "),
+  };
+
+  const pattern = existing
+    ? await prisma.learnedPattern.update({
+        where: { id: existing.id },
+        data: {
+          context,
+          confidence: patternConfidence(evidenceCount),
+          evidenceCount,
+          lastObservedAt: new Date(),
+        },
+      })
+    : await prisma.learnedPattern.create({
+        data: {
+          householdId: input.householdId,
+          patternType: "MEAL_CATEGORY_ACCEPTED_ON_DAY",
+          subjectType: "RECIPE_CATEGORY" as FeedbackSubjectType,
+          subjectId: input.acceptedRecipeCategory,
+          contextKey,
+          context,
+          confidence: patternConfidence(evidenceCount),
+          evidenceCount,
+        },
+      });
+
+  if (pattern.status !== "CANDIDATE" || evidenceCount < PROMPT_THRESHOLD) return;
+
+  const pendingPrompt = await prisma.learningPrompt.findFirst({
+    where: {
+      householdId: input.householdId,
+      learnedPatternId: pattern.id,
+      promptType: "CONFIRM_REPEATED_ACCEPTANCE",
+      status: "PENDING",
+    },
+    select: { id: true },
+  });
+  if (pendingPrompt) return;
+
+  await prisma.learningPrompt.create({
+    data: {
+      householdId: input.householdId,
+      learnedPatternId: pattern.id,
+      promptType: "CONFIRM_REPEATED_ACCEPTANCE",
+      trigger: "three_silent_acceptances",
+      payload: {
+        dayOfWeek: input.dayOfWeek,
+        acceptedRecipeCategory: input.acceptedRecipeCategory,
+        acceptedRecipeTitle: input.acceptedRecipeTitle,
+        acceptedRecipeVariantId: input.acceptedRecipeVariantId,
+        evidenceCount,
+      },
+    },
+  });
+}
+
 export async function getPendingLearningPrompts(householdId: string, limit = 2) {
   const prompts = await prisma.learningPrompt.findMany({
     where: { householdId, status: "PENDING" },
@@ -106,13 +183,16 @@ export async function getPendingLearningPrompts(householdId: string, limit = 2) 
 
   return prompts.map((prompt) => {
     const context = readPatternContext(prompt.learnedPattern?.context);
+    const isAcceptancePrompt = prompt.promptType === "CONFIRM_REPEATED_ACCEPTANCE";
     return {
       id: prompt.id,
-      title: "Ik zie een patroon",
-      question:
-        prompt.promptType === "EXPLAIN_REPEATED_REPLACEMENT"
+      title: isAcceptancePrompt ? "Zal ik dit vaker doen?" : "Ik zie een patroon",
+      question: isAcceptancePrompt
+        ? `Ik merk dat ${context.label ?? "dit type gerecht"} op ${String(context.dayOfWeek ?? "deze dag").toLowerCase()} vaak blijft staan. Is dat een goede match voor die dag?`
+        : prompt.promptType === "EXPLAIN_REPEATED_REPLACEMENT"
           ? `Ik merk dat ${context.label ?? "dit type gerecht"} op ${String(context.dayOfWeek ?? "deze dag").toLowerCase()} vaak wordt vervangen. Wat klopt er niet?`
           : "Wat moet ik hiervan leren?",
+      answerOptions: isAcceptancePrompt ? MEAL_ACCEPTANCE_REASONS : MEAL_REPLACEMENT_REASONS.slice(1, 5),
     };
   });
 }

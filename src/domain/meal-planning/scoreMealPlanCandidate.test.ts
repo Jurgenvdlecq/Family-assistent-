@@ -234,6 +234,48 @@ test("persoonlijke ingrediëntafkeur duwt gerechten met dat ingrediënt omlaag",
   assert.equal(result.candidate.id, "tomato");
 });
 
+test("bevestigd acceptatiepatroon geeft een zachte categoriebonus op die dag", () => {
+  const pasta = candidate({ id: "pasta", recipeTitle: "Dinsdagpasta", recipeCategory: "PASTA" });
+  const rice = candidate({ id: "rice", recipeTitle: "Rijstschotel", recipeCategory: "RICE_DISH" });
+
+  const result = chooseMealPlanCandidate({
+    candidates: [rice, pasta],
+    dayKey: "tuesday",
+    busy: false,
+    preferredCategories: new Set(),
+    variantPreferences: new Map(),
+    confirmedCategoryDayPatterns: new Map([["PASTA", { confidence: 0.8 }]]),
+    lastPlannedByRecipeId: new Map(),
+    usedRecipeIds: new Set(),
+    targetDate: TARGET_DATE,
+  });
+
+  assert.equal(result.candidate.id, "pasta");
+  assert.ok(result.reasons.some((reason) => reason.includes("vaker op dinsdag")));
+});
+
+test("bevestigd acceptatiepatroon blijft zacht en wint niet van persoonlijke nooit-voorkeur", () => {
+  const pasta = candidate({ id: "pasta", recipeTitle: "Dinsdagpasta", recipeCategory: "PASTA" });
+  const rice = candidate({ id: "rice", recipeTitle: "Rijstschotel", recipeCategory: "RICE_DISH" });
+
+  const result = chooseMealPlanCandidate({
+    candidates: [pasta, rice],
+    dayKey: "tuesday",
+    busy: false,
+    preferredCategories: new Set(),
+    variantPreferences: new Map(),
+    confirmedCategoryDayPatterns: new Map([["PASTA", { confidence: 0.9 }]]),
+    personalCategoryPreferences: new Map([
+      ["PASTA", [{ personName: "Kai", subjectLabel: "pasta", stance: "NEVER", confidence: 1 }]],
+    ]),
+    lastPlannedByRecipeId: new Map(),
+    usedRecipeIds: new Set(),
+    targetDate: TARGET_DATE,
+  });
+
+  assert.equal(result.candidate.id, "rice");
+});
+
 test("formatteert gebruikersuitleg zonder generieke willekeurtekst", () => {
   const result = chooseMealPlanCandidate({
     candidates: [

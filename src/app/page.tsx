@@ -32,7 +32,6 @@ import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
 import RecipePhoto from "@/components/RecipePhoto";
 import { getPendingLearningPrompts } from "@/domain/learning/patterns";
-import { MEAL_REPLACEMENT_REASONS } from "@/domain/learning/feedbackReasons";
 import {
   answerSmartLearningPrompt,
   dismissSmartLearningPrompt,
@@ -367,7 +366,7 @@ export default async function Home({
                 <p className="mb-3 text-sm text-ink-muted">{prompt.question}</p>
                 <div className="grid gap-2">
                   <div className="grid grid-cols-2 gap-2">
-                    {MEAL_REPLACEMENT_REASONS.slice(1, 5).map((reason) => (
+                    {prompt.answerOptions.map((reason) => (
                       <form
                         key={reason.value}
                         action={answerSmartLearningPrompt}
