@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { assertCurrentHousehold } from "@/lib/auth";
 import { logFeedbackEvent } from "@/lib/feedback";
@@ -30,6 +31,19 @@ const RECIPE_CATEGORIES = [
 ] as const;
 
 type ParsedLooseMealLine = ReturnType<typeof parseRecipeIngredientText>[number];
+
+/**
+ * `revalidatePath` alleen is niet genoeg om de gebruiker te laten zien dat
+ * een actie is gelukt: zonder een echte navigatie blijft de al open
+ * homepage soms de oude staat tonen. Een redirect terug naar `/` dwingt een
+ * verse render af én toont een expliciete groene bevestiging (zie
+ * STATUS_MESSAGES in page.tsx) — dezelfde aanpak als /boodschappen en
+ * /recepten.
+ */
+function redirectToHome(status: string): never {
+  revalidatePath("/");
+  redirect(`/?status=${encodeURIComponent(status)}`);
+}
 
 function parsePersonalStance(value: FormDataEntryValue | null): (typeof PERSONAL_STANCES)[number] {
   const stance = String(value ?? "SOMETIMES");
@@ -240,9 +254,9 @@ export async function setLooseMealForDay(formData: FormData) {
   });
   await invalidateShoppingList(mealPlan.id);
 
-  revalidatePath("/");
   revalidatePath("/boodschappen");
   revalidatePath("/controle");
+  redirectToHome("loose-meal-set");
 }
 
 /**
@@ -274,7 +288,7 @@ export async function submitMealFeedback(formData: FormData) {
   await recalculateVariantConfidence(householdId, recipeVariantId);
   await maybePromoteRecipeStatus(recipeVariantId, householdId);
 
-  revalidatePath("/");
+  redirectToHome("feedback-saved");
 }
 
 export async function setPersonMealPreference(formData: FormData) {
@@ -336,8 +350,8 @@ export async function setPersonMealPreference(formData: FormData) {
     context: { dayOfWeek: DAY_ENUM[dayKey], stance, source: "personal_week_plan" },
   });
 
-  revalidatePath("/");
   revalidatePath("/gerechten");
+  redirectToHome("preference-saved");
 }
 
 export async function regenerateCurrentWeekPlan(formData: FormData) {
@@ -361,10 +375,10 @@ export async function regenerateCurrentWeekPlan(formData: FormData) {
 
   await ensureMealPlan(householdId, weekStart, "REGENERATED");
 
-  revalidatePath("/");
   revalidatePath("/gerechten");
   revalidatePath("/boodschappen");
   revalidatePath("/controle");
+  redirectToHome("week-regenerated");
 }
 
 export async function answerSmartLearningPrompt(formData: FormData) {
@@ -375,7 +389,7 @@ export async function answerSmartLearningPrompt(formData: FormData) {
   if (!answer) throw new Error("Kies een geldige reden.");
 
   await answerLearningPrompt({ householdId, promptId, answer });
-  revalidatePath("/");
+  redirectToHome("learning-answered");
 }
 
 export async function dismissSmartLearningPrompt(formData: FormData) {
@@ -384,7 +398,7 @@ export async function dismissSmartLearningPrompt(formData: FormData) {
   const promptId = String(formData.get("promptId"));
 
   await dismissLearningPrompt(householdId, promptId);
-  revalidatePath("/");
+  redirectToHome("learning-dismissed");
 }
 
 /**
@@ -406,7 +420,7 @@ export async function setDayRoutine(formData: FormData) {
     create: { householdId, dayOfWeek: DAY_ENUM[dayKey], recipeVariantId },
   });
 
-  revalidatePath("/");
+  redirectToHome("routine-set");
 }
 
 /** Vergeet de vaste daggewoonte weer — deze week blijft staan, alleen toekomstige weken kiezen weer vrij. */
@@ -418,5 +432,5 @@ export async function removeDayRoutine(formData: FormData) {
 
   await prisma.dayRoutine.deleteMany({ where: { householdId, dayOfWeek: DAY_ENUM[dayKey] } });
 
-  revalidatePath("/");
+  redirectToHome("routine-removed");
 }

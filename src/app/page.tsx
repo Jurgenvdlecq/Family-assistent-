@@ -50,6 +50,17 @@ import {
 // bestaande data.
 export const dynamic = "force-dynamic";
 
+const STATUS_MESSAGES: Record<string, string> = {
+  "loose-meal-set": "Losse maaltijd ingepland.",
+  "feedback-saved": "Bedankt, feedback opgeslagen.",
+  "preference-saved": "Voorkeur opgeslagen.",
+  "week-regenerated": "Week opnieuw gepland.",
+  "learning-answered": "Bedankt, ik onthoud dit.",
+  "learning-dismissed": "Vraag overgeslagen.",
+  "routine-set": "Onthouden als vaste gewoonte.",
+  "routine-removed": "Vaste gewoonte gestopt.",
+};
+
 const PERSONAL_STANCE_LABELS = {
   LIKED: "Favoriet",
   SOMETIMES: "Oké",
@@ -158,7 +169,13 @@ function PreferenceButtons({
   );
 }
 
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string }>;
+}) {
+  const params = await searchParams;
+  const statusMessage = params.status ? STATUS_MESSAGES[params.status] : undefined;
   const currentHousehold = await requireCurrentHousehold();
   const household = await prisma.household.findUniqueOrThrow({
     where: { id: currentHousehold.id },
@@ -269,6 +286,11 @@ export default async function Home() {
       </header>
 
       <div className="px-6 pt-4">
+        {statusMessage && (
+          <p className="mb-4 rounded-lg border border-tag-green-ink/20 bg-tag-green-bg px-3 py-2 text-sm font-medium text-tag-green-ink">
+            {statusMessage}
+          </p>
+        )}
         <h1 className="mb-1 text-[1.65rem] font-semibold leading-tight text-ink">
           Goedemorgen, {greetingName}
         </h1>
