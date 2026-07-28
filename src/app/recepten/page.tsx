@@ -43,6 +43,21 @@ const INGREDIENT_CATEGORY_LABELS: Record<string, string> = {
 const INGREDIENT_CATEGORY_OPTIONS = Object.entries(INGREDIENT_CATEGORY_LABELS);
 const UNIT_OPTIONS = Object.entries(UNIT_LABELS);
 
+const STATUS_MESSAGES: Record<string, string> = {
+  "recipe-created": "Recept toegevoegd.",
+  "recipe-updated": "Recept opgeslagen.",
+  "ingredients-updated": "Ingrediënten opgeslagen.",
+  "variant-updated": "Variant opgeslagen.",
+  "variant-created": "Variant toegevoegd.",
+  "recipe-copied": "Eigen kopie gemaakt.",
+  "ingredient-created": "Ingrediënt toegevoegd.",
+  "ingredient-updated": "Ingrediënt opgeslagen.",
+  "product-created": "Product toegevoegd.",
+  "product-default": "Standaardproduct opgeslagen.",
+  "product-rejected": "Product uitgesloten.",
+  "product-allowed": "Product weer toegestaan.",
+};
+
 function formatPrice(price: unknown) {
   if (price === null || price === undefined) return null;
   return `€ ${Number(price).toFixed(2)}`;
@@ -114,7 +129,13 @@ function IngredientRows({
   );
 }
 
-export default async function ReceptenPage() {
+export default async function ReceptenPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string }>;
+}) {
+  const params = await searchParams;
+  const statusMessage = params.status ? STATUS_MESSAGES[params.status] : undefined;
   const household = await requireCurrentHousehold();
   const [recipes, ingredients] = await Promise.all([
     prisma.recipe.findMany({
@@ -150,6 +171,11 @@ export default async function ReceptenPage() {
       </header>
 
       <div className="flex min-w-0 flex-col px-6 pt-4">
+        {statusMessage && (
+          <p className="mb-4 rounded-lg border border-tag-green-ink/20 bg-tag-green-bg px-3 py-2 text-sm font-medium text-tag-green-ink">
+            {statusMessage}
+          </p>
+        )}
         <h1 className="mb-1 text-[1.6rem] font-semibold leading-tight text-ink">Recepten</h1>
         <p className="mb-6 text-[15px] text-ink-muted">
           Bekijk wat de assistent kan plannen. Bewerken en technisch beheer staan rustig ingeklapt.

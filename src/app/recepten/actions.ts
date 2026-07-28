@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { assertCurrentHousehold } from "@/lib/auth";
@@ -95,6 +96,19 @@ function revalidateRecipeManagementPaths() {
   revalidatePath("/gerechten");
   revalidatePath("/boodschappen");
   revalidatePath("/controle");
+}
+
+/**
+ * `revalidatePath` alleen is niet genoeg: zonder een echte navigatie bleef
+ * deze pagina bij server-actions die niet redirecten soms de oude data
+ * tonen (bijv. een net gekozen standaardproduct dat pas na een handmatige
+ * herlaadactie zichtbaar werd — terwijl de wijziging allang goed was
+ * opgeslagen). Een redirect terug naar dezelfde pagina dwingt een verse
+ * render af én laat de gebruiker altijd expliciet zien dat het gelukt is.
+ */
+function redirectToRecipes(status: string): never {
+  revalidateRecipeManagementPaths();
+  redirect(`/recepten?status=${encodeURIComponent(status)}`);
 }
 
 async function parseRecipeIngredientRows(formData: FormData) {
@@ -258,7 +272,7 @@ export async function createQuickRecipe(formData: FormData) {
 
   await savePicnicCandidatesForIngredients(householdId, ingredientRows);
   await invalidateCurrentShoppingList(householdId);
-  revalidateRecipeManagementPaths();
+  redirectToRecipes("recipe-created");
 }
 
 export async function createRecipe(formData: FormData) {
@@ -310,7 +324,7 @@ export async function createRecipe(formData: FormData) {
     },
   });
 
-  revalidateRecipeManagementPaths();
+  redirectToRecipes("recipe-created");
 }
 
 export async function updateRecipeDetails(formData: FormData) {
@@ -336,7 +350,7 @@ export async function updateRecipeDetails(formData: FormData) {
     data: { title, source, imageUrl, imageSourceUrl, imageAttribution, category, status, properties, instructions },
   });
 
-  revalidateRecipeManagementPaths();
+  redirectToRecipes("recipe-updated");
 }
 
 export async function updateRecipeIngredients(formData: FormData) {
@@ -354,7 +368,7 @@ export async function updateRecipeIngredients(formData: FormData) {
   ]);
 
   await invalidateCurrentShoppingList(householdId);
-  revalidateRecipeManagementPaths();
+  redirectToRecipes("ingredients-updated");
 }
 
 export async function updateRecipeVariant(formData: FormData) {
@@ -373,7 +387,7 @@ export async function updateRecipeVariant(formData: FormData) {
     data: { contextFit },
   });
 
-  revalidateRecipeManagementPaths();
+  redirectToRecipes("variant-updated");
 }
 
 export async function createRecipeVariant(formData: FormData) {
@@ -396,7 +410,7 @@ export async function createRecipeVariant(formData: FormData) {
     data: { recipeId, variantType, contextFit },
   });
 
-  revalidateRecipeManagementPaths();
+  redirectToRecipes("variant-created");
 }
 
 export async function copyRecipeToHousehold(formData: FormData) {
@@ -446,7 +460,7 @@ export async function copyRecipeToHousehold(formData: FormData) {
   });
 
   await invalidateCurrentShoppingList(householdId);
-  revalidateRecipeManagementPaths();
+  redirectToRecipes("recipe-copied");
 }
 
 export async function createIngredient(formData: FormData) {
@@ -463,7 +477,7 @@ export async function createIngredient(formData: FormData) {
     data: { name, unit, category, restrictionTags, likelyInStock },
   });
 
-  revalidateRecipeManagementPaths();
+  redirectToRecipes("ingredient-created");
 }
 
 export async function updateIngredient(formData: FormData) {
@@ -487,7 +501,7 @@ export async function updateIngredient(formData: FormData) {
   });
 
   await invalidateCurrentShoppingList(householdId);
-  revalidateRecipeManagementPaths();
+  redirectToRecipes("ingredient-updated");
 }
 
 export async function createIngredientProduct(formData: FormData) {
@@ -529,7 +543,7 @@ export async function createIngredientProduct(formData: FormData) {
   }
 
   await invalidateCurrentShoppingList(householdId);
-  revalidateRecipeManagementPaths();
+  redirectToRecipes("product-created");
 }
 
 export async function setDefaultProductForIngredient(formData: FormData) {
@@ -549,7 +563,7 @@ export async function setDefaultProductForIngredient(formData: FormData) {
   await recordProductChosen(householdId, ingredientId, productId, "MANUAL");
 
   await invalidateCurrentShoppingList(householdId);
-  revalidateRecipeManagementPaths();
+  redirectToRecipes("product-default");
 }
 
 export async function rejectProductForIngredient(formData: FormData) {
@@ -569,7 +583,7 @@ export async function rejectProductForIngredient(formData: FormData) {
   await prisma.householdProductPreference.deleteMany({ where: { householdId, ingredientId, productId } });
 
   await invalidateCurrentShoppingList(householdId);
-  revalidateRecipeManagementPaths();
+  redirectToRecipes("product-rejected");
 }
 
 export async function allowProductForIngredient(formData: FormData) {
@@ -588,5 +602,5 @@ export async function allowProductForIngredient(formData: FormData) {
   await prisma.rejectedProductMatch.deleteMany({ where: { householdId, ingredientId, productId } });
 
   await invalidateCurrentShoppingList(householdId);
-  revalidateRecipeManagementPaths();
+  redirectToRecipes("product-allowed");
 }
