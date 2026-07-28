@@ -353,6 +353,59 @@ export async function updateRecipeDetails(formData: FormData) {
   redirectToRecipes("recipe-updated");
 }
 
+/**
+ * Alleen eigen huishoudrecepten kunnen verwijderd worden (nooit een
+ * basisrecept — dat is gedeelde referentiedata). Blokkeert stilzwijgend
+ * niets: een recept dat deze week nog op het menu staat of als vaste
+ * daggewoonte is ingesteld, moet je daar eerst weghalen — anders zou de
+ * huidige weekplanning of een toekomstige gewoonte zonder waarschuwing
+ * verweesd raken.
+ */
+export async function deleteRecipe(formData: FormData) {
+  const householdId = await requireRecipeEditor(formData);
+  const recipeId = String(formData.get("recipeId"));
+
+  await assertEditableRecipe(householdId, recipeId);
+
+  const recipe = await prisma.recipe.findUniqueOrThrow({
+    where: { id: recipeId },
+    include: { variants: { select: { id: true } } },
+  });
+  const variantIds = recipe.variants.map((v) => v.id);
+
+  const { getCurrentWeekStart } = await import("@/lib/week");
+  const weekStart = getCurrentWeekStart();
+  const currentMealPlan = await prisma.mealPlan.findUnique({
+    where: { householdId_weekStart: { householdId, weekStart } },
+    select: { id: true },
+  });
+
+  const [usedInCurrentWeek, usedAsRoutine] = await Promise.all([
+    currentMealPlan
+      ? prisma.mealPlanEntry.count({
+          where: { mealPlanId: currentMealPlan.id, recipeVariantId: { in: variantIds } },
+        })
+      : Promise.resolve(0),
+    prisma.dayRoutine.count({ where: { householdId, recipeVariantId: { in: variantIds } } }),
+  ]);
+
+  if (usedInCurrentWeek > 0) {
+    throw new Error("Dit recept staat deze week nog op het menu. Vervang het eerst via 'Ander gerecht' voordat je het verwijdert.");
+  }
+  if (usedAsRoutine > 0) {
+    throw new Error("Dit recept is ingesteld als vaste daggewoonte. Stop die gewoonte eerst op 'Jouw week' voordat je het recept verwijdert.");
+  }
+
+  await prisma.$transaction([
+    prisma.mealPlanEntry.deleteMany({ where: { recipeVariantId: { in: variantIds } } }),
+    prisma.mealSuggestion.deleteMany({ where: { recipeVariantId: { in: variantIds } } }),
+    prisma.recipe.delete({ where: { id: recipeId } }),
+  ]);
+
+  await invalidateCurrentShoppingList(householdId);
+  redirectToRecipes("recipe-deleted");
+}
+
 export async function updateRecipeIngredients(formData: FormData) {
   const householdId = await requireRecipeEditor(formData);
   const recipeId = String(formData.get("recipeId"));
