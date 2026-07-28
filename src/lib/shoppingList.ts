@@ -4,8 +4,7 @@ import { getInventoryMap } from "./inventory";
 import { subtractInventory } from "./quantity/inventory";
 import { resolveInStockQuantity } from "./quantity/inventoryStatus";
 import type { BaseQuantity } from "./quantity/units";
-import { getCurrentWeekStart } from "./week";
-import { DAY_KEY_BY_ENUM } from "./week";
+import { getCurrentWeekStart, DAY_KEY_BY_ENUM, type DayKey } from "./week";
 import { getHouseholdPortionScaleByDay } from "./household";
 import { matchProduct } from "@/domain/product-matching/matchProduct";
 import { matchProductForIngredient } from "@/domain/product-matching/matchIngredient";
@@ -13,8 +12,53 @@ import { getRejectedProductIds, getTrustedPreferences, toMatchCandidate } from "
 import type { ProductMatchResult } from "@/domain/product-matching/types";
 import { productChoicePreferenceFromDeliveryPreference } from "@/domain/product-matching/productChoicePreference";
 import { calculatePackageRequirement, type PackageRequirementResult } from "./quantity/packages";
+import type { DayOfWeek } from "@/generated/prisma/enums";
 
 type InventoryLookup = Awaited<ReturnType<typeof getInventoryMap>>;
+type PortionScaleByDay = Record<DayKey, { scale: number }>;
+
+// Bewust een minimale, structurele vorm i.p.v. het volledige Prisma-payload-
+// type van getMealPlanForWeek: dit is alles wat de behoefteberekening nodig
+// heeft, en maakt hem in tests met eenvoudige literals te vullen.
+interface MealPlanWithEntries {
+  entries: Array<{
+    dayOfWeek: DayOfWeek;
+    recipeVariant: {
+      recipe: {
+        ingredients: Array<{ ingredientId: string; quantity: number; unit: Unit }>;
+      };
+    };
+  }>;
+}
+
+/**
+ * Telt de receptbehoefte per ingrediënt op over alle geplande maaltijden van
+ * de week, geschaald op wie er per dag mee-eet. Gedeeld door `ensureShoppingList`
+ * (bij het aanmaken van de lijst) en `findShoppingListShortfalls` (om een
+ * bestaande, mogelijk handmatig aangepaste regel te controleren) — zodat
+ * beide altijd exact dezelfde "wat is er eigenlijk nodig"-berekening gebruiken.
+ */
+function aggregateMealNeeds(
+  mealPlan: MealPlanWithEntries,
+  portionScaleByDay: PortionScaleByDay
+): Map<string, { ingredientId: string; quantity: number; unit: Unit }> {
+  const totals = new Map<string, { ingredientId: string; quantity: number; unit: Unit }>();
+  for (const entry of mealPlan.entries) {
+    const dayKey = DAY_KEY_BY_ENUM[entry.dayOfWeek];
+    const scale = portionScaleByDay[dayKey]?.scale ?? 1;
+    for (const ri of entry.recipeVariant.recipe.ingredients) {
+      const key = `${ri.ingredientId}:${ri.unit}`;
+      const scaledQuantity = ri.quantity * scale;
+      const current = totals.get(key);
+      if (current) {
+        current.quantity += scaledQuantity;
+      } else {
+        totals.set(key, { ingredientId: ri.ingredientId, quantity: scaledQuantity, unit: ri.unit });
+      }
+    }
+  }
+  return totals;
+}
 
 /**
  * Trekt de voorraad van dit ingrediënt af van de behoefte (Fase 3: "voorraad
@@ -85,22 +129,7 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
   ]);
   const productChoicePreference = productChoicePreferenceFromDeliveryPreference(household.deliveryPreference);
 
-  type Agg = { ingredientId: string; quantity: number; unit: Unit };
-  const totals = new Map<string, Agg>();
-  for (const entry of mealPlan.entries) {
-    const dayKey = DAY_KEY_BY_ENUM[entry.dayOfWeek];
-    const scale = portionScaleByDay[dayKey]?.scale ?? 1;
-    for (const ri of entry.recipeVariant.recipe.ingredients) {
-      const key = `${ri.ingredientId}:${ri.unit}`;
-      const scaledQuantity = ri.quantity * scale;
-      const current = totals.get(key);
-      if (current) {
-        current.quantity += scaledQuantity;
-      } else {
-        totals.set(key, { ingredientId: ri.ingredientId, quantity: scaledQuantity, unit: ri.unit });
-      }
-    }
-  }
+  const totals = aggregateMealNeeds(mealPlan, portionScaleByDay);
 
   // Voorraadcontrole vult alleen aan waar het weekmenu en de vaste
   // boodschappen nog geen regel voor hebben — anders zou hetzelfde
@@ -350,4 +379,54 @@ export function describeLinePackaging(
     recipeNeed: { amount: line.quantity, unit: line.unit },
     packageSize: product?.packageQuantity != null ? { amount: product.packageQuantity, unit: line.unit } : null,
   });
+}
+
+export interface ShoppingListShortfall {
+  lineId: string;
+  ingredientId: string;
+  currentQuantity: number;
+  neededQuantity: number;
+  shortBy: number;
+  unit: Unit;
+}
+
+// Floating-point-ruis (zie safeCeilDivision in packages.ts) mag nooit een
+// regel als "tekort" bestempelen die in werkelijkheid exact klopt.
+const SHORTFALL_EPSILON = 0.001;
+
+/**
+ * Vangnet tegen stilzwijgend onder-bestellen: een MEAL-regel kan na het
+ * aanmaken van de lijst handmatig verlaagd zijn (via "Weektotaal aanpassen")
+ * tot onder wat de geplande maaltijden deze week daadwerkelijk nodig hebben.
+ * `describeLinePackaging`/`calculatePackageRequirement` rondt altijd naar
+ * boven af, maar kan niet corrigeren voor een regel die al met een te lage
+ * behoefte de berekening ingaat — dat moet hier expliciet gesignaleerd
+ * worden in plaats van stilzwijgend "Compleet" te tonen.
+ */
+export function findShoppingListShortfalls(
+  mealPlan: MealPlanWithEntries,
+  portionScaleByDay: PortionScaleByDay,
+  inventory: InventoryLookup,
+  lines: Array<{ id: string; ingredientId: string; quantity: number; unit: Unit; source: string }>
+): ShoppingListShortfall[] {
+  const totals = aggregateMealNeeds(mealPlan, portionScaleByDay);
+  const shortfalls: ShoppingListShortfall[] = [];
+  for (const line of lines) {
+    if (line.source !== "MEAL") continue;
+    const agg = totals.get(`${line.ingredientId}:${line.unit}`);
+    if (!agg) continue;
+    const net = netAfterInventory({ amount: agg.quantity, unit: agg.unit }, line.ingredientId, inventory);
+    const neededQuantity = net?.amount ?? 0;
+    if (line.quantity < neededQuantity - SHORTFALL_EPSILON) {
+      shortfalls.push({
+        lineId: line.id,
+        ingredientId: line.ingredientId,
+        currentQuantity: line.quantity,
+        neededQuantity,
+        shortBy: Math.round((neededQuantity - line.quantity) * 100) / 100,
+        unit: line.unit,
+      });
+    }
+  }
+  return shortfalls;
 }

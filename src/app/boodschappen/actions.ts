@@ -13,7 +13,9 @@ import {
   type PicnicCartResult,
 } from "@/lib/picnic/cartService";
 import { buildConfirmationSummary, type ConfirmationSummary } from "@/lib/picnic/confirmationSummary";
-import { describeLinePackaging } from "@/lib/shoppingList";
+import { describeLinePackaging, findShoppingListShortfalls } from "@/lib/shoppingList";
+import { getHouseholdPortionScaleByDay } from "@/lib/household";
+import { getInventoryMap } from "@/lib/inventory";
 
 export async function confirmTransfer(formData: FormData) {
   const shoppingListId = String(formData.get("shoppingListId"));
@@ -63,7 +65,10 @@ export async function adjustBoodschappenLineQuantity(formData: FormData) {
   const nextQuantity = Math.max(quantityStep(line), line.quantity + delta);
   await prisma.shoppingListLine.update({
     where: { id: line.id },
-    data: { quantity: nextQuantity },
+    // shortfallAcknowledged terugzetten: dit is een nieuwe handmatige
+    // hoeveelheid, dus een eventueel eerder geaccepteerd tekort moet opnieuw
+    // beoordeeld worden in plaats van stil te blijven gelden.
+    data: { quantity: nextQuantity, shortfallAcknowledged: false },
   });
 
   redirectToBoodschappenLine(line.id, "quantity");
@@ -85,10 +90,51 @@ export async function setBoodschappenLinePackageCount(formData: FormData) {
 
   await prisma.shoppingListLine.update({
     where: { id: line.id },
-    data: { quantity: nextQuantity },
+    data: { quantity: nextQuantity, shortfallAcknowledged: false },
   });
 
   redirectToBoodschappenLine(line.id, "quantity");
+}
+
+/**
+ * Vult een regel aan tot precies wat de geplande maaltijden deze week nodig
+ * hebben (netto na voorraad) — het "Aanvullen"-antwoord op een tekort-
+ * melding. Rekent de behoefte hier opnieuw uit in plaats van een bedrag uit
+ * het formulier te vertrouwen, zodat een verouderde of gemanipuleerde
+ * waarde nooit een verkeerde hoeveelheid kan wegschrijven.
+ */
+export async function fillShoppingListShortfall(formData: FormData) {
+  const lineId = String(formData.get("lineId"));
+  const { line, householdId } = await loadEditableShoppingLine(lineId);
+  if (line.source !== "MEAL") throw new Error("Aanvullen kan alleen voor boodschappen uit het weekmenu.");
+
+  const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
+    where: { id: line.shoppingListId },
+    include: { mealPlan: { include: { entries: { include: { recipeVariant: { include: { recipe: { include: { ingredients: { include: { ingredient: true } } } } } } } } } } },
+  });
+  const [portionScaleByDay, inventoryMap] = await Promise.all([
+    getHouseholdPortionScaleByDay(householdId),
+    getInventoryMap(householdId),
+  ]);
+  const [shortfall] = findShoppingListShortfalls(shoppingList.mealPlan, portionScaleByDay, inventoryMap, [line]);
+
+  await prisma.shoppingListLine.update({
+    where: { id: line.id },
+    data: { quantity: shortfall?.neededQuantity ?? line.quantity, shortfallAcknowledged: false },
+  });
+
+  redirectToBoodschappenLine(line.id, "shortfall-filled");
+}
+
+/** Bevestigt dat een kleiner-dan-benodigde hoeveelheid deze week bewust zo blijft. */
+export async function acknowledgeShoppingListShortfall(formData: FormData) {
+  const lineId = String(formData.get("lineId"));
+  const { line } = await loadEditableShoppingLine(lineId);
+  await prisma.shoppingListLine.update({
+    where: { id: line.id },
+    data: { shortfallAcknowledged: true },
+  });
+  redirectToBoodschappenLine(line.id, "shortfall-accepted");
 }
 
 export async function chooseBoodschappenProduct(formData: FormData) {
