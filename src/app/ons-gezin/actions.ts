@@ -32,6 +32,18 @@ function parseHardRestrictions(value: FormDataEntryValue | null): string[] {
     .filter(Boolean);
 }
 
+/**
+ * `revalidatePath` alleen is niet genoeg om de gebruiker te laten zien dat
+ * een actie is gelukt: zonder een echte navigatie bleef deze pagina soms de
+ * oude staat tonen. Een redirect terug naar /ons-gezin dwingt een verse
+ * render af én toont een expliciete groene bevestiging — dezelfde aanpak
+ * als /boodschappen, /recepten en de homepage.
+ */
+function redirectToOnsGezin(status: string): never {
+  revalidatePath("/ons-gezin");
+  redirect(`/ons-gezin?status=${encodeURIComponent(status)}`);
+}
+
 async function invalidateCurrentShoppingList(householdId: string) {
   const mealPlan = await prisma.mealPlan.findUnique({
     where: { householdId_weekStart: { householdId, weekStart: getCurrentWeekStart() } },
@@ -55,8 +67,8 @@ export async function addPerson(formData: FormData) {
     data: { householdId, name, role, portionMultiplier: defaultPortionMultiplierForRole(role) },
   });
 
-  revalidatePath("/ons-gezin");
   revalidatePath("/");
+  redirectToOnsGezin("person-added");
 }
 
 export async function updatePersonProfile(formData: FormData) {
@@ -81,10 +93,10 @@ export async function updatePersonProfile(formData: FormData) {
   });
 
   await invalidateCurrentShoppingList(householdId);
-  revalidatePath("/ons-gezin");
   revalidatePath("/");
   revalidatePath("/gerechten");
   revalidatePath("/boodschappen");
+  redirectToOnsGezin("person-updated");
 }
 
 export async function updatePersonPresence(formData: FormData) {
@@ -116,10 +128,10 @@ export async function updatePersonPresence(formData: FormData) {
   }
 
   await invalidateCurrentShoppingList(householdId);
-  revalidatePath("/ons-gezin");
   revalidatePath("/");
   revalidatePath("/gerechten");
   revalidatePath("/boodschappen");
+  redirectToOnsGezin("presence-updated");
 }
 
 export async function updateWeeklyRhythm(formData: FormData) {
@@ -140,8 +152,8 @@ export async function updateWeeklyRhythm(formData: FormData) {
     data: { weeklyRhythm: { ...rhythm, [dayKey]: value } },
   });
 
-  revalidatePath("/ons-gezin");
   revalidatePath("/");
+  redirectToOnsGezin("rhythm-updated");
 }
 
 export async function updateProductChoicePreference(formData: FormData) {
@@ -164,9 +176,9 @@ export async function updateProductChoicePreference(formData: FormData) {
   });
 
   await invalidateCurrentShoppingList(householdId);
-  revalidatePath("/ons-gezin");
   revalidatePath("/boodschappen");
   revalidatePath("/controle");
+  redirectToOnsGezin("product-preference-updated");
 }
 
 export async function updateHouseholdCategoryPreference(formData: FormData) {
@@ -211,9 +223,9 @@ export async function updateHouseholdCategoryPreference(formData: FormData) {
     });
   }
 
-  revalidatePath("/ons-gezin");
   revalidatePath("/");
   revalidatePath("/gerechten");
+  redirectToOnsGezin("category-preference-updated");
 }
 
 export async function forgetProductPreference(formData: FormData) {
@@ -224,9 +236,9 @@ export async function forgetProductPreference(formData: FormData) {
   await prisma.householdProductPreference.deleteMany({ where: { id: preferenceId, householdId } });
 
   await invalidateCurrentShoppingList(householdId);
-  revalidatePath("/ons-gezin");
   revalidatePath("/boodschappen");
   revalidatePath("/controle");
+  redirectToOnsGezin("product-preference-forgotten");
 }
 
 async function loadPersonalPreferenceForCurrentHousehold(preferenceId: string, householdId: string) {
@@ -253,9 +265,9 @@ export async function updatePersonalPreference(formData: FormData) {
     data: { stance, source: "EXPLICIT", confidence: stance === "UNKNOWN" ? 0 : 1 },
   });
 
-  revalidatePath("/ons-gezin");
   revalidatePath("/");
   revalidatePath("/gerechten");
+  redirectToOnsGezin("personal-preference-updated");
 }
 
 export async function deletePersonalPreference(formData: FormData) {
@@ -266,9 +278,9 @@ export async function deletePersonalPreference(formData: FormData) {
   await loadPersonalPreferenceForCurrentHousehold(preferenceId, householdId);
   await prisma.preference.delete({ where: { id: preferenceId } });
 
-  revalidatePath("/ons-gezin");
   revalidatePath("/");
   revalidatePath("/gerechten");
+  redirectToOnsGezin("personal-preference-deleted");
 }
 
 export async function updateAccessCode(formData: FormData) {
@@ -276,7 +288,7 @@ export async function updateAccessCode(formData: FormData) {
   await assertCurrentHousehold(householdId);
   const accessCode = String(formData.get("accessCode") ?? "");
   await setHouseholdAccessCode(householdId, accessCode);
-  revalidatePath("/ons-gezin");
+  redirectToOnsGezin("access-code-updated");
 }
 
 export async function logout() {

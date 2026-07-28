@@ -41,7 +41,26 @@ const CATEGORY_STANCE_OPTIONS = [
   { value: "UNKNOWN", label: "Geen voorkeur" },
 ] as const;
 
-export default async function OnsGezinPage() {
+const STATUS_MESSAGES: Record<string, string> = {
+  "person-added": "Gezinslid toegevoegd.",
+  "person-updated": "Profiel opgeslagen.",
+  "presence-updated": "Aanwezigheid bijgewerkt.",
+  "rhythm-updated": "Dagritme opgeslagen.",
+  "product-preference-updated": "Productkeuze-instelling opgeslagen.",
+  "category-preference-updated": "Voorkeur opgeslagen.",
+  "product-preference-forgotten": "Onthouden productkeuze vergeten.",
+  "personal-preference-updated": "Voorkeur opgeslagen.",
+  "personal-preference-deleted": "Voorkeur verwijderd.",
+  "access-code-updated": "Toegangscode opgeslagen.",
+};
+
+export default async function OnsGezinPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string }>;
+}) {
+  const params = await searchParams;
+  const statusMessage = params.status ? STATUS_MESSAGES[params.status] : undefined;
   const currentHousehold = await requireCurrentHousehold();
   const household = await prisma.household.findUniqueOrThrow({
     where: { id: currentHousehold.id },
@@ -150,6 +169,11 @@ export default async function OnsGezinPage() {
       </header>
 
       <div className="min-w-0 px-6 pt-4">
+        {statusMessage && (
+          <p className="mb-4 rounded-lg border border-tag-green-ink/20 bg-tag-green-bg px-3 py-2 text-sm font-medium text-tag-green-ink">
+            {statusMessage}
+          </p>
+        )}
         <p className="mb-6 text-[15px] text-ink-muted">
           Ik leer steeds beter wat bij jullie past.
         </p>
