@@ -213,4 +213,26 @@ export class PicnicClient {
   async clearCart() {
     return this.requestJson("POST", "/cart/clear");
   }
+
+  /**
+   * Bezorgmomenten (WP71). Geen officiële documentatie (R1) — in de
+   * python-picnic-api2-referentie zitten deze normaal al in de `/cart`-
+   * respons zelf (`delivery_slots`), dus die proberen we eerst zonder een
+   * extra aanroep. Alleen als dat veld er niet blijkt te zijn, valt dit terug
+   * op een los `/cart/delivery_slots`-endpoint. Geeft de ruwe data terug —
+   * het interpreteren van de vorm gebeurt bewust in
+   * src/lib/picnic/deliverySlots.ts, niet hier (zelfde scheiding als
+   * `search()` versus `extractSearchResults()`).
+   */
+  async getDeliverySlots(): Promise<unknown> {
+    const cart = await this.requestJson("GET", "/cart");
+    if (
+      cart &&
+      typeof cart === "object" &&
+      Array.isArray((cart as { delivery_slots?: unknown }).delivery_slots)
+    ) {
+      return (cart as { delivery_slots: unknown }).delivery_slots;
+    }
+    return this.requestJson("GET", "/cart/delivery_slots");
+  }
 }

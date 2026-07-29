@@ -24,6 +24,7 @@ import NavBar from "@/components/NavBar";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import PicnicTransfer from "./PicnicTransfer";
 import AddToPicnicCart from "./AddToPicnicCart";
+import PicnicDeliveryStatusCard from "./PicnicDeliveryStatusCard";
 import {
   acknowledgeShoppingListShortfall,
   adjustBoodschappenLineQuantity,
@@ -1288,6 +1289,8 @@ export default async function BoodschappenPage({
             </details>
           )}
         </details>
+
+        <PicnicDeliveryStatusCard householdId={household.id} picnicAuthToken={household.picnicAuthToken} />
 
         {!household.picnicAuthToken && (
           <PicnicTransfer

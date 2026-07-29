@@ -72,3 +72,66 @@ test("PicnicClient: geldige respons zonder foutcode geeft gewoon de data terug",
     global.fetch = original;
   }
 });
+
+test("PicnicClient.getDeliverySlots: leest delivery_slots rechtstreeks uit de /cart-respons", async () => {
+  const original = global.fetch;
+  const requestedPaths: string[] = [];
+  global.fetch = (async (input: RequestInfo | URL) => {
+    requestedPaths.push(String(input));
+    return jsonResponse({ delivery_slots: [{ slot_id: "abc" }] });
+  }) as typeof fetch;
+  try {
+    const client = new PicnicClient("token");
+    const data = await client.getDeliverySlots();
+    assert.deepEqual(data, [{ slot_id: "abc" }]);
+    assert.equal(requestedPaths.length, 1, "geen extra aanroep nodig als /cart de slots al bevat");
+    assert.match(requestedPaths[0], /\/cart$/);
+  } finally {
+    global.fetch = original;
+  }
+});
+
+test("PicnicClient.getDeliverySlots: valt terug op /cart/delivery_slots als /cart geen delivery_slots-veld heeft", async () => {
+  const original = global.fetch;
+  const requestedPaths: string[] = [];
+  global.fetch = (async (input: RequestInfo | URL) => {
+    const path = String(input);
+    requestedPaths.push(path);
+    if (path.endsWith("/cart")) return jsonResponse({ items: [] });
+    return jsonResponse([{ slot_id: "fallback" }]);
+  }) as typeof fetch;
+  try {
+    const client = new PicnicClient("token");
+    const data = await client.getDeliverySlots();
+    assert.deepEqual(data, [{ slot_id: "fallback" }]);
+    assert.equal(requestedPaths.length, 2);
+    assert.match(requestedPaths[1], /\/cart\/delivery_slots$/);
+  } finally {
+    global.fetch = original;
+  }
+});
+
+test("PicnicClient.getDeliverySlots: AUTH_ERROR wordt een PicnicAuthError", async () => {
+  const original = global.fetch;
+  global.fetch = (async () =>
+    jsonResponse({ error: { code: "AUTH_ERROR", message: "niet ingelogd" } })) as typeof fetch;
+  try {
+    const client = new PicnicClient("token");
+    await assert.rejects(() => client.getDeliverySlots(), PicnicAuthError);
+  } finally {
+    global.fetch = original;
+  }
+});
+
+test("PicnicClient.getDeliverySlots: netwerkfout wordt een PicnicNetworkError", async () => {
+  const original = global.fetch;
+  global.fetch = (async () => {
+    throw new Error("connect ECONNREFUSED");
+  }) as typeof fetch;
+  try {
+    const client = new PicnicClient("token");
+    await assert.rejects(() => client.getDeliverySlots(), PicnicNetworkError);
+  } finally {
+    global.fetch = original;
+  }
+});

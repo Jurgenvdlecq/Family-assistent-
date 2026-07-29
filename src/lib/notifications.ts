@@ -11,6 +11,21 @@ import type { AttentionItemType } from "@/domain/attention/attentionItems";
 import { sendPushNotification, type PushSendResult } from "./webPush";
 import { logEvent, createCorrelationId, errorMessage } from "./logger";
 
+// `NotificationType` (Prisma) heeft sinds WP71 een waarde
+// (PICNIC_DELIVERY_SLOT_AT_RISK) die nog niet in `AttentionItemType`
+// bestaat — die koppeling volgt pas in WP72. Deze guard voorkomt dat zo'n
+// nog-niet-aangesloten waarde hier een verkeerd getypeerde Set oplevert.
+const ATTENTION_ITEM_TYPES = new Set<string>([
+  "WEEK_MENU_READY_NO_GROCERIES",
+  "PRODUCT_REVIEW_OPEN",
+  "GROCERIES_READY_NOT_SENT_TO_PICNIC",
+  "PICNIC_CART_FILLED_NOT_CONFIRMED",
+] satisfies AttentionItemType[]);
+
+function isAttentionItemType(type: string): type is AttentionItemType {
+  return ATTENTION_ITEM_TYPES.has(type);
+}
+
 export async function savePushSubscription(
   householdId: string,
   subscription: { endpoint: string; keys: { p256dh: string; auth: string } },
@@ -59,7 +74,7 @@ async function getAlreadySentToday(householdId: string, dayKey: string) {
     select: { type: true },
   });
   return {
-    typesAlreadySentToday: new Set(rows.map((row) => row.type)),
+    typesAlreadySentToday: new Set(rows.map((row) => row.type).filter(isAttentionItemType)),
     householdAlreadySentAnyToday: rows.length > 0,
   };
 }
