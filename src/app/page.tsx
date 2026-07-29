@@ -233,23 +233,45 @@ export default async function Home({
       ),
     ),
   ];
-  const personalPreferences = await prisma.preference.findMany({
-    where: {
-      ownerType: "PERSON",
-      ownerId: { in: participantIds },
-      OR: [
-        { subjectType: "RECIPE_VARIANT", subjectId: { in: mealVariantIds } },
-        { subjectType: "RECIPE_CATEGORY", subjectId: { in: mealCategoryIds } },
-        { subjectType: "INGREDIENT", subjectId: { in: mealIngredientIds } },
-      ],
-    },
-  });
+  const [personalPreferences, shoppingListLines, productPreferences] = await Promise.all([
+    prisma.preference.findMany({
+      where: {
+        ownerType: "PERSON",
+        ownerId: { in: participantIds },
+        OR: [
+          { subjectType: "RECIPE_VARIANT", subjectId: { in: mealVariantIds } },
+          { subjectType: "RECIPE_CATEGORY", subjectId: { in: mealCategoryIds } },
+          { subjectType: "INGREDIENT", subjectId: { in: mealIngredientIds } },
+        ],
+      },
+    }),
+    shoppingList
+      ? prisma.shoppingListLine.findMany({
+          where: { shoppingListId: shoppingList.id, ingredientId: { in: mealIngredientIds } },
+          select: { ingredientId: true, product: { select: { name: true } } },
+        })
+      : Promise.resolve([]),
+    prisma.householdProductPreference.findMany({
+      where: { householdId: household.id, ingredientId: { in: mealIngredientIds } },
+      select: { ingredientId: true, product: { select: { name: true } } },
+    }),
+  ]);
   const personalPreferenceByPersonAndVariant = new Map(
     personalPreferences.map((preference) => [
       `${preference.ownerId}:${preference.subjectType}:${preference.subjectId}`,
       preference.stance,
     ]),
   );
+  // De onthouden standaardkeuze is het beste vermoeden zolang er nog geen
+  // boodschappenlijst is; de daadwerkelijke regel op de lijst van deze week
+  // wint zodra die er is (kan afwijken, bv. handmatig een ander product).
+  const productNameByIngredientId = new Map<string, string>();
+  for (const preference of productPreferences) {
+    productNameByIngredientId.set(preference.ingredientId, preference.product.name);
+  }
+  for (const line of shoppingListLines) {
+    if (line.product) productNameByIngredientId.set(line.ingredientId, line.product.name);
+  }
 
   const entryByDay = new Map(mealPlan.entries.map((e) => [e.dayOfWeek, e]));
   const greetingName = household.persons[0]?.name ?? household.name;
@@ -318,40 +340,6 @@ export default async function Home({
               </Link>
             </div>
           </div>
-        </section>
-
-        <section className="mb-5 rounded-xl border border-line bg-surface p-4">
-          <p className="mb-2 text-sm font-semibold text-ink">
-            Toch ergens anders zin in?
-          </p>
-          <form action="/gerechten" className="grid gap-2">
-            <div className="grid grid-cols-[112px_1fr] gap-2">
-              <select
-                name="day"
-                defaultValue={defaultWishDayKey}
-                aria-label="Dag kiezen"
-                className="min-w-0 rounded-lg border border-line bg-surface px-2 py-2.5 text-sm text-ink"
-              >
-                {DAY_KEYS.map((dayKey) => (
-                  <option key={dayKey} value={dayKey}>
-                    {DAY_LABELS[dayKey]}
-                  </option>
-                ))}
-              </select>
-              <input
-                name="q"
-                placeholder="Bijv. AVG met kip en sperziebonen"
-                className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none focus:border-accent"
-              />
-            </div>
-            <button
-              type="submit"
-              className="inline-flex w-fit items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-all duration-150 hover:-translate-y-0.5 hover:bg-accent/90 active:translate-y-0 active:scale-[0.98]"
-            >
-              <Search size={15} />
-              Zoek passend gerecht
-            </button>
-          </form>
         </section>
 
         {learningPrompts.length > 0 && (
@@ -502,7 +490,10 @@ export default async function Home({
                   </summary>
                   <ul className="mt-2 flex flex-col gap-1.5">
                     {dedupedIngredients.map((ri) => {
-                      const freshness = ingredientFreshness(ri.ingredient.category);
+                      const freshness = ingredientFreshness(
+                        ri.ingredient.category,
+                        productNameByIngredientId.get(ri.ingredientId),
+                      );
                       return (
                         <li
                           key={ri.ingredientId}
@@ -770,9 +761,43 @@ export default async function Home({
       </div>
 
       <div className="px-6">
+        <section className="mt-6 rounded-xl border border-line bg-surface p-4">
+          <p className="mb-2 text-sm font-semibold text-ink">
+            Toch ergens anders zin in?
+          </p>
+          <form action="/gerechten" className="grid gap-2">
+            <div className="grid grid-cols-[112px_1fr] gap-2">
+              <select
+                name="day"
+                defaultValue={defaultWishDayKey}
+                aria-label="Dag kiezen"
+                className="min-w-0 rounded-lg border border-line bg-surface px-2 py-2.5 text-sm text-ink"
+              >
+                {DAY_KEYS.map((dayKey) => (
+                  <option key={dayKey} value={dayKey}>
+                    {DAY_LABELS[dayKey]}
+                  </option>
+                ))}
+              </select>
+              <input
+                name="q"
+                placeholder="Bijv. AVG met kip en sperziebonen"
+                className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none focus:border-accent"
+              />
+            </div>
+            <button
+              type="submit"
+              className="inline-flex w-fit items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-all duration-150 hover:-translate-y-0.5 hover:bg-accent/90 active:translate-y-0 active:scale-[0.98]"
+            >
+              <Search size={15} />
+              Zoek passend gerecht
+            </button>
+          </form>
+        </section>
+
         <Link
           href="/boodschappen"
-          className="mt-6 block rounded-xl bg-accent px-4 py-3.5 text-center font-medium text-accent-ink transition-all duration-150 hover:-translate-y-0.5 hover:bg-accent/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:translate-y-0 active:scale-[0.99]"
+          className="mt-4 block rounded-xl bg-accent px-4 py-3.5 text-center font-medium text-accent-ink transition-all duration-150 hover:-translate-y-0.5 hover:bg-accent/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:translate-y-0 active:scale-[0.99]"
         >
           Naar boodschappenlijst
         </Link>

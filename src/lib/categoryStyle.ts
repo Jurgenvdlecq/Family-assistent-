@@ -27,12 +27,24 @@ export const UNIT_LABELS: Record<string, string> = { GRAM: "g", ML: "ml", PIECE:
 
 export type TagTone = "blue" | "green" | "amber" | "purple" | "pink";
 
-// Geen aparte "verspercentage"-data per ingrediënt — deze indeling leunt op
-// de bestaande IngredientCategory om aan te geven of iets vers ingekocht
-// wordt (vlees, vis, zuivel, groente, fruit) of juist houdbaar/verpakt is
-// (graan, peulvrucht, voorraadkast), zodat een gebruiker in één oogopslag
-// snapt hoe een gerecht ongeveer tot stand komt.
-export function ingredientFreshness(category: string): { label: string; tone: TagTone } {
+const FROZEN_PRODUCT_PATTERN = /diepvries|ingevroren|vrieskast|vriezer/i;
+const PRESERVED_PRODUCT_PATTERN = /\bblik\b|\bpot(je)?\b|conserven/i;
+
+// Ingredientcategorie (vlees, groente, ...) zegt niets over hóé het dit
+// weekmenu daadwerkelijk wordt ingekocht — verse doperwten en diepvries-
+// doperwten hebben allebei categorie VEGETABLE. Als er al een echt gekozen
+// product bekend is (deze week op de boodschappenlijst, of de onthouden
+// standaardkeuze), leest deze functie eerst de productnaam om diepvries/
+// blik-varianten te herkennen; alleen zonder bekend product valt hij terug
+// op de categorie als grove inschatting.
+export function ingredientFreshness(
+  category: string,
+  productName?: string | null,
+): { label: string; tone: TagTone } {
+  if (productName) {
+    if (FROZEN_PRODUCT_PATTERN.test(productName)) return { label: "Diepvries", tone: "blue" };
+    if (PRESERVED_PRODUCT_PATTERN.test(productName)) return { label: "Blik/pot", tone: "amber" };
+  }
   if (["MEAT", "FISH", "DAIRY", "VEGETABLE", "FRUIT"].includes(category)) {
     return { label: "Vers", tone: "green" };
   }
