@@ -20,6 +20,33 @@ function redirectToHome(status: string): never {
   redirect(`/?status=${encodeURIComponent(status)}`);
 }
 
+export async function restoreHiddenRecipeVariant(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const recipeVariantId = String(formData.get("recipeVariantId"));
+  const dayKey = String(formData.get("dayKey") ?? "monday") as DayKey;
+  const direction = String(formData.get("direction") ?? "all");
+
+  // Ownership-check: alleen gerechten die dit huishouden ook echt mag zien.
+  await prisma.recipeVariant.findUniqueOrThrow({
+    where: { id: recipeVariantId, recipe: accessibleRecipeWhere(householdId) },
+  });
+
+  await logFeedbackEvent({
+    householdId,
+    subjectType: "RECIPE_VARIANT",
+    subjectId: recipeVariantId,
+    eventType: "RESTORED",
+    explicit: true,
+    context: {},
+  });
+  await recalculateVariantConfidence(householdId, recipeVariantId);
+
+  revalidatePath("/gerechten");
+  const q = new URLSearchParams({ day: DAY_KEYS.includes(dayKey) ? dayKey : "monday", direction, status: "recipe-restored" });
+  redirect(`/gerechten?${q.toString()}`);
+}
+
 export async function replaceMealPlanEntry(formData: FormData) {
   const householdId = String(formData.get("householdId"));
   await assertCurrentHousehold(householdId);

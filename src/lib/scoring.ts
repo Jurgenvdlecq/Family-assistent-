@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { replacementPenaltyForReason } from "@/domain/learning/feedbackReasons";
+import { deriveHiddenState } from "@/domain/learning/hiddenRecipes";
 
 type EventContext = { busy?: boolean; positive?: boolean };
 
@@ -44,6 +45,8 @@ export async function recalculateVariantConfidence(householdId: string, recipeVa
     passiveReplacedPenalty;
   const confidence = Math.min(0.98, Math.max(0.05, raw));
   const stance = confidence >= 0.75 ? "LIKED" : confidence <= 0.3 ? "RATHER_NOT" : "SOMETIMES";
+  const { hidden } = deriveHiddenState(events);
+  const hiddenAt = hidden ? new Date() : null;
 
   await prisma.preference.upsert({
     where: {
@@ -54,7 +57,7 @@ export async function recalculateVariantConfidence(householdId: string, recipeVa
         subjectId: recipeVariantId,
       },
     },
-    update: { stance, source: "INFERRED", confidence },
+    update: { stance, source: "INFERRED", confidence, hiddenAt },
     create: {
       ownerType: "HOUSEHOLD",
       ownerId: householdId,
@@ -63,10 +66,11 @@ export async function recalculateVariantConfidence(householdId: string, recipeVa
       stance,
       source: "INFERRED",
       confidence,
+      hiddenAt,
     },
   });
 
-  return { confidence, stance };
+  return { confidence, stance, hidden };
 }
 
 /**

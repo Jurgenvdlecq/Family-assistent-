@@ -741,6 +741,7 @@ enum FeedbackEventType {
   REPLACED
   IGNORED
   EXPLICIT_FEEDBACK
+  RESTORED
 
   @@map("feedback_event_type")
 }
@@ -772,6 +773,12 @@ model Preference {
   stance      Stance              @default(UNKNOWN)
   source      PreferenceSource
   confidence  Float               @default(0)
+  // Fase 11: pas ná herhaalde negatieve feedback (niet bij één keer) wordt
+  // een gerecht echt uit de suggesties verborgen — zie
+  // src/domain/learning/hiddenRecipes.ts. Losstaand van stance/confidence,
+  // die blijven de zachte score-bijstelling doen die al bij één beoordeling
+  // hoort. Alleen zinvol voor ownerType=HOUSEHOLD, subjectType=RECIPE_VARIANT.
+  hiddenAt    DateTime?           @map("hidden_at")
   updatedAt   DateTime            @updatedAt @map("updated_at")
 
   @@unique([ownerType, ownerId, subjectType, subjectId])
