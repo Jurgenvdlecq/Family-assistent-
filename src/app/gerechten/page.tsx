@@ -194,6 +194,13 @@ export default async function GerechtenPage({
       return preference?.stance === "LIKED" || preference?.stance === "SOMETIMES";
     });
   }
+  // "Deze dag" en "Favorieten" filteren op geleerde voorkeuren — een vers
+  // huishouden heeft die nog niet, en zou dan een lege lijst zonder enige
+  // "Kies"-knop te zien krijgen. Val in dat geval terug op alle gerechten
+  // (de sortering hieronder weegt een eventuele daggewoonte alsnog mee).
+  if (filtered.length === 0 && (direction === "day" || direction === "favorites")) {
+    filtered = variants;
+  }
   const wishScoresByVariantId = new Map(
     variants.map((variant) => [
       variant.id,

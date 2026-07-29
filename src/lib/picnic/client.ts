@@ -8,7 +8,11 @@ import { logEvent } from "@/lib/logger";
 // risico R1 in het technisch ontwerpdocument); dit kan zonder aankondiging
 // stoppen met werken als Picnic iets aan hun app-protocol wijzigt.
 
-const BASE_URL = "https://storefront-prod.nl.picnicinternational.com/api/15";
+// PICNIC_BASE_URL is alleen bedoeld voor end-to-end tests (zie e2e/fixtures/
+// mockPicnicServer.ts): daar draait geen live Picnic-account tegenaan, dus
+// wordt de echte URL vervangen door een lokale mock. In elke andere omgeving
+// is de variabele niet gezet en gebruiken we gewoon de echte Picnic-API.
+const BASE_URL = process.env.PICNIC_BASE_URL ?? "https://storefront-prod.nl.picnicinternational.com/api/15";
 const AUTH_HEADER = "x-picnic-auth";
 const PICNIC_HEADERS = {
   "x-picnic-agent": "30100;1.206.1-#15408",
