@@ -32,6 +32,7 @@ import { picnicImageUrl } from "@/lib/picnic/products";
 import { PicnicClient } from "@/lib/picnic/client";
 import { picnicPriceToEuros, picnicProductRef } from "@/lib/picnic/products";
 import { parsePackageQuantity } from "@/lib/quantity/parsePackageSize";
+import { logEvent, errorMessage } from "@/lib/logger";
 
 // ensureShoppingList schrijft (idempotent) naar de database — nooit
 // statisch prerenderen tijdens de build.
@@ -286,7 +287,12 @@ async function ensureMinimumCandidatesForLines({
       lines.map((line) => line.ingredientId)
     );
   } catch (error) {
-    console.warn("Picnic-alternatieven automatisch aanvullen mislukt", error);
+    logEvent({
+      level: "warn",
+      area: "product_matching",
+      message: "Picnic-alternatieven automatisch aanvullen mislukt",
+      meta: { householdId, error: errorMessage(error) },
+    });
     return candidatesByIngredient;
   }
 }

@@ -5,6 +5,7 @@ import { PicnicClient } from "./client";
 import { fuzzyScore, searchTermVariants } from "./matching";
 import { picnicPriceToEuros } from "./products";
 import type { PicnicSearchResultItem } from "./searchResults";
+import { logEvent, errorMessage } from "@/lib/logger";
 
 const MAX_PRODUCTS_PER_RENDER = 8;
 const MIN_IMAGE_MATCH_SCORE = 0.58;
@@ -81,13 +82,22 @@ export async function enrichShoppingListProductImages(householdId: string, shopp
       if (!match?.image_id) continue;
 
       const packageSize = product.packageSize ?? match.unit_quantity ?? null;
+      const packageQuantity =
+        product.packageQuantity ?? (packageSize ? parsePackageQuantity(packageSize, product.unit) : null);
+      if (packageSize && packageQuantity == null) {
+        logEvent({
+          level: "warn",
+          area: "quantity_data",
+          message: "Verpakkingstekst van Picnic kon niet naar een hoeveelheid worden herleid",
+          meta: { productId: product.id, packageSize, ingredientUnit: product.unit },
+        });
+      }
       await prisma.product.update({
         where: { id: product.id },
         data: {
           picnicImageId: match.image_id,
           packageSize,
-          packageQuantity:
-            product.packageQuantity ?? (packageSize ? parsePackageQuantity(packageSize, product.unit) : null),
+          packageQuantity,
           price: product.price ?? picnicPriceToEuros(match.display_price ?? match.price),
           lastSeenAvailable: new Date(),
         },
@@ -103,7 +113,12 @@ export async function enrichShoppingListProductImages(householdId: string, shopp
       });
     }
   } catch (error) {
-    console.warn("Picnic product image enrichment skipped", error);
+    logEvent({
+      level: "warn",
+      area: "picnic_api",
+      message: "Picnic-productfoto's aanvullen overgeslagen",
+      meta: { householdId, shoppingListId, error: errorMessage(error) },
+    });
   }
 
   return { attempted: products.length, updated };

@@ -16,6 +16,7 @@ import { dayRecipePreferenceOwnerId } from "@/domain/meal-planning/dayRecipePref
 import { entriesForSilentAcceptance } from "@/domain/meal-planning/silentAcceptance";
 import { recordRepeatedMealAcceptance } from "@/domain/learning/patterns";
 import type { ConfidenceLevel } from "@/generated/prisma/enums";
+import { logEvent, createCorrelationId, errorMessage } from "./logger";
 
 type WeeklyRhythm = Partial<Record<DayKey, "busy" | "quiet">>;
 
@@ -58,14 +59,55 @@ export async function getMealPlanForWeek(householdId: string, weekStart: Date) {
  * Zorgt dat er een weekplanning bestaat voor dit huishouden + week.
  * Genereert er bewust één zodra de assistent gevraagd wordt, i.p.v. dat
  * de gebruiker een "plan"-knop moet indrukken (sectie 10 van de Blueprint).
+ *
+ * Dunne wrapper om `ensureMealPlanInner` (Fase 16): logt begin/einde van een
+ * daadwerkelijke generatie met een correlation-ID, en logt+rethrowt bij een
+ * fout, zonder de interne functie zelf te hoeven doorspekken met try/catch.
  */
 export async function ensureMealPlan(
   householdId: string,
   weekStart: Date,
   entrySource: "AUTO" | "REGENERATED" = "AUTO"
 ) {
+  const correlationId = createCorrelationId();
+  const startedAt = Date.now();
+  try {
+    return await ensureMealPlanInner(householdId, weekStart, entrySource, correlationId, startedAt);
+  } catch (error) {
+    logEvent({
+      level: "error",
+      area: "meal_plan",
+      message: "Weekplanning genereren mislukt",
+      correlationId,
+      meta: {
+        householdId,
+        weekStart: weekStart.toISOString(),
+        entrySource,
+        durationMs: Date.now() - startedAt,
+        error: errorMessage(error),
+      },
+    });
+    throw error;
+  }
+}
+
+async function ensureMealPlanInner(
+  householdId: string,
+  weekStart: Date,
+  entrySource: "AUTO" | "REGENERATED",
+  correlationId: string,
+  startedAt: number
+) {
   const existing = await getMealPlanForWeek(householdId, weekStart);
   if (existing) return existing;
+
+  logEvent({
+    level: "info",
+    area: "meal_plan",
+    message: "Weekplanning genereren gestart",
+    correlationId,
+    meta: { householdId, weekStart: weekStart.toISOString(), entrySource },
+  });
 
   const recentPlanningStart = new Date(weekStart);
   recentPlanningStart.setDate(recentPlanningStart.getDate() - RECENT_PLANNING_WINDOW_DAYS);
@@ -404,6 +446,14 @@ export async function ensureMealPlan(
     await recalculateVariantConfidence(householdId, picks[dayKey].variant.id);
     await maybePromoteRecipeStatus(picks[dayKey].variant.id, householdId);
   }
+
+  logEvent({
+    level: "info",
+    area: "meal_plan",
+    message: "Weekplanning gegenereerd",
+    correlationId,
+    meta: { householdId, weekStart: weekStart.toISOString(), entrySource, durationMs: Date.now() - startedAt },
+  });
 
   return getMealPlanForWeek(householdId, weekStart);
 }
