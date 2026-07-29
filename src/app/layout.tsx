@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -28,6 +28,14 @@ export const metadata: Metadata = {
     icon: [{ url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" }],
     apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
+};
+
+export const viewport: Viewport = {
+  // Nodig zodat env(safe-area-inset-bottom) een echte waarde teruggeeft —
+  // zonder viewport-fit=cover tekent de standalone PWA (na "Zet op
+  // beginscherm") tot onder de iPhone-thuisbalk, en botst de onderste
+  // navigatie daarmee.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

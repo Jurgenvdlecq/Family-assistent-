@@ -171,7 +171,7 @@ export default async function ReceptenPage({
     : recipes;
 
   return (
-    <div className="mx-auto flex min-h-screen w-full min-w-0 max-w-2xl flex-col pb-24">
+    <div className="mx-auto flex min-h-screen w-full min-w-0 max-w-2xl flex-col pb-[calc(6rem+env(safe-area-inset-bottom))]">
       <header className="flex items-center justify-between px-6 pt-6 pb-2">
         <Link href="/" aria-label="Terug naar Jouw week" className="text-ink-muted">
           <ChevronLeft size={22} />
