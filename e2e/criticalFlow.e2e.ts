@@ -56,11 +56,28 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         where: { id: householdId },
         data: { picnicAuthToken: "e2e-mock-token" },
       });
+
+      // ensureMealPlan() genereert de allereerste weekplanning van een vers
+      // huishouden vanaf hier: score elk recept in de hele catalogus, voor
+      // elke dag — merkbaar trager dan een normaal paginabezoek later. Warm
+      // dit hier alvast op (met een ruime, eigen timeout, buiten stap 2 om)
+      // zodat die stap zelf niet onnodig een trage cold start hoeft te
+      // verdragen. Via `page` (niet een losse fetch): de sessiecookie van
+      // de zojuist voltooide onboarding staat alleen in de browsercontext.
+      await page.goto(`${server.baseURL}/`, { waitUntil: "load", timeout: 90_000 });
+
+      // /gerechten scoort en rangschikt onafhankelijk de hele receptcatalogus
+      // (zie stap 3) en heeft dezelfde eerste-bezoek-cold-start als hierboven
+      // — hier alvast opwarmen voorkomt dat stap 3 zelf die kost moet dragen.
+      await page.goto(`${server.baseURL}/gerechten?day=monday&direction=day`, {
+        waitUntil: "load",
+        timeout: 90_000,
+      });
     });
 
     await t.test("2. Weekmenu bekijken", async () => {
       await page.goto(`${server.baseURL}/`, { waitUntil: "load" });
-      await page.locator("text=Jullie weekmenu").waitFor({ state: "visible" });
+      await page.locator("text=Jullie weekmenu").waitFor({ state: "visible", timeout: 20_000 });
       const replaceLinks = page.locator('a[aria-label^="Vervang "]');
       await replaceLinks.first().waitFor({ state: "visible" });
       assert.equal(await replaceLinks.count(), 7, "Elke dag van de week moet een 'Vervang'-actie hebben");
@@ -70,8 +87,12 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       await page.getByRole("link", { name: "Vervang maandag" }).click();
       await page.waitForURL(/\/gerechten\?/, { timeout: 15_000 });
 
+      // /gerechten scoort en rangschikt alle suggesties uit de hele
+      // receptcatalogus bij elk bezoek — net als de eerste weekplanning
+      // (stap 1/2) kan dat op deze sandbox langer duren dan een normaal
+      // paginabezoek elders in de flow.
       const kiesButton = page.getByRole("button", { name: "Kies" }).first();
-      await kiesButton.waitFor({ state: "visible", timeout: 15_000 });
+      await kiesButton.waitFor({ state: "visible", timeout: 30_000 });
       await kiesButton.click();
 
       await page.waitForURL((url) => url.searchParams.has("status"), { timeout: 15_000 });

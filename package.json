@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "tsx --test $(find src -name '*.test.ts')",
-    "test:e2e": "next build && tsx --test e2e/criticalFlow.e2e.ts",
+    "test:e2e": "tsx --test e2e/criticalFlow.e2e.ts",
     "db:seed": "tsx prisma/seed.ts",
     "picnic:login": "tsx scripts/picnic-login.ts"
   },

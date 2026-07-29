@@ -49,7 +49,12 @@ function searchResponseFor(term: string) {
   };
 }
 
-export async function startMockPicnicServer(): Promise<MockPicnicServer> {
+// Vast poortnummer i.p.v. automatisch toegewezen: de URL moet al bekend
+// zijn vóórdat `next build` draait (zie testServer.ts), anders leest de
+// gebouwde server PICNIC_BASE_URL nooit.
+const DEFAULT_PORT = 4010;
+
+export async function startMockPicnicServer(port = DEFAULT_PORT): Promise<MockPicnicServer> {
   const addedProducts: { productId: string; count: number }[] = [];
 
   const server: Server = createServer(async (req, res) => {
@@ -103,11 +108,11 @@ export async function startMockPicnicServer(): Promise<MockPicnicServer> {
     res.end("{}");
   });
 
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const { port } = server.address() as AddressInfo;
+  await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
+  const { port: boundPort } = server.address() as AddressInfo;
 
   return {
-    url: `http://127.0.0.1:${port}`,
+    url: `http://127.0.0.1:${boundPort}`,
     addedProducts,
     close: () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
   };

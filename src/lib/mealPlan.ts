@@ -16,6 +16,7 @@ import { dayRecipePreferenceOwnerId } from "@/domain/meal-planning/dayRecipePref
 import { entriesForSilentAcceptance } from "@/domain/meal-planning/silentAcceptance";
 import { recordRepeatedMealAcceptance } from "@/domain/learning/patterns";
 import type { ConfidenceLevel } from "@/generated/prisma/enums";
+import { Prisma } from "@/generated/prisma/client";
 import { logEvent, createCorrelationId, errorMessage } from "./logger";
 
 type WeeklyRhythm = Partial<Record<DayKey, "busy" | "quiet">>;
@@ -401,24 +402,44 @@ async function ensureMealPlanInner(
     };
   }
 
-  await prisma.mealPlan.create({
-    data: {
-      householdId,
-      weekStart,
-      status: "CONFIRMED",
-      entries: {
-        create: DAY_KEYS.map((dayKey) => ({
-          dayOfWeek: DAY_ENUM[dayKey],
-          recipeVariantId: picks[dayKey].variant.id,
-          source: entrySource,
-          status: "PROPOSED",
-          reason: picks[dayKey].reason,
-          score: picks[dayKey].score ?? null,
-          confidenceLevel: picks[dayKey].confidence,
-        })),
+  try {
+    await prisma.mealPlan.create({
+      data: {
+        householdId,
+        weekStart,
+        status: "CONFIRMED",
+        entries: {
+          create: DAY_KEYS.map((dayKey) => ({
+            dayOfWeek: DAY_ENUM[dayKey],
+            recipeVariantId: picks[dayKey].variant.id,
+            source: entrySource,
+            status: "PROPOSED",
+            reason: picks[dayKey].reason,
+            score: picks[dayKey].score ?? null,
+            confidenceLevel: picks[dayKey].confidence,
+          })),
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      // Twee bijna-gelijktijdige aanvragen voor dezelfde week (bijv. dubbele
+      // paginaverzoeken): een andere aanvraag heeft de weekplanning net
+      // aangemaakt. Geen dubbele suggesties/feedback aanmaken, gewoon het
+      // resultaat van de winnaar teruggeven i.p.v. crashen op de unique
+      // constraint (household_id, week_start).
+      logEvent({
+        level: "info",
+        area: "meal_plan",
+        message: "Weekplanning genereren: race met gelijktijdige aanvraag, bestaande planning gebruikt",
+        correlationId,
+        meta: { householdId, weekStart: weekStart.toISOString(), entrySource },
+      });
+      const winner = await getMealPlanForWeek(householdId, weekStart);
+      if (winner) return winner;
+    }
+    throw error;
+  }
 
   await prisma.mealSuggestion.createMany({
     data: DAY_KEYS.map((dayKey) => ({

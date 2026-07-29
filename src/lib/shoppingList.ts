@@ -13,6 +13,7 @@ import type { ProductMatchResult } from "@/domain/product-matching/types";
 import { productChoicePreferenceFromDeliveryPreference } from "@/domain/product-matching/productChoicePreference";
 import { calculatePackageRequirement, type PackageRequirementResult } from "./quantity/packages";
 import type { DayOfWeek } from "@/generated/prisma/enums";
+import { Prisma } from "@/generated/prisma/client";
 import { logEvent, createCorrelationId } from "./logger";
 
 type InventoryLookup = Awaited<ReturnType<typeof getInventoryMap>>;
@@ -223,16 +224,37 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
     meta: { householdId, mealPlanId, totalLines: allLines.length, notFoundCount, reviewCount },
   });
 
-  return prisma.shoppingList.create({
-    data: {
-      mealPlanId,
-      status: "PREPARED",
-      lines: { create: allLines },
-    },
-    include: {
-      lines: { include: { ingredient: true, product: true } },
-    },
-  });
+  try {
+    return await prisma.shoppingList.create({
+      data: {
+        mealPlanId,
+        status: "PREPARED",
+        lines: { create: allLines },
+      },
+      include: {
+        lines: { include: { ingredient: true, product: true } },
+      },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      // Twee bijna-gelijktijdige aanvragen voor dezelfde weekplanning: een
+      // andere aanvraag heeft de lijst net aangemaakt. Die teruggeven i.p.v.
+      // crashen op de unique constraint (meal_plan_id).
+      logEvent({
+        level: "info",
+        area: "product_matching",
+        message: "Boodschappenlijst samenstellen: race met gelijktijdige aanvraag, bestaande lijst gebruikt",
+        correlationId: createCorrelationId(),
+        meta: { householdId, mealPlanId },
+      });
+      const winner = await prisma.shoppingList.findUnique({
+        where: { mealPlanId },
+        include: { lines: { include: { ingredient: true, product: true } } },
+      });
+      if (winner) return winner;
+    }
+    throw error;
+  }
 }
 
 /** Wordt aangeroepen als de weekplanning wijzigt — de lijst moet dan opnieuw berekend worden. */

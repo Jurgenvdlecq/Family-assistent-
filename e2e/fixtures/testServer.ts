@@ -23,13 +23,28 @@ async function waitForReady(baseURL: string, deadline: number) {
   throw new Error(`Testserver op ${baseURL} werd niet op tijd bereikbaar.`);
 }
 
+function runToCompletion(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(command, args, { cwd: process.cwd(), env, stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    proc.stdout.on("data", (chunk) => (output += chunk.toString()));
+    proc.stderr.on("data", (chunk) => (output += chunk.toString()));
+    proc.on("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`${command} ${args.join(" ")} mislukte (code ${code}):\n${output.slice(-2000)}`));
+    });
+  });
+}
+
 /**
- * Start een `next start`-proces (een al aanwezige productiebuild — zie
- * `npm run test:e2e`, dat eerst `next build` draait) op een vaste,
- * losstaande poort met `PICNIC_BASE_URL` naar de lokale mock (zie
- * mockPicnicServer.ts) — zo draaien e2e-tests nooit tegen een live
+ * Bouwt eerst een productiebuild en start die daarna (`next build` +
+ * `next start`) op een vaste, losstaande poort, met `PICNIC_BASE_URL` al
+ * gezet vóórdat de build draait — zo draaien e2e-tests nooit tegen een live
  * Picnic-account en nooit tegen een server die de gebruiker zelf al open
- * heeft staan.
+ * heeft staan. `PICNIC_BASE_URL` moet er al bij de build zijn (niet pas bij
+ * het starten): de mock-Picnic-server luistert daarom op een vast
+ * poortnummer (zie mockPicnicServer.ts) in plaats van een pas na de build
+ * toegewezen poort.
  *
  * Bewust `next start` i.p.v. `next dev`: de dev-server heeft een eigen
  * live-herlaad-websocket die zich in deze omgeving onvoorspelbaar gedraagt
@@ -41,17 +56,20 @@ async function waitForReady(baseURL: string, deadline: number) {
 export async function startTestServer(options: { port: number; picnicBaseUrl: string }): Promise<TestServer> {
   const baseURL = `http://127.0.0.1:${options.port}`;
   const nextBin = path.join(process.cwd(), "node_modules", ".bin", "next");
+  const buildEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    PORT: String(options.port),
+    PICNIC_BASE_URL: options.picnicBaseUrl,
+  };
+
+  await runToCompletion(nextBin, ["build"], buildEnv);
 
   const child: ChildProcessByStdio<null, Readable, Readable> = spawn(
     nextBin,
     ["start", "-p", String(options.port)],
     {
       cwd: process.cwd(),
-      env: {
-        ...process.env,
-        PORT: String(options.port),
-        PICNIC_BASE_URL: options.picnicBaseUrl,
-      },
+      env: buildEnv,
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
     }
