@@ -55,6 +55,9 @@ model Household {
   learnedPatterns        LearnedPattern[]
   learningPrompts        LearningPrompt[]
   dayRoutines            DayRoutine[]
+  pushSubscriptions      PushSubscription[]
+  notificationPreferences NotificationPreference[]
+  notificationDeliveryLogs NotificationDeliveryLog[]
 
   @@map("households")
 }
@@ -820,4 +823,71 @@ enum PreferenceSource {
   INFERRED
 
   @@map("preference_source")
+}
+
+// ── Pushmeldingen (WP70) ─────────────────────────────────────────────────
+// Zelfde vier situaties als src/domain/attention/attentionItems.ts — deze
+// enum bestaat apart in Prisma omdat die module een TS-uniontype is, geen
+// Prisma-enum; de waarden moeten wel exact gelijk blijven.
+
+enum NotificationType {
+  WEEK_MENU_READY_NO_GROCERIES
+  PRODUCT_REVIEW_OPEN
+  GROCERIES_READY_NOT_SENT_TO_PICNIC
+  PICNIC_CART_FILLED_NOT_CONFIRMED
+
+  @@map("notification_type")
+}
+
+model PushSubscription {
+  id           String    @id @default(uuid())
+  householdId  String    @map("household_id")
+  endpoint     String    @unique
+  p256dh       String
+  auth         String
+  userAgent    String?   @map("user_agent")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  lastSeenAt   DateTime  @default(now()) @map("last_seen_at")
+  // Nooit hard verwijderen bij een mislukte verzending (410 Gone e.d.) —
+  // uitschakelen behoudt een spoor voor foutopsporing (Fase 16-principe).
+  disabledAt   DateTime? @map("disabled_at")
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@index([householdId])
+  @@map("push_subscriptions")
+}
+
+model NotificationPreference {
+  id          String           @id @default(uuid())
+  householdId String           @map("household_id")
+  type        NotificationType
+  // Standaard aan: een huishouden dat nooit iets heeft ingesteld, moet
+  // gewoon de rustige standaardherinneringen krijgen (geen rij hier
+  // betekent dus ook "aan", zie src/lib/notifications.ts).
+  enabled     Boolean          @default(true)
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@unique([householdId, type])
+  @@map("notification_preferences")
+}
+
+model NotificationDeliveryLog {
+  id          String           @id @default(uuid())
+  householdId String           @map("household_id")
+  type        NotificationType
+  // Kalenderdag in Europe/Amsterdam (bijv. "2026-07-30") — bewust een
+  // string i.p.v. afgeleid uit `sentAt` in UTC, anders zou de daggrens rond
+  // middernacht CET/CEST net verkeerd kunnen vallen bij het bepalen van
+  // "al gestuurd vandaag".
+  dayKey      String           @map("day_key")
+  sentAt      DateTime         @default(now()) @map("sent_at")
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@index([householdId, dayKey])
+  @@index([householdId, type, dayKey])
+  @@map("notification_delivery_logs")
 }
