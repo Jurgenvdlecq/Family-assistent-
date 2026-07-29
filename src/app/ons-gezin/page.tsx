@@ -17,7 +17,9 @@ import LearnedPatternsPanel from "./LearnedPatternsPanel";
 import PersonalPreferencesManager, { labelPersonalPreferenceSubject } from "./PersonalPreferencesManager";
 import PersonPreferencesCard from "./PersonPreferencesCard";
 import PicnicConnection from "./PicnicConnection";
+import PushNotificationSettings from "./PushNotificationSettings";
 import WeeklyRhythmEditor from "./WeeklyRhythmEditor";
+import { getNotificationPreferences } from "@/lib/notifications";
 import {
   forgetProductPreference,
   logout,
@@ -85,6 +87,7 @@ export default async function OnsGezinPage({
   const preferences = await prisma.preference.findMany({
     where: { ownerType: "HOUSEHOLD", ownerId: household.id },
   });
+  const notificationPreferences = Object.fromEntries(await getNotificationPreferences(household.id));
   const personIds = household.persons.map((person) => person.id);
   const personalPreferences = await prisma.preference.findMany({
     where: {
@@ -228,6 +231,19 @@ export default async function OnsGezinPage({
           pendingTwoFactor={Boolean(household.picnicPendingAuthToken)}
           status={params.status}
         />
+
+        <h2 className="mb-3 mt-8 text-sm font-semibold text-ink">Meldingen</h2>
+        <div className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <p className="mb-3 text-sm text-ink-muted">
+            Ik stuur hoogstens één rustige herinnering per dag, alleen tussen 08:00 en 21:00, en
+            nooit twee keer over hetzelfde.
+          </p>
+          <PushNotificationSettings
+            householdId={household.id}
+            vapidPublicKey={process.env.WEB_PUSH_PUBLIC_KEY ?? null}
+            initialPreferences={notificationPreferences}
+          />
+        </div>
 
         <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
           <summary className="flex cursor-pointer items-center gap-2 font-medium text-ink">
