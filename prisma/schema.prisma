@@ -25,11 +25,19 @@ model Household {
   planningStyle               PlanningStyle    @default(BALANCED) @map("planning_style")
   maxSmartQuestionsPerSession Int              @default(2) @map("max_smart_questions_per_session")
   accessCodeHash              String?          @map("access_code_hash")
-  // Picnic-integratie (fase 4, verdiept): sessie-token van de niet-officiële
-  // Picnic-API. Nooit een wachtwoord — dat komt nooit verder dan het
-  // eenmalige login-script van de gebruiker zelf (scripts/picnic-login.ts).
+  // Picnic-integratie (fase 4/7, verdiept): sessie-token van de niet-officiële
+  // Picnic-API. Nooit een wachtwoord — dat komt nooit verder dan de "Picnic
+  // koppelen"-actie op /ons-gezin (of het losse scripts/picnic-login.ts),
+  // wordt alleen gebruikt om rechtstreeks bij Picnic in te loggen en
+  // daarna meteen weggegooid.
   picnicAuthToken             String?          @map("picnic_auth_token")
   picnicTokenUpdatedAt        DateTime?        @map("picnic_token_updated_at")
+  // Tijdelijk, gedeeltelijk geauthenticeerd token dat Picnic teruggeeft
+  // wanneer tweestapsverificatie nodig is — pas bruikbaar om de sms/e-mail-
+  // code te verifiëren, nog niet als volwaardige sessie. Losstaand veld van
+  // picnicAuthToken zodat een halverwege gestaakte koppelpoging nooit per
+  // ongeluk voor een echt werkend token wordt aangezien.
+  picnicPendingAuthToken      String?          @map("picnic_pending_auth_token")
   createdAt                   DateTime         @default(now()) @map("created_at")
   updatedAt                   DateTime         @updatedAt @map("updated_at")
 

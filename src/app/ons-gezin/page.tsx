@@ -16,6 +16,7 @@ import DayRecipePreferencesManager from "./DayRecipePreferencesManager";
 import LearnedPatternsPanel from "./LearnedPatternsPanel";
 import PersonalPreferencesManager, { labelPersonalPreferenceSubject } from "./PersonalPreferencesManager";
 import PersonPreferencesCard from "./PersonPreferencesCard";
+import PicnicConnection from "./PicnicConnection";
 import WeeklyRhythmEditor from "./WeeklyRhythmEditor";
 import {
   forgetProductPreference,
@@ -57,6 +58,10 @@ const STATUS_MESSAGES: Record<string, string> = {
   "day-recipe-preference-deleted": "Dagoptie verwijderd.",
   "learned-pattern-dismissed": "Geleerd patroon vergeten.",
   "access-code-updated": "Toegangscode opgeslagen.",
+  "picnic-connected": "Picnic gekoppeld.",
+  "picnic-2fa-needed": "Verificatiecode verstuurd — check je telefoon.",
+  "picnic-2fa-cancelled": "Koppelpoging geannuleerd.",
+  "picnic-disconnected": "Picnic-account losgekoppeld.",
 };
 
 export default async function OnsGezinPage({
@@ -253,6 +258,14 @@ export default async function OnsGezinPage({
             })}
           </div>
         </section>
+
+        <h2 className="mb-3 text-sm font-semibold text-ink">Picnic</h2>
+        <PicnicConnection
+          householdId={household.id}
+          connected={Boolean(household.picnicAuthToken)}
+          pendingTwoFactor={Boolean(household.picnicPendingAuthToken)}
+          status={params.status}
+        />
 
         <h2 className="mb-3 text-sm font-semibold text-ink">Onthouden Picnic-producten</h2>
         <section className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
