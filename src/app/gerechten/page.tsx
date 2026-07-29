@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, UtensilsCrossed, Heart, Sparkles } from "lucide-react";
+import { ChevronLeft, UtensilsCrossed, Heart, Sparkles, EyeOff } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
@@ -13,10 +13,14 @@ import { MEAL_REPLACEMENT_REASONS } from "@/domain/learning/feedbackReasons";
 import { dayRecipePreferenceOwnerId } from "@/domain/meal-planning/dayRecipePreferences";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
-import { chooseLiteralMealPlanEntry, replaceMealPlanEntry } from "./actions";
+import { chooseLiteralMealPlanEntry, replaceMealPlanEntry, restoreHiddenRecipeVariant } from "./actions";
 
 // Leest live weekplanning + voorkeuren — nooit statisch prerenderen.
 export const dynamic = "force-dynamic";
+
+const STATUS_MESSAGES: Record<string, string> = {
+  "recipe-restored": "Dit gerecht kan weer voorgesteld worden.",
+};
 
 const DIRECTIONS = [
   { key: "day", label: "Deze dag" },
@@ -73,11 +77,12 @@ function titleSearchScore(title: string, query: string) {
 export default async function GerechtenPage({
   searchParams,
 }: {
-  searchParams: Promise<{ day?: string; direction?: string; q?: string }>;
+  searchParams: Promise<{ day?: string; direction?: string; q?: string; status?: string }>;
 }) {
   const params = await searchParams;
 
   const household = await requireCurrentHousehold();
+  const statusMessage = params.status ? STATUS_MESSAGES[params.status] : undefined;
 
   const dayKey: DayKey = (DAY_KEYS as readonly string[]).includes(params.day ?? "")
     ? (params.day as DayKey)
@@ -102,6 +107,9 @@ export default async function GerechtenPage({
   );
   const confidenceByVariantId = new Map(
     preferences.filter((p) => p.subjectType === "RECIPE_VARIANT").map((p) => [p.subjectId, p.confidence])
+  );
+  const hiddenVariantIds = new Set(
+    preferences.filter((p) => p.subjectType === "RECIPE_VARIANT" && p.hiddenAt !== null).map((p) => p.subjectId)
   );
 
   const [allVariants, hardRestrictions, participantsByDay, dayRecipePreferences] = await Promise.all([
@@ -176,8 +184,12 @@ export default async function GerechtenPage({
           restrictionTags: ri.ingredient.restrictionTags,
         })),
         hardRestrictions
-      ) && !personalStancesForVariant(v).includes("NEVER")
+      ) && !personalStancesForVariant(v).includes("NEVER") && !hiddenVariantIds.has(v.id)
   );
+  // Fase 11: na herhaalde negatieve feedback verbergt de app een gerecht
+  // echt (niet alleen lager scoren) — zichtbaar en herstelbaar in een eigen
+  // sectie, nooit stilzwijgend voorgoed weg.
+  const hiddenVariants = allVariants.filter((v) => hiddenVariantIds.has(v.id));
 
   let filtered = variants;
   if (direction === "favorites") {
@@ -286,6 +298,12 @@ export default async function GerechtenPage({
         <p className="mb-5 text-[15px] text-ink-muted">
           Ik heb deze gerechten voor jullie uitgekozen.
         </p>
+
+        {statusMessage && (
+          <p className="mb-5 rounded-lg border border-tag-green-ink/20 bg-tag-green-bg px-3 py-2 text-sm font-medium text-tag-green-ink">
+            {statusMessage}
+          </p>
+        )}
 
         <form action="/gerechten" className="mb-4 grid gap-2">
           <input type="hidden" name="day" value={dayKey} />
@@ -411,6 +429,39 @@ export default async function GerechtenPage({
             dayKey={dayKey}
             weekStart={weekStart}
           />
+        )}
+
+        {hiddenVariants.length > 0 && (
+          <details className="mb-2 min-w-0 rounded-xl border border-line bg-surface p-4">
+            <summary className="flex cursor-pointer items-center gap-2 font-medium text-ink">
+              <EyeOff size={16} className="text-ink-faint" />
+              Verborgen gerechten
+              <span className="text-xs font-normal text-ink-faint">{hiddenVariants.length}</span>
+            </summary>
+            <p className="mt-3 mb-3 text-xs text-ink-muted">
+              Ik stel deze gerechten minder vaak voor omdat jullie ze meermaals negatief hebben
+              beoordeeld. Wil je er toch weer een keer een terugzien?
+            </p>
+            <div className="grid gap-3">
+              {hiddenVariants.map((variant) => (
+                <div key={variant.id} className="flex items-center justify-between gap-3 rounded-lg border border-line p-3">
+                  <p className="line-clamp-2 min-w-0 flex-1 text-sm font-medium text-ink">{variant.recipe.title}</p>
+                  <form action={restoreHiddenRecipeVariant}>
+                    <input type="hidden" name="householdId" value={household.id} />
+                    <input type="hidden" name="recipeVariantId" value={variant.id} />
+                    <input type="hidden" name="dayKey" value={dayKey} />
+                    <input type="hidden" name="direction" value={direction} />
+                    <button
+                      type="submit"
+                      className="shrink-0 rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent"
+                    >
+                      Toch weer tonen
+                    </button>
+                  </form>
+                </div>
+              ))}
+            </div>
+          </details>
         )}
       </div>
 

@@ -279,6 +279,12 @@ async function ensureMealPlanInner(
       { stance: preference.stance, confidence: preference.confidence },
     ])
   );
+  // Fase 11: na herhaalde negatieve feedback (src/domain/learning/hiddenRecipes.ts)
+  // wordt een gerecht ook niet meer automatisch voor een nieuwe week
+  // voorgesteld — dezelfde uitsluiting als op /gerechten.
+  const hiddenVariantIds = new Set(
+    variantPreferences.filter((preference) => preference.hiddenAt !== null).map((preference) => preference.subjectId)
+  );
   const dayRecipePreferencesByDay = new Map<DayKey, Map<string, { stance: typeof dayRecipePreferences[number]["stance"]; confidence: number }>>();
   for (const dayKey of DAY_KEYS) {
     const ownerId = dayRecipePreferenceOwnerId(householdId, dayKey);
@@ -319,7 +325,9 @@ async function ensureMealPlanInner(
     const busy = rhythm[dayKey] === "busy";
     const personalPreferencesForPresentPersons = personalPreferencesForDay(dayKey);
     const variants = safeVariantsForDay(dayKey).filter(
-      (variant) => !candidateHasNeverPreference(variant, personalPreferencesForPresentPersons)
+      (variant) =>
+        !candidateHasNeverPreference(variant, personalPreferencesForPresentPersons) &&
+        !hiddenVariantIds.has(variant.id)
     );
     if (variants.length === 0) {
       throw new Error(

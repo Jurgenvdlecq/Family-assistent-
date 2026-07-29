@@ -123,3 +123,39 @@ test("WP52: 'Week opnieuw plannen' markeert nieuwe regels als REGENERATED, niet 
     await cleanup(household.id);
   }
 });
+
+test("WP68: een verborgen gerecht (Fase 11) wordt niet meer voorgesteld, ook niet als vaste daggewoonte", async () => {
+  const household = await makeHousehold("WP68 integratietest — verborgen gerecht");
+  const variant = await prisma.recipeVariant.findFirstOrThrow({ where: { recipe: { scope: "GLOBAL" } } });
+
+  try {
+    await prisma.dayRoutine.create({
+      data: { householdId: household.id, dayOfWeek: "MONDAY", recipeVariantId: variant.id },
+    });
+    await prisma.preference.create({
+      data: {
+        ownerType: "HOUSEHOLD",
+        ownerId: household.id,
+        subjectType: "RECIPE_VARIANT",
+        subjectId: variant.id,
+        stance: "RATHER_NOT",
+        source: "INFERRED",
+        confidence: 0.1,
+        hiddenAt: new Date(),
+      },
+    });
+
+    const weekStart = getCurrentWeekStart();
+    const mealPlan = await ensureMealPlan(household.id, weekStart);
+    for (const entry of mealPlan!.entries) {
+      assert.notEqual(
+        entry.recipeVariantId,
+        variant.id,
+        "een verborgen gerecht mag geen enkele dag voorgesteld worden, zelfs niet als vaste daggewoonte"
+      );
+    }
+  } finally {
+    await prisma.preference.deleteMany({ where: { ownerId: household.id, subjectId: variant.id } });
+    await cleanup(household.id);
+  }
+});
