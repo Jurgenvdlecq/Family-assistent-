@@ -17,6 +17,7 @@ import LearnedPatternsPanel from "./LearnedPatternsPanel";
 import PersonalPreferencesManager, { labelPersonalPreferenceSubject } from "./PersonalPreferencesManager";
 import PersonPreferencesCard from "./PersonPreferencesCard";
 import PicnicConnection from "./PicnicConnection";
+import PicnicDeliveryPreferenceForm from "./PicnicDeliveryPreferenceForm";
 import PushNotificationSettings from "./PushNotificationSettings";
 import WeeklyRhythmEditor from "./WeeklyRhythmEditor";
 import { getNotificationPreferences } from "@/lib/notifications";
@@ -64,6 +65,8 @@ const STATUS_MESSAGES: Record<string, string> = {
   "picnic-2fa-needed": "Verificatiecode verstuurd — check je telefoon.",
   "picnic-2fa-cancelled": "Koppelpoging geannuleerd.",
   "picnic-disconnected": "Picnic-account losgekoppeld.",
+  "picnic-delivery-preference-updated": "Bezorgvoorkeur opgeslagen.",
+  "picnic-delivery-preference-removed": "Bezorgvoorkeur verwijderd.",
 };
 
 export default async function OnsGezinPage({
@@ -81,6 +84,7 @@ export default async function OnsGezinPage({
         include: { presenceOverrides: { orderBy: { dayOfWeek: "asc" } } },
         orderBy: { createdAt: "asc" },
       },
+      picnicDeliveryPreference: true,
     },
   });
 
@@ -231,6 +235,17 @@ export default async function OnsGezinPage({
           pendingTwoFactor={Boolean(household.picnicPendingAuthToken)}
           status={params.status}
         />
+
+        <details className="mb-8 mt-4 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <summary className="cursor-pointer font-medium text-ink">Gewenst bezorgmoment</summary>
+          <div className="mt-4">
+            <PicnicDeliveryPreferenceForm
+              householdId={household.id}
+              preference={household.picnicDeliveryPreference}
+              picnicConnected={Boolean(household.picnicAuthToken)}
+            />
+          </div>
+        </details>
 
         <h2 className="mb-3 mt-8 text-sm font-semibold text-ink">Meldingen</h2>
         <div className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">

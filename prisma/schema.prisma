@@ -58,6 +58,7 @@ model Household {
   pushSubscriptions      PushSubscription[]
   notificationPreferences NotificationPreference[]
   notificationDeliveryLogs NotificationDeliveryLog[]
+  picnicDeliveryPreference PicnicDeliveryPreference?
 
   @@map("households")
 }
@@ -835,6 +836,8 @@ enum NotificationType {
   PRODUCT_REVIEW_OPEN
   GROCERIES_READY_NOT_SENT_TO_PICNIC
   PICNIC_CART_FILLED_NOT_CONFIRMED
+  // WP71/72: voorbereid, nog niet aan de cron gekoppeld (dat is WP72).
+  PICNIC_DELIVERY_SLOT_AT_RISK
 
   @@map("notification_type")
 }
@@ -890,4 +893,27 @@ model NotificationDeliveryLog {
   @@index([householdId, dayKey])
   @@index([householdId, type, dayKey])
   @@map("notification_delivery_logs")
+}
+
+// ── Picnic-bezorgmomenten (WP71) ─────────────────────────────────────────
+// Losstaand van het bestaande `Household.deliveryPreference` (JSON) — dat
+// veld gaat over productkeuze (goedkoopst/gebalanceerd/premium), niet over
+// bezorgdag/-tijd. Bewust relationele velden i.p.v. nog een JSON-blob: het
+// zijn duidelijke, individueel te valideren waarden (Fase 2-principe).
+model PicnicDeliveryPreference {
+  id                   String    @id @default(uuid())
+  householdId          String    @unique @map("household_id")
+  preferredDayOfWeek   DayOfWeek @map("preferred_day_of_week")
+  // "18:00" — bewust een simpele string i.p.v. DateTime: dit is een
+  // wekelijks terugkerend tijdstip, geen concreet moment.
+  preferredTime        String    @map("preferred_time")
+  windowMinutes        Int       @default(60) @map("window_minutes")
+  notificationsEnabled Boolean   @default(true) @map("notifications_enabled")
+  reminderDaysBefore   Int       @default(2) @map("reminder_days_before")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@map("picnic_delivery_preferences")
 }
