@@ -8,8 +8,34 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { prisma } from "./prisma";
 import { ensureShoppingList, syncShoppingListForInventoryChange } from "./shoppingList";
-import { setInventoryStatus, getInventoryChecklist } from "./inventory";
+import { setInventoryStatus, getInventoryChecklist, needsInventoryAttention } from "./inventory";
 import { getCurrentWeekStart } from "./week";
+
+test("needsInventoryAttention: nog nooit ingevuld vraagt altijd om aandacht", () => {
+  assert.equal(needsInventoryAttention("UNKNOWN", null), true);
+});
+
+test("needsInventoryAttention: bijna op / op blijft altijd om aandacht vragen, ongeacht leeftijd", () => {
+  const gisteren = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const langGeleden = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000);
+  assert.equal(needsInventoryAttention("LOW", gisteren), true);
+  assert.equal(needsInventoryAttention("OUT_OF_STOCK", langGeleden), true);
+});
+
+test("needsInventoryAttention: recent 'genoeg' hoeft geen aandacht", () => {
+  const vandaag = new Date();
+  const vijfDagenGeleden = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+  assert.equal(needsInventoryAttention("SUFFICIENT", vandaag), false);
+  assert.equal(needsInventoryAttention("SUFFICIENT", vijfDagenGeleden), false);
+});
+
+test("needsInventoryAttention: verlopen 'genoeg' vraagt weer om een korte herbevestiging", () => {
+  const nu = new Date("2026-08-01T00:00:00Z");
+  const nogNet = new Date("2026-07-11T00:00:01Z"); // net binnen 21 dagen
+  const teLangGeleden = new Date("2026-07-10T00:00:00Z"); // 22 dagen geleden
+  assert.equal(needsInventoryAttention("SUFFICIENT", nogNet, nu), false);
+  assert.equal(needsInventoryAttention("SUFFICIENT", teLangGeleden, nu), true);
+});
 
 async function makeHouseholdWithMealPlan(name: string, recipeTitle: string) {
   const household = await prisma.household.create({
@@ -232,6 +258,34 @@ test("voorraadstatus blijft bewaard tussen weken (geen reset)", async () => {
     // Simuleer "een week later": gewoon opnieuw opvragen zonder iets te wijzigen.
     const secondRead = await getInventoryChecklist(household.id);
     assert.equal(secondRead.find((i) => i.ingredientId === ingredient.id)?.status, "OUT_OF_STOCK");
+  } finally {
+    await cleanup(household.id);
+  }
+});
+
+test("getInventoryChecklist: 'genoeg' geeft needsAttention=false, andere statussen true", async () => {
+  const household = await prisma.household.create({
+    data: { name: "WP60 integratietest — needsAttention", persons: { create: [{ name: "Test", role: "PARENT" }] } },
+  });
+  const [sufficientIngredient, unknownIngredient] = await prisma.ingredient.findMany({
+    where: { likelyInStock: true },
+    take: 2,
+  });
+
+  try {
+    await setInventoryStatus(household.id, sufficientIngredient.id, "SUFFICIENT");
+    const checklist = await getInventoryChecklist(household.id);
+
+    assert.equal(
+      checklist.find((i) => i.ingredientId === sufficientIngredient.id)?.needsAttention,
+      false,
+      "een net bevestigd 'genoeg' hoeft deze week geen aandacht"
+    );
+    assert.equal(
+      checklist.find((i) => i.ingredientId === unknownIngredient.id)?.needsAttention,
+      true,
+      "een nog nooit ingevuld basisproduct blijft om aandacht vragen"
+    );
   } finally {
     await cleanup(household.id);
   }

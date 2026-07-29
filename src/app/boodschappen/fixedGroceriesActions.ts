@@ -128,7 +128,13 @@ async function saveFixedPicnicProduct(input: FixedPicnicProductInput) {
     lastSeenAvailable: new Date(),
   };
   const product = await prisma.product.upsert({
-    where: { ingredientId_externalRef: { ingredientId: ingredient.id, externalRef: input.externalRef } },
+    where: {
+      ingredientId_provider_externalRef: {
+        ingredientId: ingredient.id,
+        provider: "PICNIC",
+        externalRef: input.externalRef,
+      },
+    },
     update: productData,
     create: productData,
   });

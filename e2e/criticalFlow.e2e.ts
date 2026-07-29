@@ -135,7 +135,13 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
 
     await t.test("6. Voorraad aanpassen", async () => {
       await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
-      await page.locator("#inventory-check summary").click();
+
+      // Voor een vers huishouden staat de voorraadcheck al standaard open
+      // (er is nog niets bevestigd, dus alles vraagt om aandacht) — alleen
+      // klikken als hij nog dicht staat, anders klapt de klik hem juist toe.
+      const inventorySection = page.locator("#inventory-check");
+      const alreadyOpen = await inventorySection.evaluate((el) => (el as HTMLDetailsElement).open);
+      if (!alreadyOpen) await inventorySection.locator("summary").first().click();
 
       const lowButton = page.locator("#inventory-check").getByRole("button", { name: "Bijna op" }).first();
       await lowButton.waitFor({ state: "visible", timeout: 10_000 });

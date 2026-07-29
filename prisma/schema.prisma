@@ -457,30 +457,42 @@ enum IngredientCategory {
 }
 
 model Product {
-  id                String    @id @default(uuid())
-  ingredientId      String?   @map("ingredient_id")
-  externalRef       String?   @map("external_ref")
-  picnicImageId     String?   @map("picnic_image_id")
+  id                String          @id @default(uuid())
+  ingredientId      String?         @map("ingredient_id")
+  // Bij welke winkel-/dataleverancier externalRef hoort. Vandaag altijd
+  // PICNIC (de enige geïntegreerde provider) — expliciet gemaakt zodat
+  // externalRef niet stilzwijgend als "het Picnic-product-ID" wordt
+  // aangenomen, en een toekomstige tweede provider niet per ongeluk op
+  // dezelfde (ingredientId, externalRef)-combinatie kan botsen.
+  provider          ProductProvider @default(PICNIC)
+  externalRef       String?         @map("external_ref")
+  picnicImageId     String?         @map("picnic_image_id")
   name              String
   brand             String?
-  packageSize       String?   @map("package_size")
+  packageSize       String?         @map("package_size")
   // Structureel aantal eenheden (in de eenheid van het gekoppelde
   // Ingredient) per verpakking — bv. 500 voor "500 gram", 4 voor "4 stuks".
   // Null wanneer packageSize niet betrouwbaar te herleiden is tot de
   // ingrediënt-eenheid (zie src/lib/quantity/parsePackageSize.ts); dan is
   // handmatige controle nodig in plaats van een geraden waarde.
-  packageQuantity   Float?    @map("package_quantity")
-  price             Decimal?  @db.Decimal(10, 2)
-  lastSeenAvailable DateTime? @map("last_seen_available")
+  packageQuantity   Float?          @map("package_quantity")
+  price             Decimal?        @db.Decimal(10, 2)
+  lastSeenAvailable DateTime?       @map("last_seen_available")
 
   ingredient           Ingredient?                  @relation(fields: [ingredientId], references: [id])
   shoppingListLines    ShoppingListLine[]
   householdPreferences HouseholdProductPreference[]
   rejections           RejectedProductMatch[]
 
-  @@unique([ingredientId, externalRef])
+  @@unique([ingredientId, provider, externalRef])
   @@index([ingredientId])
   @@map("products")
+}
+
+enum ProductProvider {
+  PICNIC
+
+  @@map("product_provider")
 }
 
 // Vervangt het generieke gebruik van Preference{subjectType: PRODUCT} met

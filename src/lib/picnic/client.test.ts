@@ -43,6 +43,24 @@ test("PicnicClient: falende fetch wordt een PicnicNetworkError, niet een onbehee
   }
 });
 
+test("PicnicClient: een eenmalige verbindingshapering wordt stil met één nieuwe poging opgelost", async () => {
+  const original = global.fetch;
+  let calls = 0;
+  global.fetch = (async () => {
+    calls += 1;
+    if (calls === 1) throw new Error("connect ECONNRESET");
+    return jsonResponse({ user_id: "1" });
+  }) as typeof fetch;
+  try {
+    const client = new PicnicClient("token");
+    const data = (await client.getUser()) as { user_id: string };
+    assert.equal(data.user_id, "1");
+    assert.equal(calls, 2, "moet na de eerste mislukte poging nog één keer opnieuw proberen");
+  } finally {
+    global.fetch = original;
+  }
+});
+
 test("PicnicClient: geldige respons zonder foutcode geeft gewoon de data terug", async () => {
   const original = global.fetch;
   global.fetch = (async () => jsonResponse({ user_id: "1" })) as typeof fetch;
