@@ -23,7 +23,7 @@ export default function NavBar() {
   const [pendingHref, setPendingHref] = useState<string | null>(null);
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface/95 backdrop-blur">
+    <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-surface [transform:translateZ(0)]">
       <div className="mx-auto flex max-w-2xl items-stretch justify-around px-2">
         {ITEMS.map((item) => {
           const active = pathname === item.href;
