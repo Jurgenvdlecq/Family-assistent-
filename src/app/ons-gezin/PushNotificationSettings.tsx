@@ -12,7 +12,7 @@ const NOTIFICATION_LABELS: { type: AttentionItemType; label: string }[] = [
   { type: "PICNIC_CART_FILLED_NOT_CONFIRMED", label: "Picnic-mandje gevuld, bestelling nog niet bevestigd" },
 ];
 
-type SupportStatus = "checking" | "unsupported" | "ios-needs-install" | "supported";
+type SupportStatus = "checking" | "browser-unsupported" | "not-configured" | "ios-needs-install" | "supported";
 
 function isIos(): boolean {
   return /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as unknown as { MSStream?: unknown }).MSStream;
@@ -52,8 +52,12 @@ export default function PushNotificationSettings({
   useEffect(() => {
     let cancelled = false;
     async function checkStatus() {
-      if (!("serviceWorker" in navigator) || !("PushManager" in window) || !vapidPublicKey) {
-        if (!cancelled) setSupportStatus("unsupported");
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+        if (!cancelled) setSupportStatus("browser-unsupported");
+        return;
+      }
+      if (!vapidPublicKey) {
+        if (!cancelled) setSupportStatus("not-configured");
         return;
       }
       if (isIos() && !isStandalone()) {
@@ -67,7 +71,7 @@ export default function PushNotificationSettings({
         setEndpoint(existing?.endpoint ?? null);
         setSupportStatus("supported");
       } catch {
-        if (!cancelled) setSupportStatus("unsupported");
+        if (!cancelled) setSupportStatus("browser-unsupported");
       }
     }
     checkStatus();
@@ -129,10 +133,20 @@ export default function PushNotificationSettings({
 
   if (supportStatus === "checking") return null;
 
-  if (supportStatus === "unsupported") {
+  if (supportStatus === "browser-unsupported") {
     return (
       <p className="rounded-lg bg-surface-2 p-3 text-xs text-ink-muted">
-        Pushmeldingen worden niet ondersteund in deze browser.
+        Pushmeldingen worden niet ondersteund in deze browser. Dit kan ook komen doordat de site niet
+        via https wordt geopend — probeer het via de echte (https) link, niet via een lokaal adres.
+      </p>
+    );
+  }
+
+  if (supportStatus === "not-configured") {
+    return (
+      <p className="rounded-lg bg-surface-2 p-3 text-xs text-ink-muted">
+        Meldingen zijn nog niet ingesteld voor deze app (de serverconfiguratie ontbreekt nog). Dit
+        is geen probleem met je browser — vraag de beheerder dit in te stellen.
       </p>
     );
   }
