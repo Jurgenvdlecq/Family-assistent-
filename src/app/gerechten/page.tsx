@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, SlidersHorizontal, Heart, Sparkles } from "lucide-react";
+import { ChevronLeft, UtensilsCrossed, Heart, Sparkles } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
@@ -271,7 +271,7 @@ export default async function GerechtenPage({
           <ChevronLeft size={22} />
         </Link>
         <span className="text-sm font-semibold">Gerechten</span>
-        <SlidersHorizontal size={18} className="text-ink-muted" />
+        <UtensilsCrossed size={18} className="text-ink-muted" />
       </header>
 
       <div className="px-6 pt-4">
@@ -450,34 +450,31 @@ function RecipeSection({
               <input type="hidden" name="recipeVariantId" value={variant.id} />
               <input type="hidden" name="weekStart" value={weekStart.toISOString()} />
               <div className="rounded-xl border border-line bg-surface p-3 transition-colors hover:border-accent/50">
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="line-clamp-2 font-medium text-ink">{variant.recipe.title}</p>
-                    <div className="mt-1 flex flex-wrap gap-1.5">
-                      {statusLabel && <Tag tone={statusTone(variant.recipe.status)}>{statusLabel}</Tag>}
-                      {variant.recipe.properties.slice(0, 2).map((p) => (
-                        <span key={p} className="text-[11px] whitespace-nowrap text-ink-faint">
-                          {p.replace(/_/g, " ")}
-                        </span>
-                      ))}
-                      {(dayPreference?.stance === "LIKED" || dayPreference?.stance === "SOMETIMES") && (
-                        <span className="text-[11px] whitespace-nowrap text-tag-green-ink">
-                          {dayPreference.stance === "LIKED" ? "vaak op deze dag" : "soms op deze dag"}
-                        </span>
-                      )}
-                    </div>
-                    {wishScore && wishScore.score > 0 && (
-                      <p className="mt-1 truncate text-[11px] text-accent">
-                        Past bij {wishScore.reasons.slice(0, 3).join(", ")}
-                      </p>
-                    )}
-                    {titleScore > 0 && (
-                      <p className="mt-1 truncate text-[11px] text-accent">
-                        Gevonden op receptnaam
-                      </p>
+                <div className="min-w-0">
+                  <p className="line-clamp-2 font-medium text-ink">{variant.recipe.title}</p>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {statusLabel && <Tag tone={statusTone(variant.recipe.status)}>{statusLabel}</Tag>}
+                    {variant.recipe.properties.slice(0, 2).map((p) => (
+                      <span key={p} className="text-[11px] whitespace-nowrap text-ink-faint">
+                        {p.replace(/_/g, " ")}
+                      </span>
+                    ))}
+                    {(dayPreference?.stance === "LIKED" || dayPreference?.stance === "SOMETIMES") && (
+                      <span className="text-[11px] whitespace-nowrap text-tag-green-ink">
+                        {dayPreference.stance === "LIKED" ? "vaak op deze dag" : "soms op deze dag"}
+                      </span>
                     )}
                   </div>
-                  <ChevronRight size={18} className="shrink-0 text-ink-faint" />
+                  {wishScore && wishScore.score > 0 && (
+                    <p className="mt-1 truncate text-[11px] text-accent">
+                      Past bij {wishScore.reasons.slice(0, 3).join(", ")}
+                    </p>
+                  )}
+                  {titleScore > 0 && (
+                    <p className="mt-1 truncate text-[11px] text-accent">
+                      Gevonden op receptnaam
+                    </p>
+                  )}
                 </div>
                 <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
                   <select
