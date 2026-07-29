@@ -5,12 +5,15 @@ import {
   ClipboardCheck,
   Search,
   ShoppingBasket,
+  ShoppingCart,
   Sparkles,
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { getHouseholdMealParticipantsByDay } from "@/lib/household";
 import { ensureMealPlan } from "@/lib/mealPlan";
+import { getAttentionItemsForMealPlan } from "@/lib/attention";
+import type { AttentionItem, AttentionItemType } from "@/domain/attention/attentionItems";
 import {
   getCurrentWeekStart,
   formatWeekRange,
@@ -79,12 +82,21 @@ const PERSONAL_STANCE_TONES = {
 
 const PERSONAL_STANCES = ["LIKED", "SOMETIMES", "RATHER_NOT", "NEVER"] as const;
 
-function nextStepCopy(input: {
-  learningPromptCount: number;
-  hasShoppingList: boolean;
-  reviewCount: number;
-  shoppingListStatus: string | null;
-}) {
+const ATTENTION_ICONS: Record<AttentionItemType, typeof ClipboardCheck> = {
+  WEEK_MENU_READY_NO_GROCERIES: ShoppingBasket,
+  PRODUCT_REVIEW_OPEN: ClipboardCheck,
+  GROCERIES_READY_NOT_SENT_TO_PICNIC: CheckCircle2,
+  PICNIC_CART_FILLED_NOT_CONFIRMED: ShoppingCart,
+};
+
+/**
+ * De homepage toont altijd precies één tegel (Fase 12: één duidelijke
+ * primaire actie per scherm) — leervragen gaan voor (bestaande, hogere
+ * prioriteit, geen onderdeel van de attention-laag/pushmeldingen uit
+ * WP69), daarna het belangrijkste attention-item (zelfde bron als de
+ * latere pushscheduler, WP69), en anders een neutrale standaardtegel.
+ */
+function nextStepCopy(input: { learningPromptCount: number; attentionItem: AttentionItem | undefined }) {
   if (input.learningPromptCount > 0) {
     return {
       icon: Sparkles,
@@ -94,31 +106,14 @@ function nextStepCopy(input: {
       cta: "Vraag bekijken",
     };
   }
-  if (!input.hasShoppingList) {
+  if (input.attentionItem) {
+    const item = input.attentionItem;
     return {
-      icon: ShoppingBasket,
-      title: "Weekmenu staat klaar",
-      body: "Als dit ongeveer klopt, maak ik hierna de boodschappenlijst met vaste boodschappen en voorraadcontrole.",
-      href: "/boodschappen",
-      cta: "Boodschappen voorbereiden",
-    };
-  }
-  if (input.reviewCount > 0) {
-    return {
-      icon: ClipboardCheck,
-      title: `${input.reviewCount} productkeuze${input.reviewCount === 1 ? "" : "s"} controleren`,
-      body: "Er zijn nog producten, verpakkingen of hoeveelheden die ik niet stil wil aannemen.",
-      href: "/controle",
-      cta: "Controleren",
-    };
-  }
-  if (input.shoppingListStatus === "REVIEWED") {
-    return {
-      icon: CheckCircle2,
-      title: "Klaar om naar Picnic te gaan",
-      body: "De lijst is gecontroleerd. Je bevestigt zelf nog voordat er iets naar Picnic gaat.",
-      href: "/boodschappen",
-      cta: "Naar bevestigen",
+      icon: ATTENTION_ICONS[item.type],
+      title: item.title,
+      body: item.body,
+      href: item.href,
+      cta: item.cta,
     };
   }
   return {
@@ -203,15 +198,7 @@ export default async function Home({
   const routineByDay = new Map(
     dayRoutines.map((routine) => [routine.dayOfWeek, routine]),
   );
-  const shoppingList = await prisma.shoppingList.findUnique({
-    where: { mealPlanId: mealPlan.id },
-    select: { id: true, status: true },
-  });
-  const reviewCount = shoppingList
-    ? await prisma.shoppingListLine.count({
-        where: { shoppingListId: shoppingList.id, needsReview: true },
-      })
-    : 0;
+  const attentionItems = await getAttentionItemsForMealPlan(mealPlan.id, mealPlan.createdAt);
   const mealVariantIds = mealPlan.entries.map((entry) => entry.recipeVariantId);
   const mealCategoryIds = [
     ...new Set(
@@ -256,9 +243,7 @@ export default async function Home({
   const defaultWishDayKey = DAY_KEYS[(todayIndex + 6) % 7] ?? "monday";
   const nextStep = nextStepCopy({
     learningPromptCount: learningPrompts.length,
-    hasShoppingList: Boolean(shoppingList),
-    reviewCount,
-    shoppingListStatus: shoppingList?.status ?? null,
+    attentionItem: attentionItems[0],
   });
   const NextStepIcon = nextStep.icon;
 

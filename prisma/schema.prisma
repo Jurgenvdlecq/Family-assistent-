@@ -559,6 +559,18 @@ model ShoppingList {
   status     ShoppingListStatus @default(PREPARED)
   createdAt  DateTime           @default(now()) @map("created_at")
 
+  // WP69: betrouwbare "sinds wanneer"-tijdstempels voor rustige
+  // herinneringen (attention-laag) — het bestaande status-veld alleen zegt
+  // niet hoe lang een toestand al openstaat. Geen @updatedAt: die zou ook
+  // bij ongerelateerde regel-writes meebewegen en de "stale"-klok onterecht
+  // resetten.
+  reviewFlaggedAt  DateTime? @map("review_flagged_at")
+  reviewedAt       DateTime? @map("reviewed_at")
+  // Expliciete, optionele gebruikersbevestiging "ik heb besteld" — nooit
+  // automatisch afgeleid, want Family Assistant kan een Picnic-bestelling
+  // nooit betrouwbaar zelf verifiëren (Fase 7/8).
+  orderConfirmedAt DateTime? @map("order_confirmed_at")
+
   mealPlan MealPlan           @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
   lines    ShoppingListLine[]
 

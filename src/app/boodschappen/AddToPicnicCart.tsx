@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { addToPicnicCart, clearPicnicCart, getPicnicConfirmationSummary } from "./actions";
+import { addToPicnicCart, clearPicnicCart, confirmPicnicOrder, getPicnicConfirmationSummary } from "./actions";
 import type { PicnicCartResult } from "@/lib/picnic/cartService";
 import type { ConfirmationSummary } from "@/lib/picnic/confirmationSummary";
 
@@ -15,9 +15,13 @@ function formatPrice(amount: number) {
 export default function AddToPicnicCart({
   shoppingListId,
   connected,
+  hasTransferredLines,
+  orderConfirmed,
 }: {
   shoppingListId: string;
   connected: boolean;
+  hasTransferredLines: boolean;
+  orderConfirmed: boolean;
 }) {
   const [stage, setStage] = useState<Stage>("idle");
   const [summary, setSummary] = useState<ConfirmationSummary | null>(null);
@@ -29,6 +33,20 @@ export default function AddToPicnicCart({
   const [clearError, setClearError] = useState<string | null>(null);
   const [cleared, setCleared] = useState(false);
   const [isClearPending, startClearTransition] = useTransition();
+
+  const [isConfirmOrderPending, startConfirmOrderTransition] = useTransition();
+  const [orderConfirmError, setOrderConfirmError] = useState<string | null>(null);
+
+  function handleConfirmOrder() {
+    setOrderConfirmError(null);
+    startConfirmOrderTransition(async () => {
+      try {
+        await confirmPicnicOrder(shoppingListId);
+      } catch (e) {
+        setOrderConfirmError(e instanceof Error ? e.message : "Er ging iets mis.");
+      }
+    });
+  }
 
   function handleOpenConfirmation() {
     setError(null);
@@ -182,6 +200,25 @@ export default function AddToPicnicCart({
               Opnieuw proberen
             </button>
           )}
+        </div>
+      )}
+
+      {hasTransferredLines && !orderConfirmed && (
+        <div className="mt-4 min-w-0 rounded-lg border border-accent/35 bg-accent-soft p-3 text-xs">
+          <p className="mb-2 font-medium text-ink">Rond je bestelling af in Picnic.</p>
+          <p className="mb-2 text-ink-muted">
+            De producten staan in je Picnic-mandje. Ik weet niet zeker of je al hebt afgerekend —
+            open Picnic om de bestelling te plaatsen.
+          </p>
+          <button
+            type="button"
+            onClick={handleConfirmOrder}
+            disabled={isConfirmOrderPending}
+            className="rounded-lg border border-line px-3 py-1.5 font-medium text-ink hover:bg-surface-2 disabled:opacity-50"
+          >
+            {isConfirmOrderPending ? "Bezig…" : "Ik heb besteld"}
+          </button>
+          {orderConfirmError && <p className="mt-2 text-red-600">{orderConfirmError}</p>}
         </div>
       )}
 

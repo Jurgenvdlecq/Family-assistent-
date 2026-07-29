@@ -252,5 +252,21 @@ export async function addToPicnicCart(shoppingListId: string): Promise<PicnicCar
 export async function clearPicnicCart(shoppingListId: string): Promise<void> {
   await assertShoppingListAccess(shoppingListId);
   await clearPicnicCartForShoppingList(shoppingListId);
+  // Een geleegd mandje is per definitie niet meer besteld — een oude
+  // bevestiging zou anders blijven staan terwijl de situatie niet meer klopt.
+  await prisma.shoppingList.update({ where: { id: shoppingListId }, data: { orderConfirmedAt: null } });
   revalidatePath("/boodschappen");
+}
+
+/**
+ * WP69: expliciete, optionele bevestiging dat de gebruiker de bestelling in
+ * Picnic zelf heeft afgerond. Family Assistant kan dit nooit betrouwbaar
+ * zelf verifiëren (Fase 7/8: geen bestel-API) — dit is puur zodat de
+ * "rond je bestelling af"-herinnering kan stoppen, geen harde claim.
+ */
+export async function confirmPicnicOrder(shoppingListId: string): Promise<void> {
+  await assertShoppingListAccess(shoppingListId);
+  await prisma.shoppingList.update({ where: { id: shoppingListId }, data: { orderConfirmedAt: new Date() } });
+  revalidatePath("/boodschappen");
+  revalidatePath("/");
 }
