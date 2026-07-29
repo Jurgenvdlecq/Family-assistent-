@@ -1,6 +1,7 @@
 import { prisma } from "../prisma";
 import { PicnicClient, PicnicAuthError, PicnicNetworkError } from "./client";
 import { describeLinePackaging } from "../shoppingList";
+import { logEvent, createCorrelationId } from "../logger";
 
 export interface PicnicCartResult {
   added: { ingredientName: string; picnicName: string; count: number }[];
@@ -41,6 +42,7 @@ export async function addShoppingListToPicnicCart(
     );
   }
 
+  const correlationId = createCorrelationId();
   const client = new PicnicClient(household.picnicAuthToken);
   const result: PicnicCartResult = { added: [], skipped: [], notFound: [], errors: [], stoppedEarly: false };
 
@@ -89,6 +91,21 @@ export async function addShoppingListToPicnicCart(
 
   await persistRefreshedToken(client, household.id, household.picnicAuthToken);
 
+  logEvent({
+    level: result.errors.length > 0 ? "warn" : "info",
+    area: "picnic_cart",
+    message: "Mandje vullen afgerond",
+    correlationId,
+    meta: {
+      shoppingListId,
+      added: result.added.length,
+      skipped: result.skipped.length,
+      notFound: result.notFound.length,
+      errors: result.errors.length,
+      stoppedEarly: result.stoppedEarly,
+    },
+  });
+
   return result;
 }
 
@@ -112,6 +129,13 @@ export async function clearPicnicCartForShoppingList(shoppingListId: string): Pr
   const client = new PicnicClient(household.picnicAuthToken);
   await client.clearCart();
   await persistRefreshedToken(client, household.id, household.picnicAuthToken);
+
+  logEvent({
+    level: "info",
+    area: "picnic_cart",
+    message: "Mandje geleegd",
+    meta: { shoppingListId },
+  });
 
   await prisma.shoppingListLine.updateMany({
     where: { shoppingListId, transferredToPicnicAt: { not: null } },

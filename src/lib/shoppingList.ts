@@ -13,6 +13,7 @@ import type { ProductMatchResult } from "@/domain/product-matching/types";
 import { productChoicePreferenceFromDeliveryPreference } from "@/domain/product-matching/productChoicePreference";
 import { calculatePackageRequirement, type PackageRequirementResult } from "./quantity/packages";
 import type { DayOfWeek } from "@/generated/prisma/enums";
+import { logEvent, createCorrelationId } from "./logger";
 
 type InventoryLookup = Awaited<ReturnType<typeof getInventoryMap>>;
 type PortionScaleByDay = Record<DayKey, { scale: number }>;
@@ -211,11 +212,22 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
     ...matchToLineFields(runMatch(fixed.ingredientId)),
   }));
 
+  const allLines = [...mealLines, ...fixedLines, ...inventoryLines];
+  const notFoundCount = allLines.filter((line) => line.matchStatus === "NOT_FOUND").length;
+  const reviewCount = allLines.filter((line) => line.needsReview).length;
+  logEvent({
+    level: notFoundCount > 0 ? "warn" : "info",
+    area: "product_matching",
+    message: "Boodschappenlijst samengesteld",
+    correlationId: createCorrelationId(),
+    meta: { householdId, mealPlanId, totalLines: allLines.length, notFoundCount, reviewCount },
+  });
+
   return prisma.shoppingList.create({
     data: {
       mealPlanId,
       status: "PREPARED",
-      lines: { create: [...mealLines, ...fixedLines, ...inventoryLines] },
+      lines: { create: allLines },
     },
     include: {
       lines: { include: { ingredient: true, product: true } },

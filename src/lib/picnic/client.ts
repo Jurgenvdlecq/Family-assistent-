@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { extractSearchResults, type PicnicSearchResultItem } from "./searchResults";
+import { logEvent } from "@/lib/logger";
 
 // TypeScript-poort van de niet-officiële python-picnic-api2 (Apache-2.0) —
 // dezelfde endpoints, headers en inlogflow, rechtstreeks overgenomen uit de
@@ -90,6 +91,12 @@ export class PicnicClient {
         body: body !== undefined ? JSON.stringify(body) : undefined,
       });
     } catch (cause) {
+      logEvent({
+        level: "error",
+        area: "picnic_network",
+        message: "Geen verbinding met Picnic",
+        meta: { method, path },
+      });
       throw new PicnicNetworkError("Geen verbinding met Picnic — probeer het later opnieuw.", cause);
     }
     this.updateTokenFromResponse(res);
@@ -105,9 +112,21 @@ export class PicnicClient {
     const res = await this.request(method, path, body, extraHeaders);
     const data = (await res.json().catch(() => ({}))) as PicnicErrorBody;
     if (data?.error?.code === "AUTH_ERROR" || data?.error?.code === "AUTH_INVALID_CRED") {
+      logEvent({
+        level: "warn",
+        area: "picnic_auth",
+        message: "Picnic-sessie verlopen of ongeldig",
+        meta: { method, path, code: data.error.code },
+      });
       throw new PicnicAuthError(data.error.message ?? "Picnic-authenticatiefout");
     }
     if (data?.error?.code) {
+      logEvent({
+        level: "warn",
+        area: "picnic_api",
+        message: data.error.message ?? "Onbekende fout van Picnic",
+        meta: { method, path, code: data.error.code },
+      });
       throw new PicnicApiError(data.error.message ?? "Onbekende fout van Picnic", data.error.code);
     }
     return data;
