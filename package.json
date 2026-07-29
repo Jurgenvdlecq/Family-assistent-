@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "tsx --test $(find src -name '*.test.ts')",
+    "test:e2e": "next build && tsx --test e2e/criticalFlow.e2e.ts",
     "db:seed": "tsx prisma/seed.ts",
     "picnic:login": "tsx scripts/picnic-login.ts"
   },
@@ -30,6 +31,7 @@
     "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.11",
+    "playwright": "1.62.0",
     "prisma": "^7.9.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.1",
