@@ -25,12 +25,13 @@ import {
   CATEGORY_LABELS,
   VARIANT_LABELS,
   STATUS_LABELS,
+  UNIT_LABELS,
   statusTone,
   variantTone,
+  ingredientFreshness,
 } from "@/lib/categoryStyle";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
-import RecipePhoto from "@/components/RecipePhoto";
 import { getPendingLearningPrompts } from "@/domain/learning/patterns";
 import {
   answerSmartLearningPrompt,
@@ -434,15 +435,14 @@ export default async function Home({
         {DAY_KEYS.map((dayKey) => {
           const entry = entryByDay.get(DAY_ENUM[dayKey]);
           const recipe = entry?.recipeVariant.recipe;
-          const visibleIngredients =
-            recipe?.ingredients
-              .filter(
-                (ri, index, list) =>
-                  list.findIndex(
-                    (item) => item.ingredientId === ri.ingredientId,
-                  ) === index,
-              )
-              .slice(0, 4) ?? [];
+          const dedupedIngredients =
+            recipe?.ingredients.filter(
+              (ri, index, list) =>
+                list.findIndex(
+                  (item) => item.ingredientId === ri.ingredientId,
+                ) === index,
+            ) ?? [];
+          const visibleIngredients = dedupedIngredients.slice(0, 4);
           const reason = entry?.reason ?? undefined;
           const routine = routineByDay.get(DAY_ENUM[dayKey]);
           const routineMatchesEntry = Boolean(
@@ -467,8 +467,6 @@ export default async function Home({
                     {formatDayShort(dateForDay(weekStart, dayKey))}
                   </p>
                 </div>
-
-                <RecipePhoto recipe={recipe} />
 
                 <div className="min-w-0 flex-1">
                   <p className="line-clamp-2 font-medium text-ink">
@@ -496,6 +494,31 @@ export default async function Home({
                   Wissel
                 </a>
               </div>
+
+              {dedupedIngredients.length > 0 && (
+                <details className="ml-14 rounded-lg border border-line bg-surface-2 px-3 py-2">
+                  <summary className="cursor-pointer text-xs font-medium text-ink-muted">
+                    Ingrediënten ({dedupedIngredients.length})
+                  </summary>
+                  <ul className="mt-2 flex flex-col gap-1.5">
+                    {dedupedIngredients.map((ri) => {
+                      const freshness = ingredientFreshness(ri.ingredient.category);
+                      return (
+                        <li
+                          key={ri.ingredientId}
+                          className="flex min-w-0 items-center justify-between gap-2 text-xs text-ink-muted"
+                        >
+                          <span className="min-w-0 truncate">
+                            {ri.ingredient.name} · {ri.quantity}
+                            {UNIT_LABELS[ri.unit] ?? ri.unit}
+                          </span>
+                          <Tag tone={freshness.tone}>{freshness.label}</Tag>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </details>
+              )}
 
               {reason && (
                 <details className="ml-14 rounded-lg bg-surface-2 px-3 py-2">

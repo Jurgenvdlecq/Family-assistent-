@@ -6,7 +6,6 @@ import { CATEGORY_LABELS, STATUS_LABELS, VARIANT_LABELS } from "@/lib/categorySt
 import { accessibleRecipeWhere } from "@/lib/recipeScope";
 import { picnicImageUrl } from "@/lib/picnic/products";
 import NavBar from "@/components/NavBar";
-import RecipePhoto from "@/components/RecipePhoto";
 import {
   allowProductForIngredient,
   copyRecipeToHousehold,
@@ -451,23 +450,6 @@ export default async function ReceptenPage({
               placeholder="Bron of notitie"
               className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
             />
-            <input
-              name="imageUrl"
-              placeholder="Echte foto-URL van het gerecht"
-              className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                name="imageAttribution"
-                placeholder="Fotocredit"
-                className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-              />
-              <input
-                name="imageSourceUrl"
-                placeholder="Link naar fotobron"
-                className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-              />
-            </div>
             <textarea
               name="properties"
               rows={2}
@@ -506,7 +488,6 @@ export default async function ReceptenPage({
             return (
               <article key={recipe.id} className="min-w-0 rounded-xl border border-line bg-surface p-4">
                 <div className="mb-3 flex min-w-0 items-start gap-3">
-                  <RecipePhoto recipe={recipe} className="h-16 w-16 rounded-lg" />
                   <div className="min-w-0 flex-1">
                     <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
                       <h2 className="truncate font-semibold text-ink">{recipe.title}</h2>
@@ -517,9 +498,6 @@ export default async function ReceptenPage({
                     <p className="text-xs text-ink-faint">
                       {recipe.ingredients.length} ingrediënten · {recipe.variants.length} varianten
                     </p>
-                    {recipe.imageAttribution && (
-                      <p className="mt-1 truncate text-[11px] text-ink-faint">{recipe.imageAttribution}</p>
-                    )}
                   </div>
                 </div>
                 <p className="mb-3 text-sm text-ink-muted">
@@ -558,26 +536,6 @@ export default async function ReceptenPage({
                       placeholder="Bron of notitie"
                       className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
                     />
-                    <input
-                      name="imageUrl"
-                      defaultValue={recipe.imageUrl ?? ""}
-                      placeholder="Echte foto-URL van het gerecht"
-                      className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-                    />
-                    <div className="grid grid-cols-2 gap-2">
-                      <input
-                        name="imageAttribution"
-                        defaultValue={recipe.imageAttribution ?? ""}
-                        placeholder="Fotocredit"
-                        className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-                      />
-                      <input
-                        name="imageSourceUrl"
-                        defaultValue={recipe.imageSourceUrl ?? ""}
-                        placeholder="Link naar fotobron"
-                        className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-                      />
-                    </div>
                     <textarea
                       name="properties"
                       rows={2}
