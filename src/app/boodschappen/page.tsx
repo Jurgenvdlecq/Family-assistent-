@@ -391,6 +391,44 @@ function FixedProductImage({ item }: { item: { image_id?: string; name?: string 
   );
 }
 
+function InventoryRow({
+  item,
+  householdId,
+  focused,
+}: {
+  item: { ingredientId: string; name: string; status: string };
+  householdId: string;
+  focused: boolean;
+}) {
+  return (
+    <div
+      id={`inventory-${item.ingredientId}`}
+      className={`flex min-w-0 scroll-mt-6 flex-wrap items-center justify-between gap-2 p-4 transition-colors ${
+        focused ? "bg-accent-soft" : ""
+      }`}
+    >
+      <p className="min-w-0 truncate text-ink">{item.name}</p>
+      <div className="flex shrink-0 gap-1 rounded-lg bg-surface-2 p-1">
+        {INVENTORY_STATUS_OPTIONS.map((option) => (
+          <form key={option.value} action={updateInventoryStatus}>
+            <input type="hidden" name="householdId" value={householdId} />
+            <input type="hidden" name="ingredientId" value={item.ingredientId} />
+            <input type="hidden" name="status" value={option.value} />
+            <button
+              type="submit"
+              className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                item.status === option.value ? "bg-accent text-accent-ink" : "text-ink-muted hover:text-ink"
+              }`}
+            >
+              {option.label}
+            </button>
+          </form>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default async function BoodschappenPage({
   searchParams,
 }: {
@@ -454,6 +492,12 @@ export default async function BoodschappenPage({
       getShoppingListCandidatesByIngredient(household.id, mealLines.map((line) => line.ingredientId)),
       getInventoryMap(household.id),
     ]);
+  const inventoryAttentionItems = inventoryChecklist.filter((item) => item.needsAttention);
+  const inventoryConfirmedItems = inventoryChecklist.filter((item) => !item.needsAttention);
+  const focusedInventoryIsConfirmed = inventoryConfirmedItems.some(
+    (item) => item.ingredientId === focusedInventoryId
+  );
+
   const activeIngredientIds = new Set(activeFixedLines.map((l) => l.ingredientId));
   const inactiveFixedItems = fixedGroceries.filter((f) => !activeIngredientIds.has(f.ingredientId));
   const inactiveFixedProductPreferences = inactiveFixedItems.length
@@ -1192,51 +1236,56 @@ export default async function BoodschappenPage({
         <details
           id="inventory-check"
           className="mt-6 scroll-mt-6 rounded-xl border border-line bg-surface p-4"
-          open={focusedInventoryId ? true : undefined}
+          open={focusedInventoryId || inventoryAttentionItems.length > 0 ? true : undefined}
         >
           <summary className="cursor-pointer text-sm font-semibold text-ink">
-            Voorraadcheck voor {inventoryChecklist.length} basisproducten
+            {inventoryAttentionItems.length > 0
+              ? `Voorraadcheck: ${inventoryAttentionItems.length} basisproducten`
+              : "Voorraad ziet er goed uit"}
           </summary>
           {focusedInventoryId && params.status && STATUS_MESSAGES[params.status] && (
             <p className="mt-3 rounded-md border border-tag-green-ink/20 bg-tag-green-bg px-2.5 py-1.5 text-xs font-medium text-tag-green-ink">
               {STATUS_MESSAGES[params.status]}
             </p>
           )}
-          <p className="mt-2 text-sm text-ink-muted">
-            Hoe staat het met deze basisproducten? Ik onthoud je antwoord voor volgende keren.
-          </p>
-          <div className="mt-3 flex min-w-0 flex-col divide-y divide-line">
-          {inventoryChecklist.map((item) => (
-            <div
-              key={item.ingredientId}
-              id={`inventory-${item.ingredientId}`}
-              className={`flex min-w-0 scroll-mt-6 flex-wrap items-center justify-between gap-2 p-4 transition-colors ${
-                item.ingredientId === focusedInventoryId ? "bg-accent-soft" : ""
-              }`}
-            >
-              <p className="min-w-0 truncate text-ink">{item.name}</p>
-              <div className="flex shrink-0 gap-1 rounded-lg bg-surface-2 p-1">
-                {INVENTORY_STATUS_OPTIONS.map((option) => (
-                  <form key={option.value} action={updateInventoryStatus}>
-                    <input type="hidden" name="householdId" value={household.id} />
-                    <input type="hidden" name="ingredientId" value={item.ingredientId} />
-                    <input type="hidden" name="status" value={option.value} />
-                    <button
-                      type="submit"
-                      className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                        item.status === option.value
-                          ? "bg-accent text-accent-ink"
-                          : "text-ink-muted hover:text-ink"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  </form>
+          {inventoryAttentionItems.length > 0 ? (
+            <>
+              <p className="mt-2 text-sm text-ink-muted">
+                Hoe staat het met deze basisproducten? Ik onthoud je antwoord voor volgende keren.
+              </p>
+              <div className="mt-3 flex min-w-0 flex-col divide-y divide-line">
+                {inventoryAttentionItems.map((item) => (
+                  <InventoryRow
+                    key={item.ingredientId}
+                    item={item}
+                    householdId={household.id}
+                    focused={item.ingredientId === focusedInventoryId}
+                  />
                 ))}
               </div>
-            </div>
-          ))}
-          </div>
+            </>
+          ) : (
+            <p className="mt-2 text-sm text-ink-muted">
+              Geen van jullie basisproducten heeft deze week een check nodig.
+            </p>
+          )}
+          {inventoryConfirmedItems.length > 0 && (
+            <details className="mt-4" open={focusedInventoryIsConfirmed ? true : undefined}>
+              <summary className="cursor-pointer text-xs font-medium text-ink-muted">
+                {inventoryConfirmedItems.length} recent bevestigd
+              </summary>
+              <div className="mt-2 flex min-w-0 flex-col divide-y divide-line">
+                {inventoryConfirmedItems.map((item) => (
+                  <InventoryRow
+                    key={item.ingredientId}
+                    item={item}
+                    householdId={household.id}
+                    focused={item.ingredientId === focusedInventoryId}
+                  />
+                ))}
+              </div>
+            </details>
+          )}
         </details>
 
         {!household.picnicAuthToken && (

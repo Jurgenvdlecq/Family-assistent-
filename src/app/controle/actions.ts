@@ -217,8 +217,9 @@ export async function searchPicnicProductsForLine(formData: FormData) {
     productsToSave.map((data) =>
       prisma.product.upsert({
         where: {
-          ingredientId_externalRef: {
+          ingredientId_provider_externalRef: {
             ingredientId: data.ingredientId,
+            provider: "PICNIC",
             externalRef: data.externalRef,
           },
         },

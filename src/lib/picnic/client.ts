@@ -87,21 +87,34 @@ export class PicnicClient {
     };
     if (this.authToken) headers[AUTH_HEADER] = this.authToken;
 
-    let res: Response;
-    try {
-      res = await fetch(BASE_URL + path, {
+    const doFetch = () =>
+      fetch(BASE_URL + path, {
         method,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,
       });
-    } catch (cause) {
-      logEvent({
-        level: "error",
-        area: "picnic_network",
-        message: "Geen verbinding met Picnic",
-        meta: { method, path },
-      });
-      throw new PicnicNetworkError("Geen verbinding met Picnic — probeer het later opnieuw.", cause);
+
+    let res: Response;
+    try {
+      // Eén stille retry bij een verbindingsfout (bv. een korte wifi-
+      // hapering of een tijdelijke DNS/socket-hik) — mandje vullen loopt
+      // over meerdere producten na elkaar; zonder dit stopt Fase 7's
+      // "stop meteen bij een netwerkfout"-gedrag de hele batch al bij het
+      // eerste product, terwijl een enkele nieuwe poging het vaak gewoon
+      // oplost.
+      res = await doFetch();
+    } catch {
+      try {
+        res = await doFetch();
+      } catch (cause) {
+        logEvent({
+          level: "error",
+          area: "picnic_network",
+          message: "Geen verbinding met Picnic",
+          meta: { method, path },
+        });
+        throw new PicnicNetworkError("Geen verbinding met Picnic — probeer het later opnieuw.", cause);
+      }
     }
     this.updateTokenFromResponse(res);
     return res;

@@ -131,8 +131,9 @@ async function savePicnicCandidatesForLooseMeal(
         candidates.map((candidate) =>
           prisma.product.upsert({
             where: {
-              ingredientId_externalRef: {
+              ingredientId_provider_externalRef: {
                 ingredientId: candidate.ingredientId,
+                provider: "PICNIC",
                 externalRef: candidate.externalRef,
               },
             },
