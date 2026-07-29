@@ -229,6 +229,9 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
       data: {
         mealPlanId,
         status: "PREPARED",
+        // WP69: betrouwbaar "sinds wanneer staat controle open" voor de
+        // attention-laag — meteen gezet bij aanmaken, niet pas later afgeleid.
+        reviewFlaggedAt: reviewCount > 0 ? new Date() : null,
         lines: { create: allLines },
       },
       include: {
@@ -322,6 +325,7 @@ export async function syncShoppingListForInventoryChange(householdId: string, in
       }
     } else if (!existingLine && net) {
       const match = await matchProductForIngredient(householdId, ingredientId);
+      const fields = matchToLineFields(match);
       await prisma.shoppingListLine.create({
         data: {
           shoppingListId: shoppingList.id,
@@ -329,9 +333,10 @@ export async function syncShoppingListForInventoryChange(householdId: string, in
           quantity: net.amount,
           unit: net.unit,
           source: "MEAL",
-          ...matchToLineFields(match),
+          ...fields,
         },
       });
+      await flagReviewNeeded(shoppingList.id, shoppingList.reviewFlaggedAt, fields.needsReview);
     }
     return;
   }
@@ -361,7 +366,19 @@ export async function syncShoppingListForInventoryChange(householdId: string, in
         needsReview: true,
       },
     });
+    await flagReviewNeeded(shoppingList.id, shoppingList.reviewFlaggedAt, true);
   }
+}
+
+/**
+ * WP69: een regel die na het aanmaken van de lijst alsnog controle nodig
+ * krijgt (bijv. een nieuwe voorraadvraag) mag de "sinds wanneer staat
+ * controle open"-klok niet overslaan — anders zou de attention-laag deze
+ * situatie nooit tonen (die vereist een gezette `reviewFlaggedAt`).
+ */
+async function flagReviewNeeded(shoppingListId: string, currentlyFlaggedAt: Date | null, needsReview: boolean) {
+  if (!needsReview || currentlyFlaggedAt) return;
+  await prisma.shoppingList.update({ where: { id: shoppingListId }, data: { reviewFlaggedAt: new Date() } });
 }
 
 export async function getShoppingListCandidates(householdId: string, ingredientId: string) {

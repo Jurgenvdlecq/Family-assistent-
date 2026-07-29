@@ -285,7 +285,7 @@ export async function confirmShoppingList(formData: FormData) {
   await acceptProposedMealPlanEntries(shoppingList.mealPlan.householdId, shoppingList.mealPlan.id);
   await prisma.shoppingList.update({
     where: { id: shoppingListId },
-    data: { status: "REVIEWED" },
+    data: { status: "REVIEWED", reviewedAt: new Date() },
   });
   revalidatePath("/boodschappen");
   revalidatePath("/");

@@ -477,6 +477,7 @@ export default async function BoodschappenPage({
     itemCount: sortedLines.length,
     status: shoppingList.status,
   };
+  const hasTransferredLines = sortedLines.some((line) => line.transferredToPicnicAt !== null);
 
   const [fixedGroceries, inventoryChecklist, fixedProductResults, bulkFixedPreviewLines, portionScaleByDay, candidatesByIngredient, inventoryMap] =
     await Promise.all([
@@ -1299,6 +1300,8 @@ export default async function BoodschappenPage({
         <AddToPicnicCart
           shoppingListId={shoppingList.id}
           connected={Boolean(household.picnicAuthToken)}
+          hasTransferredLines={hasTransferredLines}
+          orderConfirmed={shoppingList.orderConfirmedAt !== null}
         />
       </div>
 
