@@ -198,6 +198,8 @@ export default async function GerechtenPage({
   // huishouden heeft die nog niet, en zou dan een lege lijst zonder enige
   // "Kies"-knop te zien krijgen. Val in dat geval terug op alle gerechten
   // (de sortering hieronder weegt een eventuele daggewoonte alsnog mee).
+  const usesFallbackForDay =
+    direction === "day" && filtered.length === 0 && variants.length > 0;
   if (filtered.length === 0 && (direction === "day" || direction === "favorites")) {
     filtered = variants;
   }
@@ -328,6 +330,13 @@ export default async function GerechtenPage({
             </a>
           ))}
         </div>
+
+        {usesFallbackForDay && (
+          <p className="mb-5 text-xs text-ink-muted">
+            Ik heb nog geen voorkeur geleerd voor {DAY_LABELS[dayKey]}. Dit zijn alle suggesties —
+            kies er een en ik leer wat bij deze dag past.
+          </p>
+        )}
       </div>
 
       <div className="flex min-w-0 flex-col gap-8 px-6">
@@ -393,6 +402,7 @@ export default async function GerechtenPage({
         {(direction !== "all" || rest.length > 0) && (
           <RecipeSection
             title={direction === "all" ? "Meer opties" : DIRECTIONS.find((d) => d.key === direction)!.label}
+            icon={<UtensilsCrossed size={16} className="text-ink-faint" />}
             variants={direction === "all" ? rest : filtered}
             wishScoresByVariantId={wishScoresByVariantId}
             titleScoresByVariantId={titleScoresByVariantId}

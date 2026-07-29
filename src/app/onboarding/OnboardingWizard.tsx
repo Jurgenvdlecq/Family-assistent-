@@ -411,7 +411,7 @@ export default function OnboardingWizard() {
           <button
             type="button"
             onClick={goNext}
-            className="rounded-lg bg-ink px-5 py-2.5 text-sm font-medium text-bg hover:opacity-90"
+            className="rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-ink hover:opacity-90"
           >
             Volgende
           </button>
