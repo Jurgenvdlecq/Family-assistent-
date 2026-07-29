@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { addToPicnicCart, clearPicnicCart, getPicnicConfirmationSummary } from "./actions";
 import type { PicnicCartResult } from "@/lib/picnic/cartService";
 import type { ConfirmationSummary } from "@/lib/picnic/confirmationSummary";
@@ -75,9 +76,11 @@ export default function AddToPicnicCart({
   if (!connected) {
     return (
       <div className="mt-4 min-w-0 rounded-lg bg-surface-2 p-3 text-xs text-ink-muted">
-        Nog geen Picnic-account gekoppeld. Draai eenmalig{" "}
-        <code className="rounded bg-line px-1 py-0.5 text-ink">npm run picnic:login</code> in de
-        terminal om deze knop te activeren.
+        Nog geen Picnic-account gekoppeld.{" "}
+        <Link href="/ons-gezin" className="font-medium text-accent underline decoration-dotted">
+          Koppel je account bij Ons gezin
+        </Link>{" "}
+        om deze knop te activeren.
       </div>
     );
   }
