@@ -133,9 +133,11 @@ function IngredientRows({
 export default async function ReceptenPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; q?: string }>;
 }) {
   const params = await searchParams;
+  const searchQuery = String(params.q ?? "").trim();
+  const normalizedQuery = searchQuery.toLowerCase();
   const statusMessage = params.status ? STATUS_MESSAGES[params.status] : undefined;
   const household = await requireCurrentHousehold();
   const [recipes, ingredients] = await Promise.all([
@@ -160,6 +162,13 @@ export default async function ReceptenPage({
       orderBy: { name: "asc" },
     }),
   ]);
+  const visibleRecipes = normalizedQuery
+    ? recipes.filter(
+        (recipe) =>
+          recipe.title.toLowerCase().includes(normalizedQuery) ||
+          recipe.ingredients.some((ri) => ri.ingredient.name.toLowerCase().includes(normalizedQuery))
+      )
+    : recipes;
 
   return (
     <div className="mx-auto flex min-h-screen w-full min-w-0 max-w-2xl flex-col pb-24">
@@ -478,7 +487,31 @@ export default async function ReceptenPage({
         </details>
 
         <div className="order-2 mb-8 grid gap-3">
-          {recipes.map((recipe) => {
+          <form action="/recepten" className="mb-1 flex min-w-0 gap-2">
+            <input
+              name="q"
+              defaultValue={searchQuery}
+              placeholder="Zoek op receptnaam of ingrediënt"
+              className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+            />
+            <button
+              type="submit"
+              className="shrink-0 rounded-lg border border-line px-3 py-2 text-sm font-medium text-ink-muted hover:border-accent hover:text-accent"
+            >
+              Zoeken
+            </button>
+          </form>
+          {searchQuery && (
+            <p className="mb-1 text-xs text-ink-muted">
+              {visibleRecipes.length === 0
+                ? `Geen recepten gevonden voor "${searchQuery}".`
+                : `${visibleRecipes.length} van ${recipes.length} recepten voor "${searchQuery}".`}{" "}
+              <Link href="/recepten" className="font-medium text-accent underline decoration-dotted">
+                Wis zoekopdracht
+              </Link>
+            </p>
+          )}
+          {visibleRecipes.map((recipe) => {
             const editable = recipe.householdId === household.id;
             const scopeLabel = editable
               ? "Eigen recept"
