@@ -1,17 +1,3 @@
-// Geen productfoto's beschikbaar (geen Picnic-productafbeeldingen-API) — een
-// zachte, per-categorie kleurverloop-tegel doet dienst als visuele anker per
-// gerecht, in plaats van te doen alsof er een echte foto staat.
-export const CATEGORY_GRADIENT: Record<string, string> = {
-  PASTA: "from-amber-200 to-orange-300",
-  WRAPS: "from-lime-200 to-green-300",
-  RICE_DISH: "from-yellow-200 to-amber-300",
-  ALL_VEGGIE_DAY: "from-green-200 to-emerald-300",
-  QUICK_AND_EASY: "from-sky-200 to-blue-300",
-  COMFORT_FOOD: "from-rose-200 to-red-300",
-  AIRFRYER: "from-violet-200 to-purple-300",
-  OTHER: "from-teal-200 to-cyan-300",
-};
-
 export const CATEGORY_LABELS: Record<string, string> = {
   PASTA: "Pasta",
   WRAPS: "Wraps",
@@ -37,7 +23,24 @@ export const STATUS_LABELS: Record<string, string> = {
   SAFE_CHOICE: "Favoriet",
 };
 
+export const UNIT_LABELS: Record<string, string> = { GRAM: "g", ML: "ml", PIECE: "x" };
+
 export type TagTone = "blue" | "green" | "amber" | "purple" | "pink";
+
+// Geen aparte "verspercentage"-data per ingrediënt — deze indeling leunt op
+// de bestaande IngredientCategory om aan te geven of iets vers ingekocht
+// wordt (vlees, vis, zuivel, groente, fruit) of juist houdbaar/verpakt is
+// (graan, peulvrucht, voorraadkast), zodat een gebruiker in één oogopslag
+// snapt hoe een gerecht ongeveer tot stand komt.
+export function ingredientFreshness(category: string): { label: string; tone: TagTone } {
+  if (["MEAT", "FISH", "DAIRY", "VEGETABLE", "FRUIT"].includes(category)) {
+    return { label: "Vers", tone: "green" };
+  }
+  if (["GRAIN", "LEGUME", "PANTRY"].includes(category)) {
+    return { label: "Houdbaar/pak", tone: "amber" };
+  }
+  return { label: "Overig", tone: "blue" };
+}
 
 export function statusTone(status: string): TagTone {
   if (status === "SAFE_CHOICE") return "green";

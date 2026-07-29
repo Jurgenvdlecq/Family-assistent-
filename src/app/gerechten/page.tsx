@@ -13,7 +13,6 @@ import { MEAL_REPLACEMENT_REASONS } from "@/domain/learning/feedbackReasons";
 import { dayRecipePreferenceOwnerId } from "@/domain/meal-planning/dayRecipePreferences";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
-import RecipePhoto from "@/components/RecipePhoto";
 import { chooseLiteralMealPlanEntry, replaceMealPlanEntry } from "./actions";
 
 // Leest live weekplanning + voorkeuren — nooit statisch prerenderen.
@@ -445,7 +444,6 @@ function RecipeSection({
               <input type="hidden" name="weekStart" value={weekStart.toISOString()} />
               <div className="rounded-xl border border-line bg-surface p-3 transition-colors hover:border-accent/50">
                 <div className="flex min-w-0 items-center gap-3">
-                  <RecipePhoto recipe={variant.recipe} className="h-14 w-14 rounded-lg" />
                   <div className="min-w-0 flex-1">
                     <p className="line-clamp-2 font-medium text-ink">{variant.recipe.title}</p>
                     <div className="mt-1 flex flex-wrap gap-1.5">
