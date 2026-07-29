@@ -117,24 +117,32 @@ export async function assertCurrentHousehold(householdId: string) {
   return household;
 }
 
-export async function signInToHousehold(householdId: string, accessCode: string) {
-  const household = await prisma.household.findUniqueOrThrow({ where: { id: householdId } });
-  if (!household.accessCodeHash) {
-    throw new Error("Dit huishouden heeft nog geen toegangscode. Open het huishouden eenmalig en stel een code in bij Ons gezin.");
+/**
+ * Logt in op basis van alleen de toegangscode, zonder dat de gebruiker eerst
+ * een huishouden uit een lijst hoeft te kiezen. `hashHouseholdAccessCode`
+ * neemt het huishouden-ID mee in de hash, dus elke code hoort ondubbelzinnig
+ * bij precies één huishouden — de juiste rij vinden door de code tegen elk
+ * huishouden te proberen is daarmee net zo betrouwbaar als vooraf een
+ * huishouden selecteren, maar lekt geen enkele huishoudennaam aan wie het
+ * loginscherm bezoekt (WP62).
+ */
+export async function signInByAccessCode(accessCode: string) {
+  const households = await prisma.household.findMany({
+    where: { accessCodeHash: { not: null } },
+  });
+
+  for (const household of households) {
+    const attemptedHash = hashHouseholdAccessCode(household.id, accessCode);
+    if (household.accessCodeHash!.length !== attemptedHash.length) continue;
+    const matches = crypto.timingSafeEqual(
+      Buffer.from(attemptedHash, "hex"),
+      Buffer.from(household.accessCodeHash!, "hex")
+    );
+    if (matches) {
+      await createHouseholdSession(household.id);
+      return household;
+    }
   }
 
-  const attemptedHash = hashHouseholdAccessCode(household.id, accessCode);
-  if (household.accessCodeHash.length !== attemptedHash.length) {
-    throw new Error("Deze toegangscode klopt niet.");
-  }
-  const matches = crypto.timingSafeEqual(
-    Buffer.from(attemptedHash, "hex"),
-    Buffer.from(household.accessCodeHash, "hex")
-  );
-  if (!matches) {
-    throw new Error("Deze toegangscode klopt niet.");
-  }
-
-  await createHouseholdSession(household.id);
-  return household;
+  throw new Error("Deze toegangscode klopt niet.");
 }
