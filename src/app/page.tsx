@@ -28,7 +28,6 @@ import {
   UNIT_LABELS,
   statusTone,
   variantTone,
-  ingredientFreshness,
 } from "@/lib/categoryStyle";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
@@ -233,45 +232,23 @@ export default async function Home({
       ),
     ),
   ];
-  const [personalPreferences, shoppingListLines, productPreferences] = await Promise.all([
-    prisma.preference.findMany({
-      where: {
-        ownerType: "PERSON",
-        ownerId: { in: participantIds },
-        OR: [
-          { subjectType: "RECIPE_VARIANT", subjectId: { in: mealVariantIds } },
-          { subjectType: "RECIPE_CATEGORY", subjectId: { in: mealCategoryIds } },
-          { subjectType: "INGREDIENT", subjectId: { in: mealIngredientIds } },
-        ],
-      },
-    }),
-    shoppingList
-      ? prisma.shoppingListLine.findMany({
-          where: { shoppingListId: shoppingList.id, ingredientId: { in: mealIngredientIds } },
-          select: { ingredientId: true, product: { select: { name: true } } },
-        })
-      : Promise.resolve([]),
-    prisma.householdProductPreference.findMany({
-      where: { householdId: household.id, ingredientId: { in: mealIngredientIds } },
-      select: { ingredientId: true, product: { select: { name: true } } },
-    }),
-  ]);
+  const personalPreferences = await prisma.preference.findMany({
+    where: {
+      ownerType: "PERSON",
+      ownerId: { in: participantIds },
+      OR: [
+        { subjectType: "RECIPE_VARIANT", subjectId: { in: mealVariantIds } },
+        { subjectType: "RECIPE_CATEGORY", subjectId: { in: mealCategoryIds } },
+        { subjectType: "INGREDIENT", subjectId: { in: mealIngredientIds } },
+      ],
+    },
+  });
   const personalPreferenceByPersonAndVariant = new Map(
     personalPreferences.map((preference) => [
       `${preference.ownerId}:${preference.subjectType}:${preference.subjectId}`,
       preference.stance,
     ]),
   );
-  // De onthouden standaardkeuze is het beste vermoeden zolang er nog geen
-  // boodschappenlijst is; de daadwerkelijke regel op de lijst van deze week
-  // wint zodra die er is (kan afwijken, bv. handmatig een ander product).
-  const productNameByIngredientId = new Map<string, string>();
-  for (const preference of productPreferences) {
-    productNameByIngredientId.set(preference.ingredientId, preference.product.name);
-  }
-  for (const line of shoppingListLines) {
-    if (line.product) productNameByIngredientId.set(line.ingredientId, line.product.name);
-  }
 
   const entryByDay = new Map(mealPlan.entries.map((e) => [e.dayOfWeek, e]));
   const greetingName = household.persons[0]?.name ?? household.name;
@@ -488,25 +465,13 @@ export default async function Home({
                   <summary className="cursor-pointer text-xs font-medium text-ink-muted">
                     Ingrediënten ({dedupedIngredients.length})
                   </summary>
-                  <ul className="mt-2 flex flex-col gap-1.5">
-                    {dedupedIngredients.map((ri) => {
-                      const freshness = ingredientFreshness(
-                        ri.ingredient.category,
-                        productNameByIngredientId.get(ri.ingredientId),
-                      );
-                      return (
-                        <li
-                          key={ri.ingredientId}
-                          className="flex min-w-0 items-center justify-between gap-2 text-xs text-ink-muted"
-                        >
-                          <span className="min-w-0 truncate">
-                            {ri.ingredient.name} · {ri.quantity}
-                            {UNIT_LABELS[ri.unit] ?? ri.unit}
-                          </span>
-                          <Tag tone={freshness.tone}>{freshness.label}</Tag>
-                        </li>
-                      );
-                    })}
+                  <ul className="mt-2 flex flex-col gap-1">
+                    {dedupedIngredients.map((ri) => (
+                      <li key={ri.ingredientId} className="truncate text-xs text-ink-muted">
+                        {ri.ingredient.name} · {ri.quantity}
+                        {UNIT_LABELS[ri.unit] ?? ri.unit}
+                      </li>
+                    ))}
                   </ul>
                 </details>
               )}
