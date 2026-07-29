@@ -214,50 +214,12 @@ export default async function OnsGezinPage({
 
         <LearnedPatternsPanel householdId={household.id} />
 
-        <h2 className="mb-3 text-sm font-semibold text-ink">Jullie vaste gerechten per dag</h2>
-        <DayRecipePreferencesManager householdId={household.id} />
-
-        <h2 className="mb-3 text-sm font-semibold text-ink">Favorieten en eetstijl</h2>
-        <section className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
-          <div className="mb-4 flex min-w-0 items-start gap-3">
-            <Heart size={18} className="mt-0.5 shrink-0 text-tag-pink-ink" />
-            <div className="min-w-0">
-              <p className="font-medium text-ink">Maaltijdsoorten</p>
-              <p className="text-sm text-ink-muted">
-                Dit stuurt welke gerechten ik eerder voorstel. Je kunt dit altijd aanpassen.
-              </p>
-            </div>
+        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <summary className="cursor-pointer font-medium text-ink">Jullie vaste gerechten per dag</summary>
+          <div className="mt-4">
+            <DayRecipePreferencesManager householdId={household.id} />
           </div>
-          <div className="grid gap-3">
-            {Object.entries(CATEGORY_LABELS).map(([category, label]) => {
-              const currentStance = categoryStanceById.get(category) ?? "UNKNOWN";
-              return (
-                <div key={category} className="grid gap-2 rounded-lg border border-line p-3">
-                  <p className="text-sm font-medium text-ink">{label}</p>
-                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-                    {CATEGORY_STANCE_OPTIONS.map((option) => (
-                      <form key={option.value} action={updateHouseholdCategoryPreference}>
-                        <input type="hidden" name="householdId" value={household.id} />
-                        <input type="hidden" name="category" value={category} />
-                        <input type="hidden" name="stance" value={option.value} />
-                        <button
-                          type="submit"
-                          className={`w-full rounded-md border px-2 py-1.5 text-xs font-medium transition-colors hover:border-accent/70 hover:bg-surface-2 ${
-                            currentStance === option.value
-                              ? "border-accent bg-accent/10 text-accent"
-                              : "border-line text-ink-muted"
-                          }`}
-                        >
-                          {option.label}
-                        </button>
-                      </form>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
+        </details>
 
         <h2 className="mb-3 text-sm font-semibold text-ink">Picnic</h2>
         <PicnicConnection
@@ -267,116 +229,164 @@ export default async function OnsGezinPage({
           status={params.status}
         />
 
-        <h2 className="mb-3 text-sm font-semibold text-ink">Onthouden Picnic-producten</h2>
-        <section className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
-          <div className="mb-4 flex min-w-0 items-start gap-3">
-            <ShoppingBag size={18} className="mt-0.5 shrink-0 text-tag-blue-ink" />
-            <div className="min-w-0">
-              <p className="font-medium text-ink">Vaste productkeuzes</p>
-              <p className="text-sm text-ink-muted">
-                Deze producten gebruik ik automatisch opnieuw bij dezelfde ingrediënten.
-              </p>
+        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <summary className="flex cursor-pointer items-center gap-2 font-medium text-ink">
+            <Heart size={16} className="text-tag-pink-ink" />
+            Favorieten en eetstijl
+          </summary>
+          <div className="mt-4">
+            <p className="mb-3 text-sm text-ink-muted">
+              Dit stuurt welke gerechten ik eerder voorstel. Je kunt dit altijd aanpassen.
+            </p>
+            <div className="grid gap-3">
+              {Object.entries(CATEGORY_LABELS).map(([category, label]) => {
+                const currentStance = categoryStanceById.get(category) ?? "UNKNOWN";
+                return (
+                  <div key={category} className="grid gap-2 rounded-lg border border-line p-3">
+                    <p className="text-sm font-medium text-ink">{label}</p>
+                    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                      {CATEGORY_STANCE_OPTIONS.map((option) => (
+                        <form key={option.value} action={updateHouseholdCategoryPreference}>
+                          <input type="hidden" name="householdId" value={household.id} />
+                          <input type="hidden" name="category" value={category} />
+                          <input type="hidden" name="stance" value={option.value} />
+                          <button
+                            type="submit"
+                            className={`w-full rounded-md border px-2 py-1.5 text-xs font-medium transition-colors hover:border-accent/70 hover:bg-surface-2 ${
+                              currentStance === option.value
+                                ? "border-accent bg-accent/10 text-accent"
+                                : "border-line text-ink-muted"
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        </form>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
+        </details>
 
-          {productPreferences.length === 0 ? (
-            <p className="rounded-lg bg-surface-2 px-3 py-2 text-sm text-ink-muted">
-              Nog niets onthouden. Dit groeit vanzelf wanneer je producten bevestigt op Controle.
+        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <summary className="flex cursor-pointer items-center gap-2 font-medium text-ink">
+            <ShoppingBag size={16} className="text-tag-blue-ink" />
+            Onthouden Picnic-producten
+            <span className="text-xs font-normal text-ink-faint">
+              {productPreferences.length === 0 ? "nog niets" : `${productPreferences.length}`}
+            </span>
+          </summary>
+          <div className="mt-4">
+            <p className="mb-3 text-sm text-ink-muted">
+              Deze producten gebruik ik automatisch opnieuw bij dezelfde ingrediënten.
             </p>
-          ) : (
-            <div className="flex min-w-0 flex-col divide-y divide-line rounded-lg border border-line">
-              {productPreferences.map((preference) => (
-                <div key={preference.id} className="flex min-w-0 items-center justify-between gap-3 p-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-ink">{preference.ingredient.name}</p>
-                    <p className="truncate text-xs text-ink-muted">
-                      {preference.product.name}
-                      {preference.product.packageSize ? ` · ${preference.product.packageSize}` : ""}
-                      {` · ${preference.timesChosen}x gekozen`}
-                    </p>
+            {productPreferences.length === 0 ? (
+              <p className="rounded-lg bg-surface-2 px-3 py-2 text-sm text-ink-muted">
+                Nog niets onthouden. Dit groeit vanzelf wanneer je producten bevestigt op Controle.
+              </p>
+            ) : (
+              <div className="flex min-w-0 flex-col divide-y divide-line rounded-lg border border-line">
+                {productPreferences.map((preference) => (
+                  <div key={preference.id} className="flex min-w-0 items-center justify-between gap-3 p-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-ink">{preference.ingredient.name}</p>
+                      <p className="truncate text-xs text-ink-muted">
+                        {preference.product.name}
+                        {preference.product.packageSize ? ` · ${preference.product.packageSize}` : ""}
+                        {` · ${preference.timesChosen}x gekozen`}
+                      </p>
+                    </div>
+                    <form action={forgetProductPreference} className="shrink-0">
+                      <input type="hidden" name="householdId" value={household.id} />
+                      <input type="hidden" name="preferenceId" value={preference.id} />
+                      <button
+                        type="submit"
+                        aria-label={`${preference.product.name} vergeten`}
+                        title="Niet meer onthouden"
+                        className="rounded-lg border border-line p-2 text-ink-faint transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-700"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </form>
                   </div>
-                  <form action={forgetProductPreference} className="shrink-0">
-                    <input type="hidden" name="householdId" value={household.id} />
-                    <input type="hidden" name="preferenceId" value={preference.id} />
-                    <button
-                      type="submit"
-                      aria-label={`${preference.product.name} vergeten`}
-                      title="Niet meer onthouden"
-                      className="rounded-lg border border-line p-2 text-ink-faint transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-700"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </form>
-                </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </details>
+
+        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <summary className="cursor-pointer font-medium text-ink">Productkeuze</summary>
+          <form action={updateProductChoicePreference} className="mt-4">
+            <input type="hidden" name="householdId" value={household.id} />
+            <p className="mb-3 text-sm text-ink-muted">
+              Als er nog geen vaste productvoorkeur is, gebruik ik deze voorkeur om kandidaten te rangschikken.
+            </p>
+            <div className="grid gap-2">
+              {PRODUCT_CHOICE_PREFERENCES.map((preference) => (
+                <label
+                  key={preference}
+                  className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm transition-colors hover:border-accent/70 hover:bg-surface-2 ${
+                    productChoicePreference === preference ? "border-accent bg-accent/10" : "border-line"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="productChoicePreference"
+                    value={preference}
+                    defaultChecked={productChoicePreference === preference}
+                    className="mt-0.5 h-4 w-4 accent-accent"
+                  />
+                  <span className="min-w-0">
+                    <span className="block font-medium text-ink">{PRODUCT_CHOICE_LABELS[preference]}</span>
+                    <span className="block text-xs text-ink-faint">
+                      {preference === "LOW_PRICE"
+                        ? "Bij twijfel liever een voordeliger product."
+                        : preference === "KNOWN_PACKAGE"
+                          ? "Bij twijfel liever een product waarvan de verpakking goed te berekenen is."
+                          : "Eerst eerdere keuzes, daarna beschikbaarheid, verpakking en lichte prijs-tiebreak."}
+                    </span>
+                  </span>
+                </label>
               ))}
             </div>
-          )}
-        </section>
-
-        <h2 className="mb-3 text-sm font-semibold text-ink">Productkeuze</h2>
-        <form action={updateProductChoicePreference} className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
-          <input type="hidden" name="householdId" value={household.id} />
-          <p className="mb-3 text-sm text-ink-muted">
-            Als er nog geen vaste productvoorkeur is, gebruik ik deze voorkeur om kandidaten te rangschikken.
-          </p>
-          <div className="grid gap-2">
-            {PRODUCT_CHOICE_PREFERENCES.map((preference) => (
-              <label
-                key={preference}
-                className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm transition-colors hover:border-accent/70 hover:bg-surface-2 ${
-                  productChoicePreference === preference ? "border-accent bg-accent/10" : "border-line"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="productChoicePreference"
-                  value={preference}
-                  defaultChecked={productChoicePreference === preference}
-                  className="mt-0.5 h-4 w-4 accent-accent"
-                />
-                <span className="min-w-0">
-                  <span className="block font-medium text-ink">{PRODUCT_CHOICE_LABELS[preference]}</span>
-                  <span className="block text-xs text-ink-faint">
-                    {preference === "LOW_PRICE"
-                      ? "Bij twijfel liever een voordeliger product."
-                      : preference === "KNOWN_PACKAGE"
-                        ? "Bij twijfel liever een product waarvan de verpakking goed te berekenen is."
-                        : "Eerst eerdere keuzes, daarna beschikbaarheid, verpakking en lichte prijs-tiebreak."}
-                  </span>
-                </span>
-              </label>
-            ))}
-          </div>
-          <button type="submit" className="mt-3 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink hover:bg-accent/90">
-            Productkeuze opslaan
-          </button>
-        </form>
-
-        <h2 className="mb-3 text-sm font-semibold text-ink">Jullie weekritme</h2>
-        <div className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
-          <WeeklyRhythmEditor householdId={household.id} initialRhythm={rhythm} />
-        </div>
-
-        <h2 className="mb-3 text-sm font-semibold text-ink">Toegangscode</h2>
-        <form action={updateAccessCode} className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
-          <input type="hidden" name="householdId" value={household.id} />
-          <p className="mb-3 text-sm text-ink-muted">
-            Gebruik deze code om dit huishouden op een ander apparaat te openen.
-          </p>
-          <div className="flex min-w-0 gap-2">
-            <input
-              type="password"
-              name="accessCode"
-              minLength={6}
-              required
-              placeholder={household.accessCodeHash ? "Nieuwe toegangscode" : "Toegangscode instellen"}
-              className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-            />
-            <button type="submit" className="shrink-0 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink">
-              Opslaan
+            <button type="submit" className="mt-3 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink hover:bg-accent/90">
+              Productkeuze opslaan
             </button>
+          </form>
+        </details>
+
+        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <summary className="cursor-pointer font-medium text-ink">Jullie weekritme</summary>
+          <div className="mt-4">
+            <WeeklyRhythmEditor householdId={household.id} initialRhythm={rhythm} />
           </div>
-        </form>
+        </details>
+
+        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <summary className="cursor-pointer font-medium text-ink">Toegangscode</summary>
+          <form action={updateAccessCode} className="mt-4">
+            <input type="hidden" name="householdId" value={household.id} />
+            <p className="mb-3 text-sm text-ink-muted">
+              Gebruik deze code om dit huishouden op een ander apparaat te openen.
+            </p>
+            <div className="flex min-w-0 gap-2">
+              <input
+                type="password"
+                name="accessCode"
+                minLength={6}
+                required
+                placeholder={household.accessCodeHash ? "Nieuwe toegangscode" : "Toegangscode instellen"}
+                className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+              />
+              <button type="submit" className="shrink-0 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink">
+                Opslaan
+              </button>
+            </div>
+          </form>
+        </details>
 
         <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
           <summary className="flex cursor-pointer items-center gap-2 font-medium text-ink">
