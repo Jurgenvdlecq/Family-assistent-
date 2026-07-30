@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { assertCurrentHousehold, clearHouseholdSession, setHouseholdAccessCode } from "@/lib/auth";
+import { assertCurrentHousehold, clearHouseholdSession, setHouseholdCredentials } from "@/lib/auth";
 import { defaultPortionMultiplierForRole } from "@/domain/household/presence";
 import { normalizeProductChoicePreference } from "@/domain/product-matching/productChoicePreference";
 import { RecipeCategory } from "@/generated/prisma/enums";
@@ -385,12 +385,25 @@ export async function deletePersonalPreference(formData: FormData) {
   redirectToOnsGezin("personal-preference-deleted");
 }
 
-export async function updateAccessCode(formData: FormData) {
+export async function updateCredentials(formData: FormData) {
   const householdId = String(formData.get("householdId"));
   await assertCurrentHousehold(householdId);
-  const accessCode = String(formData.get("accessCode") ?? "");
-  await setHouseholdAccessCode(householdId, accessCode);
-  redirectToOnsGezin("access-code-updated");
+  const username = String(formData.get("username") ?? "");
+  const password = String(formData.get("password") ?? "");
+
+  try {
+    await setHouseholdCredentials(householdId, username, password);
+  } catch (error) {
+    // Redirecten met een statuscode i.p.v. de fout laten doorborrelen: een
+    // geworpen Error uit een server-actie wordt in productiebuilds
+    // gereduceerd tot een generiek bericht (zie de toelichting bij
+    // completeOnboarding in src/app/onboarding/actions.ts), dus alleen zo
+    // ziet de gebruiker daadwerkelijk waarom het opslaan mislukte.
+    const message = error instanceof Error ? error.message : "";
+    redirectToOnsGezin(message.includes("in gebruik") ? "username-taken" : "credentials-invalid");
+  }
+
+  redirectToOnsGezin("credentials-updated");
 }
 
 export async function logout() {

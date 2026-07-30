@@ -31,7 +31,7 @@ Aanwezig:
 
 - `Household`;
 - `HouseholdSession`;
-- `accessCodeHash`;
+- `username` (uniek) + `passwordHash`;
 - server actions met `assertCurrentHousehold`.
 
 Beoordeling: goed fundament. De app kan meerdere huishoudens dragen.

@@ -24,7 +24,17 @@ model Household {
   onboardingMode              OnboardingMode   @default(QUICK) @map("onboarding_mode")
   planningStyle               PlanningStyle    @default(BALANCED) @map("planning_style")
   maxSmartQuestionsPerSession Int              @default(2) @map("max_smart_questions_per_session")
-  accessCodeHash              String?          @map("access_code_hash")
+  // Vervangt de oude losse toegangscode (gebruikersverzoek: gebruikersnaam +
+  // wachtwoord is makkelijker te onthouden). `username` is uniek over ALLE
+  // huishoudens — dat is bewust de eigenlijke bescherming tegen twee
+  // huishoudens die toevallig dezelfde inloggegevens kiezen: een unieke
+  // gebruikersnaam maakt de combinatie per definitie ondubbelzinnig, in
+  // plaats van te vertrouwen op "toevallig nooit dezelfde combinatie kiezen"
+  // (dat laatste bleek bij het testen alsnog tot verwarring te kunnen leiden
+  // — zie de login-logica in src/lib/auth.ts). Genormaliseerd (kleine
+  // letters, getrimd) opgeslagen zodat de vergelijking niet hoofdlettergevoelig is.
+  username                    String?          @unique
+  passwordHash                String?          @map("password_hash")
   // Picnic-integratie (fase 4/7, verdiept): sessie-token van de niet-officiële
   // Picnic-API. Nooit een wachtwoord — dat komt nooit verder dan de "Picnic
   // koppelen"-actie op /ons-gezin (of het losse scripts/picnic-login.ts),

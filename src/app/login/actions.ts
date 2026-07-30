@@ -1,15 +1,16 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { signInByAccessCode } from "@/lib/auth";
+import { signInByCredentials } from "@/lib/auth";
 
 export async function loginToHousehold(formData: FormData) {
-  const accessCode = String(formData.get("accessCode") ?? "");
+  const username = String(formData.get("username") ?? "");
+  const password = String(formData.get("password") ?? "");
 
   try {
-    await signInByAccessCode(accessCode);
+    await signInByCredentials(username, password);
   } catch {
-    redirect("/login?status=wrong-code");
+    redirect("/login?status=wrong-credentials");
   }
   redirect("/");
 }

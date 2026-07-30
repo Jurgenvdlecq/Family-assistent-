@@ -29,7 +29,8 @@ import { completeOnboardingViaUi, deleteTestHousehold, cleanupMockProducts } fro
 
 const TEST_PORT = 3177;
 const HOUSEHOLD_NAME = `E2E Testgezin ${Date.now()}`;
-const ACCESS_CODE = "e2etest123";
+const USERNAME = "e2etest";
+const PASSWORD = "e2etest123";
 const MOCK_SEARCH_TERM = "aardappelen"; // bestaand, gedeeld seed-ingrediënt — voorkomt vervuiling van de ingrediëntencatalogus.
 
 test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
@@ -44,7 +45,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
 
   try {
     await t.test("1. Onboarding: nieuw huishouden aanmaken", async () => {
-      const household = await completeOnboardingViaUi(page, server.baseURL, HOUSEHOLD_NAME, ACCESS_CODE);
+      const household = await completeOnboardingViaUi(page, server.baseURL, HOUSEHOLD_NAME, USERNAME, PASSWORD);
       householdId = household.id;
       assert.ok(householdId, "Onboarding moet een huishouden aanmaken en terugleiden naar /");
       assert.equal(page.url(), `${server.baseURL}/`);

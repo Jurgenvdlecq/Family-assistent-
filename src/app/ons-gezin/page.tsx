@@ -25,7 +25,7 @@ import { getNotificationPreferences } from "@/lib/notifications";
 import {
   forgetProductPreference,
   logout,
-  updateAccessCode,
+  updateCredentials,
   updateHouseholdCategoryPreference,
   updateProductChoicePreference,
 } from "./actions";
@@ -48,6 +48,11 @@ const CATEGORY_STANCE_OPTIONS = [
   { value: "UNKNOWN", label: "Geen voorkeur" },
 ] as const;
 
+const ERROR_STATUS_MESSAGES: Record<string, string> = {
+  "username-taken": "Deze gebruikersnaam is al in gebruik door een ander huishouden. Kies een andere.",
+  "credentials-invalid": "Kies een gebruikersnaam van minimaal 3 tekens en een wachtwoord van minimaal 6 tekens.",
+};
+
 const STATUS_MESSAGES: Record<string, string> = {
   "person-added": "Gezinslid toegevoegd.",
   "person-updated": "Profiel opgeslagen.",
@@ -62,7 +67,7 @@ const STATUS_MESSAGES: Record<string, string> = {
   "day-recipe-preference-updated": "Dagoptie opgeslagen.",
   "day-recipe-preference-deleted": "Dagoptie verwijderd.",
   "learned-pattern-dismissed": "Geleerd patroon vergeten.",
-  "access-code-updated": "Toegangscode opgeslagen.",
+  "credentials-updated": "Inloggegevens opgeslagen.",
   "picnic-connected": "Picnic gekoppeld.",
   "picnic-2fa-needed": "Verificatiecode verstuurd — check je telefoon.",
   "picnic-2fa-cancelled": "Koppelpoging geannuleerd.",
@@ -78,6 +83,7 @@ export default async function OnsGezinPage({
 }) {
   const params = await searchParams;
   const statusMessage = params.status ? STATUS_MESSAGES[params.status] : undefined;
+  const errorMessage = params.status ? ERROR_STATUS_MESSAGES[params.status] : undefined;
   const currentHousehold = await requireCurrentHousehold();
   const household = await prisma.household.findUniqueOrThrow({
     where: { id: currentHousehold.id },
@@ -191,6 +197,11 @@ export default async function OnsGezinPage({
         {statusMessage && (
           <p className="mb-4 rounded-lg border border-tag-green-ink/20 bg-tag-green-bg px-3 py-2 text-sm font-medium text-tag-green-ink">
             {statusMessage}
+          </p>
+        )}
+        {errorMessage && (
+          <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+            {errorMessage}
           </p>
         )}
         <p className="mb-6 text-[15px] text-ink-muted">
@@ -407,25 +418,36 @@ export default async function OnsGezinPage({
         </details>
 
         <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
-          <summary className="cursor-pointer font-medium text-ink">Toegangscode</summary>
-          <form action={updateAccessCode} className="mt-4">
+          <summary className="cursor-pointer font-medium text-ink">Inloggegevens</summary>
+          <form action={updateCredentials} className="mt-4 flex min-w-0 flex-col gap-2">
             <input type="hidden" name="householdId" value={household.id} />
-            <p className="mb-3 text-sm text-ink-muted">
-              Gebruik deze code om dit huishouden op een ander apparaat te openen.
+            <p className="mb-1 text-sm text-ink-muted">
+              Gebruik deze gebruikersnaam en dit wachtwoord om dit huishouden op een ander apparaat te openen.
             </p>
-            <div className="flex min-w-0 gap-2">
-              <input
-                type="password"
-                name="accessCode"
-                minLength={6}
-                required
-                placeholder={household.accessCodeHash ? "Nieuwe toegangscode" : "Toegangscode instellen"}
-                className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-              />
-              <button type="submit" className="shrink-0 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink">
-                Opslaan
-              </button>
-            </div>
+            <input
+              type="text"
+              name="username"
+              minLength={3}
+              required
+              autoComplete="username"
+              placeholder={household.username ? "Nieuwe gebruikersnaam" : "Gebruikersnaam instellen"}
+              className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+            />
+            <input
+              type="password"
+              name="password"
+              minLength={6}
+              required
+              autoComplete="new-password"
+              placeholder={household.username ? "Nieuw wachtwoord" : "Wachtwoord instellen"}
+              className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+            />
+            <button
+              type="submit"
+              className="mt-1 w-fit shrink-0 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink"
+            >
+              Opslaan
+            </button>
           </form>
         </details>
 
