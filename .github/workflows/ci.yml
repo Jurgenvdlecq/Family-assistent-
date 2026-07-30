@@ -43,4 +43,10 @@ jobs:
       # te laat voor de teststap ervoor.
       - run: npx prisma migrate deploy
 
+      # Meerdere tests verwachten dat de gedeelde ingrediënten-/receptcatalogus
+      # al bestaat (bijv. `prisma.ingredient.findUniqueOrThrow` op "kipfilet"
+      # in src/domain/product-matching/repository.test.ts) — die komt uit de
+      # seed, niet uit de migraties zelf.
+      - run: npm run db:seed
+
       - run: npm run verify
