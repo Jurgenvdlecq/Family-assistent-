@@ -9,6 +9,12 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // Migraties hebben een niet-gepoolde verbinding nodig (Supabase's
+    // transaction-mode pooler op poort 6543, waar DATABASE_URL in productie
+    // naar wijst, breekt de prepared statements die `prisma migrate`
+    // gebruikt). DIRECT_URL is optioneel: lokaal is er geen pooler, dus valt
+    // dit terug op DATABASE_URL. In productie (Vercel) wijst DIRECT_URL naar
+    // Supabase's session-mode pooler op poort 5432.
+    url: process.env["DIRECT_URL"] ?? process.env["DATABASE_URL"],
   },
 });
