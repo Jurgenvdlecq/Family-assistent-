@@ -8,13 +8,8 @@ import { matchProductForIngredient } from "@/domain/product-matching/matchIngred
 import { recordProductChosen } from "@/domain/product-matching/repository";
 import { upsertFixedGrocery, removeFixedGrocery } from "@/lib/fixedGroceries";
 import { Unit } from "@/generated/prisma/enums";
-import {
-  inferFixedGroceryQuantity,
-  inferIngredientCategory,
-  removeBulkFixedGroceryLine,
-  titleCaseSearchTerm,
-} from "@/lib/fixedGroceryProductChoice";
-import { parsePackageQuantity } from "@/lib/quantity/parsePackageSize";
+import { removeBulkFixedGroceryLine } from "@/lib/fixedGroceryProductChoice";
+import { resolvePicnicProductChoice } from "@/lib/picnicProductChoice";
 
 interface FixedPicnicProductInput {
   householdId: string;
@@ -97,47 +92,11 @@ function redirectToFixedLine(lineId: string, status: string): never {
 }
 
 async function saveFixedPicnicProduct(input: FixedPicnicProductInput) {
-  if (!input.productName || !input.externalRef) {
-    throw new Error("Kies een geldig Picnic-product.");
-  }
   if (!Number.isFinite(input.quantity) || input.quantity <= 0) {
     throw new Error("Vul een geldige hoeveelheid groter dan 0 in.");
   }
 
-  const ingredientName = titleCaseSearchTerm(input.searchTerm || input.productName);
-  const inferred = inferFixedGroceryQuantity(input.packageSize);
-  const existingIngredient = await prisma.ingredient.findUnique({ where: { name: ingredientName } });
-  const ingredient =
-    existingIngredient ??
-    (await prisma.ingredient.create({
-      data: {
-        name: ingredientName,
-        unit: inferred.unit,
-        category: inferIngredientCategory(ingredientName),
-      },
-    }));
-
-  const productData = {
-    ingredientId: ingredient.id,
-    externalRef: input.externalRef,
-    picnicImageId: input.picnicImageId,
-    name: input.productName,
-    packageSize: input.packageSize,
-    packageQuantity: input.packageSize ? parsePackageQuantity(input.packageSize, ingredient.unit) : null,
-    price: input.price,
-    lastSeenAvailable: new Date(),
-  };
-  const product = await prisma.product.upsert({
-    where: {
-      ingredientId_provider_externalRef: {
-        ingredientId: ingredient.id,
-        provider: "PICNIC",
-        externalRef: input.externalRef,
-      },
-    },
-    update: productData,
-    create: productData,
-  });
+  const { ingredient, product } = await resolvePicnicProductChoice(input);
 
   await upsertFixedGrocery(input.householdId, ingredient.id, input.quantity, input.unit);
   await recordProductChosen(input.householdId, ingredient.id, product.id, "MANUAL");

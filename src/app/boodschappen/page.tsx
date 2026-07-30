@@ -42,6 +42,7 @@ import {
   addBulkFixedPicnicProducts,
   removeFixedGroceryPermanently,
 } from "./fixedGroceriesActions";
+import { addManualProduct } from "./manualProductActions";
 import { updateInventoryStatus } from "./inventoryActions";
 
 const UNIT_LABELS: Record<string, string> = { GRAM: "gram", ML: "ml", PIECE: "stuks" };
@@ -63,6 +64,7 @@ const STATUS_MESSAGES: Record<string, string> = {
   "fixed-replaced": "Vaste boodschap vervangen.",
   "fixed-removed": "Vaste boodschap verwijderd.",
   "inventory-updated": "Voorraadstatus opgeslagen.",
+  "manual-added": "Toegevoegd aan de lijst van deze week.",
 };
 
 const INVENTORY_STATUS_OPTIONS = [
@@ -442,12 +444,14 @@ export default async function BoodschappenPage({
     focusLine?: string;
     shortfallLine?: string;
     inventory?: string;
+    manualQ?: string;
     status?: string;
   }>;
 }) {
   const params = await searchParams;
   const household = await requireCurrentHousehold();
   const fixedSearchQuery = String(params.fixedQ ?? "").trim();
+  const manualSearchQuery = String(params.manualQ ?? "").trim();
   const bulkFixedText = String(params.bulkFixed ?? "").trim();
   const focusedFixedLineId = String(params.fixedLine ?? "").trim();
   const fixedReplaceLineId = String(params.fixedReplaceLineId ?? "").trim();
@@ -470,7 +474,9 @@ export default async function BoodschappenPage({
   const sortedLines = [...shoppingList.lines].sort((a, b) =>
     a.ingredient.name.localeCompare(b.ingredient.name)
   );
-  const mealLines = sortedLines.filter((l) => l.source === "MEAL" || l.source === "INVENTORY");
+  const mealLines = sortedLines.filter(
+    (l) => l.source === "MEAL" || l.source === "INVENTORY" || l.source === "MANUAL"
+  );
   const activeFixedLines = sortedLines.filter((l) => l.source === "FIXED");
   const fixedReplacementLine = activeFixedLines.find((line) => line.id === fixedReplaceLineId);
   const reviewCount = sortedLines.filter((l) => l.needsReview).length;
@@ -490,12 +496,24 @@ export default async function BoodschappenPage({
   }));
   const checklistPickedUpCount = checklistLines.filter((line) => line.pickedUp).length;
 
-  const [fixedGroceries, inventoryChecklist, fixedProductResults, bulkFixedPreviewLines, portionScaleByDay, candidatesByIngredient, inventoryMap] =
+  const [
+    fixedGroceries,
+    inventoryChecklist,
+    fixedProductResults,
+    manualProductResults,
+    bulkFixedPreviewLines,
+    portionScaleByDay,
+    candidatesByIngredient,
+    inventoryMap,
+  ] =
     await Promise.all([
       getFixedGroceries(household.id),
       getInventoryChecklist(household.id),
       fixedSearchQuery && household.picnicAuthToken
         ? searchFixedProductResults(household.id, household.picnicAuthToken, fixedSearchQuery)
+        : Promise.resolve([]),
+      manualSearchQuery && household.picnicAuthToken
+        ? searchFixedProductResults(household.id, household.picnicAuthToken, manualSearchQuery)
         : Promise.resolve([]),
       bulkFixedText && household.picnicAuthToken
         ? searchBulkFixedProductResults(household.id, household.picnicAuthToken, bulkFixedText)
@@ -577,6 +595,96 @@ export default async function BoodschappenPage({
       </div>
 
       <div className="min-w-0 px-6">
+        <div id="quick-add-product" className="mb-6 scroll-mt-6 rounded-xl border border-line bg-surface p-4">
+          <h2 className="mb-1 text-sm font-semibold text-ink">Product toevoegen</h2>
+          <p className="mb-3 text-xs text-ink-muted">Voor deze week alleen — dit wordt geen vaste gewoonte.</p>
+          <form action="/boodschappen#quick-add-product" className="flex min-w-0 gap-2">
+            <input
+              name="manualQ"
+              defaultValue={manualSearchQuery}
+              placeholder="Zoek een product, bv. chips"
+              className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+            />
+            <button
+              type="submit"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-line bg-surface text-ink transition-colors hover:border-accent/70 hover:bg-surface-2"
+              aria-label="Zoeken bij Picnic"
+              title="Zoeken bij Picnic"
+            >
+              <Search size={16} />
+            </button>
+          </form>
+
+          {!household.picnicAuthToken && (
+            <p className="mt-3 text-sm text-ink-muted">Koppel eerst Picnic om live producten te zoeken.</p>
+          )}
+
+          {manualSearchQuery && household.picnicAuthToken && manualProductResults.length === 0 && (
+            <p className="mt-3 text-sm text-ink-muted">
+              Geen Picnic-producten gevonden voor {manualSearchQuery}. Probeer een andere zoekterm.
+            </p>
+          )}
+
+          {manualProductResults.length > 0 && (
+            <div className="mt-4 grid gap-2">
+              {manualProductResults.map((item) => (
+                <form key={item.externalRef} action={addManualProduct} className="rounded-lg border border-line p-3">
+                  <input type="hidden" name="householdId" value={household.id} />
+                  <input type="hidden" name="shoppingListId" value={shoppingList.id} />
+                  <input type="hidden" name="searchTerm" value={manualSearchQuery} />
+                  <input type="hidden" name="externalRef" value={item.externalRef} />
+                  <input type="hidden" name="productName" value={item.name ?? ""} />
+                  <input type="hidden" name="packageSize" value={item.unit_quantity ?? ""} />
+                  <input type="hidden" name="picnicImageId" value={item.image_id ?? ""} />
+                  <input type="hidden" name="price" value={picnicPriceToEuros(item.display_price ?? item.price) ?? ""} />
+
+                  <div className="flex min-w-0 gap-3">
+                    <FixedProductImage item={item} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="line-clamp-2 text-sm font-medium text-ink">{item.name}</p>
+                          <p className="text-xs text-ink-faint">{item.unit_quantity ?? "Geen verpakkingsinfo"}</p>
+                        </div>
+                        <span className="shrink-0 text-sm font-semibold text-ink">
+                          {picnicPriceToEuros(item.display_price ?? item.price) != null
+                            ? `€ ${picnicPriceToEuros(item.display_price ?? item.price)!.toFixed(2)}`
+                            : "Prijs onbekend"}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <input
+                          type="number"
+                          name="quantity"
+                          defaultValue={item.fixedQuantity}
+                          min="0.01"
+                          step="any"
+                          className="w-24 rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
+                        />
+                        <select
+                          name="unit"
+                          defaultValue={item.fixedUnit}
+                          className="rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
+                        >
+                          <option value="PIECE">stuks</option>
+                          <option value="GRAM">gram</option>
+                          <option value="ML">ml</option>
+                        </select>
+                        <button
+                          type="submit"
+                          className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
+                        >
+                          Toevoegen
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </form>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div id="jullie-boodschappenlijst" className="mb-3 scroll-mt-6 flex items-baseline justify-between gap-3">
           <h2 className="text-sm font-semibold text-ink">Jullie boodschappenlijst</h2>
           <span className="text-xs font-medium text-ink-muted">
@@ -612,9 +720,22 @@ export default async function BoodschappenPage({
                       )}
                     </div>
                   </div>
-                  <span className="shrink-0 text-sm text-ink-muted">
-                    {formatOrderQuantity(line)}
-                  </span>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="text-sm text-ink-muted">{formatOrderQuantity(line)}</span>
+                    {line.source === "MANUAL" && (
+                      <form action={removeBoodschappenLineThisWeek}>
+                        <input type="hidden" name="lineId" value={line.id} />
+                        <PendingSubmitButton
+                          pendingText="..."
+                          ariaLabel="Verwijderen"
+                          title="Verwijderen"
+                          className={`flex h-7 w-7 items-center justify-center rounded-md text-ink-faint hover:bg-red-50 hover:text-red-600 ${ACTION_BUTTON_FOCUS}`}
+                        >
+                          <X size={14} />
+                        </PendingSubmitButton>
+                      </form>
+                    )}
+                  </div>
                 </div>
                 {statusMessage && (
                   <p className="mt-2 rounded-md border border-tag-green-ink/20 bg-tag-green-bg px-2.5 py-1.5 text-xs font-medium text-tag-green-ink">
