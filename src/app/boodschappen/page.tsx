@@ -25,6 +25,7 @@ import PendingSubmitButton from "@/components/PendingSubmitButton";
 import PicnicTransfer from "./PicnicTransfer";
 import AddToPicnicCart from "./AddToPicnicCart";
 import PicnicDeliveryStatusCard from "./PicnicDeliveryStatusCard";
+import ShoppingChecklist, { type ChecklistLine } from "./ShoppingChecklist";
 import {
   acknowledgeShoppingListShortfall,
   adjustBoodschappenLineQuantity,
@@ -479,6 +480,15 @@ export default async function BoodschappenPage({
     status: shoppingList.status,
   };
   const hasTransferredLines = sortedLines.some((line) => line.transferredToPicnicAt !== null);
+  const checklistLines: ChecklistLine[] = sortedLines.map((line) => ({
+    id: line.id,
+    name: line.product?.name ?? line.ingredient.name,
+    detail: [line.product?.brand, line.product?.packageSize].filter(Boolean).join(" · ") || null,
+    quantityLabel: formatOrderQuantity(line),
+    pickedUp: line.pickedUpAt !== null,
+    imageUrl: picnicImageUrl(line.product?.picnicImageId, "small"),
+  }));
+  const checklistPickedUpCount = checklistLines.filter((line) => line.pickedUp).length;
 
   const [fixedGroceries, inventoryChecklist, fixedProductResults, bulkFixedPreviewLines, portionScaleByDay, candidatesByIngredient, inventoryMap] =
     await Promise.all([
@@ -1288,6 +1298,15 @@ export default async function BoodschappenPage({
               </div>
             </details>
           )}
+        </details>
+
+        <details className="mb-6 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-ink">
+            Zelf boodschappen doen {checklistLines.length > 0 && `(${checklistPickedUpCount}/${checklistLines.length})`}
+          </summary>
+          <div className="mt-3">
+            <ShoppingChecklist lines={checklistLines} />
+          </div>
         </details>
 
         <PicnicDeliveryStatusCard householdId={household.id} picnicAuthToken={household.picnicAuthToken} />

@@ -620,6 +620,12 @@ model ShoppingListLine {
   // wordt overgeslagen.
   shortfallAcknowledged Boolean @default(false) @map("shortfall_acknowledged")
 
+  // Afvinklijst voor zelf boodschappen doen (in een fysieke winkel, of
+  // gewoon om bij te houden wat al in het mandje ligt) — losstaand van
+  // transferredToPicnicAt: een huishouden kan beide tegelijk gebruiken
+  // (bijv. het grootste deel via Picnic, verse producten zelf gehaald).
+  pickedUpAt DateTime? @map("picked_up_at")
+
   shoppingList ShoppingList @relation(fields: [shoppingListId], references: [id], onDelete: Cascade)
   ingredient   Ingredient   @relation(fields: [ingredientId], references: [id])
   product      Product?     @relation(fields: [productId], references: [id])

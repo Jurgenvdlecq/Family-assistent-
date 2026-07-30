@@ -270,3 +270,19 @@ export async function confirmPicnicOrder(shoppingListId: string): Promise<void> 
   revalidatePath("/boodschappen");
   revalidatePath("/");
 }
+
+/**
+ * Afvinklijst voor zelf boodschappen doen — losstaand van de Picnic-flow,
+ * dus geen redirect/statusmelding nodig zoals bij de andere regelacties:
+ * je wil door 20 producten heen kunnen tikken zonder telkens een hele
+ * paginaherlaad. `pickedUp` komt rechtstreeks van de client (optimistisch
+ * al omgewisseld), zodat een dubbele tik nooit per ongeluk terugklapt.
+ */
+export async function toggleShoppingListLinePickedUp(lineId: string, pickedUp: boolean): Promise<void> {
+  const { line } = await loadEditableShoppingLine(lineId);
+  await prisma.shoppingListLine.update({
+    where: { id: line.id },
+    data: { pickedUpAt: pickedUp ? new Date() : null },
+  });
+  revalidatePath("/boodschappen");
+}
