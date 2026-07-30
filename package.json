@@ -10,7 +10,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test $(find src -name '*.test.ts')",
-    "test:e2e": "tsx --test e2e/criticalFlow.e2e.ts",
+    "test:e2e": "tsx --test --test-concurrency=1 $(find e2e -name '*.e2e.ts')",
     "verify": "npm run lint && npm run typecheck && npm test && npm run build",
     "db:seed": "tsx prisma/seed.ts",
     "picnic:login": "tsx scripts/picnic-login.ts"

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { describeLinePackaging, findShoppingListShortfalls } from "./shoppingList";
+import { describeLinePackaging, findShoppingListShortfalls, isUserChosenPackageCount } from "./shoppingList";
 
 const NO_INVENTORY = new Map();
 const NORMAL_SCALE = {
@@ -120,4 +120,21 @@ test("describeLinePackaging: stuksproducten werken hetzelfde", () => {
   const result = describeLinePackaging({ quantity: 7, unit: "PIECE" }, { packageQuantity: 6 });
   assert.equal(result.status, "OK");
   assert.equal(result.packagesToBuy, 2);
+});
+
+test("isUserChosenPackageCount: FIXED met unit PIECE -> true", () => {
+  assert.equal(isUserChosenPackageCount({ source: "FIXED", unit: "PIECE" }), true);
+});
+
+test("isUserChosenPackageCount: MANUAL met unit PIECE -> true (WP82-regressie)", () => {
+  assert.equal(isUserChosenPackageCount({ source: "MANUAL", unit: "PIECE" }), true);
+});
+
+test("isUserChosenPackageCount: MEAL met unit PIECE -> false, moet door de verpakkingsengine", () => {
+  assert.equal(isUserChosenPackageCount({ source: "MEAL", unit: "PIECE" }), false);
+});
+
+test("isUserChosenPackageCount: FIXED/MANUAL met unit GRAM of ML -> false, dat is een letterlijke hoeveelheid, geen aantal", () => {
+  assert.equal(isUserChosenPackageCount({ source: "FIXED", unit: "GRAM" }), false);
+  assert.equal(isUserChosenPackageCount({ source: "MANUAL", unit: "ML" }), false);
 });

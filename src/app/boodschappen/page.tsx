@@ -10,6 +10,7 @@ import {
   ensureShoppingList,
   findShoppingListShortfalls,
   getShoppingListCandidatesByIngredient,
+  isUserChosenPackageCount,
 } from "@/lib/shoppingList";
 import { prisma } from "@/lib/prisma";
 import { getHouseholdPortionScaleByDay } from "@/lib/household";
@@ -92,7 +93,7 @@ function formatOrderQuantity(line: {
   source: string;
   product: { packageQuantity: number | null; packageSize: string | null } | null;
 }) {
-  if (line.source === "FIXED" && line.unit === "PIECE") return `${line.quantity}x`;
+  if (isUserChosenPackageCount(line)) return `${line.quantity}x`;
 
   const packaging = describeLinePackaging(
     { quantity: line.quantity, unit: line.unit as "GRAM" | "ML" | "PIECE" },
@@ -120,7 +121,7 @@ function orderPackageCount(line: {
   source: string;
   product: { packageQuantity: number | null; packageSize: string | null } | null;
 }) {
-  if (line.source === "FIXED" && line.unit === "PIECE") return line.quantity;
+  if (isUserChosenPackageCount(line)) return line.quantity;
   const packaging = describeLinePackaging(
     { quantity: line.quantity, unit: line.unit as "GRAM" | "ML" | "PIECE" },
     line.product
@@ -140,7 +141,7 @@ function linePackageCount(line: {
   source: string;
   product: { packageQuantity: number | null } | null;
 }) {
-  if (line.source === "FIXED" && line.unit === "PIECE") return line.quantity;
+  if (isUserChosenPackageCount(line)) return line.quantity;
   const packaging = describeLinePackaging(
     { quantity: line.quantity, unit: line.unit as "GRAM" | "ML" | "PIECE" },
     line.product
@@ -629,7 +630,6 @@ export default async function BoodschappenPage({
             <div className="mt-4 grid gap-2">
               {manualProductResults.map((item) => (
                 <form key={item.externalRef} action={addManualProduct} className="rounded-lg border border-line p-3">
-                  <input type="hidden" name="householdId" value={household.id} />
                   <input type="hidden" name="shoppingListId" value={shoppingList.id} />
                   <input type="hidden" name="searchTerm" value={manualSearchQuery} />
                   <input type="hidden" name="externalRef" value={item.externalRef} />

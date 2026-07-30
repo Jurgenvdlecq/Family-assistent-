@@ -10,6 +10,7 @@ import { upsertFixedGrocery, removeFixedGrocery } from "@/lib/fixedGroceries";
 import { Unit } from "@/generated/prisma/enums";
 import { removeBulkFixedGroceryLine } from "@/lib/fixedGroceryProductChoice";
 import { resolvePicnicProductChoice } from "@/lib/picnicProductChoice";
+import { assertShoppingListAccess } from "@/lib/shoppingListAccess";
 
 interface FixedPicnicProductInput {
   householdId: string;
@@ -250,6 +251,14 @@ export async function addFixedPicnicProduct(formData: FormData) {
   if (!productName || !externalRef) {
     throw new Error("Kies een geldig Picnic-product.");
   }
+  // shoppingListId komt los uit het formulier mee — assertCurrentHousehold
+  // hierboven bewijst alleen dát het meegestuurde householdId bij de eigen
+  // sessie hoort, niet dat déze shoppingListId ook echt bij dat huishouden
+  // hoort. Zonder deze check zou een geldige sessie een shoppingListId van
+  // een ander huishouden kunnen meesturen.
+  if (shoppingListId) {
+    await assertShoppingListAccess(shoppingListId);
+  }
 
   const replacement = replaceLineId ? await loadFixedLine(replaceLineId) : null;
   if (replacement && replacement.householdId !== householdId) {
@@ -336,6 +345,17 @@ export async function addBulkFixedPicnicProducts(formData: FormData) {
   const validChoices = choices.filter((choice) => choice.householdId === householdId && choice.productName && choice.externalRef);
   if (validChoices.length === 0) {
     throw new Error("Ik kon geen geldige producten opslaan.");
+  }
+
+  // Zelfde reden als in addFixedPicnicProduct: elke unieke shoppingListId
+  // los verifiëren tegen het huidige huishouden vóórdat er iets in
+  // geschreven wordt.
+  const verifiedShoppingListIds = new Set<string>();
+  for (const choice of validChoices) {
+    if (!verifiedShoppingListIds.has(choice.shoppingListId)) {
+      await assertShoppingListAccess(choice.shoppingListId);
+      verifiedShoppingListIds.add(choice.shoppingListId);
+    }
   }
 
   let firstLineId: string | null = null;

@@ -3,9 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { assertCurrentHousehold } from "@/lib/auth";
 import { recordProductChosen } from "@/domain/product-matching/repository";
 import { resolvePicnicProductChoice } from "@/lib/picnicProductChoice";
+import { assertShoppingListAccess } from "@/lib/shoppingListAccess";
 import { Unit } from "@/generated/prisma/enums";
 
 const VALID_UNITS = new Set(Object.values(Unit));
@@ -45,10 +45,10 @@ function parseOptionalPrice(raw: FormDataEntryValue | null) {
  * regels, die net als elke andere regel gewoon weer te verwijderen zijn.
  */
 export async function addManualProduct(formData: FormData) {
-  const householdId = String(formData.get("householdId"));
-  await assertCurrentHousehold(householdId);
-
   const shoppingListId = String(formData.get("shoppingListId") ?? "");
+  const shoppingList = await assertShoppingListAccess(shoppingListId);
+  const householdId = shoppingList.mealPlan.householdId;
+
   const searchTerm = String(formData.get("searchTerm") ?? "").trim();
   const productName = String(formData.get("productName") ?? "").trim();
   const externalRef = String(formData.get("externalRef") ?? "").trim();
