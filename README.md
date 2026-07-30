@@ -1,36 +1,63 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Family Assistant
 
-## Getting Started
+Een zelflerende gezins- en boodschappenassistent: de app stelt een passend
+weekmenu voor, laat je alleen corrigeren wat niet klopt, stelt automatisch
+een boodschappenlijst samen en vult — pas na expliciete bevestiging — het
+Picnic-mandje. Zie `PRODUCT_VISION.md` voor het volledige productkompas.
 
-First, run the development server:
+Gebouwd met Next.js (App Router, Server Components/Actions), TypeScript,
+Prisma en PostgreSQL. Live op Vercel + Supabase.
+
+## Documentatie — lees dit eerst
+
+Dit project leunt zwaar op vastgelegde documentatie in plaats van
+tribal knowledge. In deze volgorde:
+
+1. **`AGENTS.md`** — de oorspronkelijke productspecificatie en het
+   gefaseerde bouwplan.
+2. **`PRODUCT_VISION.md`** — het actuele productkompas: kernbelofte,
+   productprincipes, gebruikersstromen, bedrijfsregels.
+3. **`DATAMODEL_AUDIT.md`** — toetsing van het Prisma-schema tegen de
+   productvisie, met openstaande aandachtspunten.
+4. **`WORKFLOW.md`** — werkregels en Definition of Done voor elke
+   wijziging (wordt automatisch geladen door Claude Code via `CLAUDE.md`).
+5. **`OPERATIONS.md`** — operationele kennis die tijd kostte om uit te
+   zoeken (Prisma-migraties, Supabase-poolers, testconventies).
+6. **`PROGRESS.md`** — overdrachtsdocument met de volledige geschiedenis
+   van afgeronde work packages.
+
+## Lokaal draaien
+
+Vereist: Node.js, een lokale PostgreSQL-server, en een `.env`-bestand
+(kopieer `.env.example` en vul minimaal `DATABASE_URL` in).
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env       # en vul DATABASE_URL in
+npm install                # draait ook `prisma generate` (postinstall)
+sudo service postgresql start
+npx prisma migrate deploy  # database op het huidige schema brengen
+npm run dev                # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Belangrijke commando's
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Commando | Doet |
+|---|---|
+| `npm run dev` | Development server |
+| `npm run build` | Migreert de database en bouwt een productiebuild |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm test` | Unit- en integratietests (vereist een lokale Postgres) |
+| `npm run test:e2e` | Playwright-end-to-end-test tegen een eigen build + mock-Picnic-server |
+| `npm run verify` | Lint + typecheck + tests + build in één keer — de kortste weg om te controleren of een wijziging klaar is |
+| `npm run db:seed` | Seeddata inladen |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Zie `WORKFLOW.md` voor wanneer welke van deze commando's verplicht is
+vóórdat een wijziging als "klaar" telt, en `OPERATIONS.md` voor de
+achtergrond bij migraties en teststrategie.
 
-## Learn More
+## Deployment
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Productie draait op Vercel (build) + Supabase (PostgreSQL). Migraties
+draaien automatisch mee in elke deploy — zie `OPERATIONS.md` voor de
+`DIRECT_URL`-configuratie die daarvoor nodig is.

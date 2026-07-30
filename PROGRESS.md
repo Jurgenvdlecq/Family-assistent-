@@ -4,38 +4,18 @@ Dit bestand is bedoeld voor een AI-coding-agent (Claude Code, Codex, of wie
 dan ook) die dit project overneemt in een nieuwe sessie zonder chatgeschiedenis.
 Lees eerst `AGENTS.md` (de oorspronkelijke productspecificatie),
 `PRODUCT_VISION.md` (het actuele productkompas), `DATAMODEL_AUDIT.md`
-(toetsing van schema/architectuur tegen de visie) en dan dit bestand voor de
-actuele status en de manier van werken die tot nu toe is gevolgd.
+(toetsing van schema/architectuur tegen de visie), `WORKFLOW.md` (de
+werkregels en Definition of Done — wordt automatisch geladen via
+`CLAUDE.md`, dus vermoedelijk al bekend) en dan dit bestand voor de actuele
+status. Loop je tegen een migratie-, test- of architectuurvraag aan, raadpleeg
+dan ook `OPERATIONS.md`.
 
-## Manier van werken (belangrijk — hou dit aan)
+## Manier van werken
 
-- **Werk per work package (WP)**, niet alles in één keer. Na elk work
-  package: rapporteer kort wat er is gebouwd en wat de gebruiker live zou
-  moeten zien, en wacht op een expliciete bevestiging ("ga door", "graag
-  verder", etc.) voordat je aan het volgende begint.
-- **Standaardgedrag (sinds WP7, expliciet zo gewenst door de gebruiker):**
-  zodra een work package klaar en getest is (tests/lint/typecheck/build
-  slagen), maak een pull request aan en **merge die meteen naar `main`
-  zonder daar apart om toestemming te vragen** — dat leverde alleen
-  verwarring op. Rapporteer na afloop gewoon wat er is gemerged en wat de
-  gebruiker live zou moeten zien.
-- **Vraag nog wél altijd expliciet toestemming voordat je:**
-  - iets naar productie (Vercel/Supabase) migreert — dit *kan* trouwens
-    sowieso niet automatisch: de sandbox-omgeving heeft geen netwerktoegang
-    tot de Supabase-database, dus productie-migraties moeten altijd door de
-    gebruiker zelf op hun eigen machine gedraaid worden (zie hieronder),
-  - een destructieve git-actie uitvoert (force-push, reset --hard, etc.).
-- Ontwikkel op branch **`claude/family-assistant-rebuild-fw4fav`**. Na een
-  merge naar `main`: reset deze branch naar de nieuwe `main`
-  (`git fetch origin main && git checkout -B claude/family-assistant-rebuild-fw4fav origin/main && git push`)
-  zodat het volgende work package op een schone basis begint.
-- Commit-berichten en PR's zijn in het Nederlands geschreven, consistent met
-  de rest van het project (`AGENTS.md`, UI-teksten).
-- Bij acties binnen lange pagina's (zoals `/controle` en `/boodschappen`):
-  redirect altijd terug naar dezelfde sectie of regel met query+hash
-  (`?focus=...#...`) en open ingeklapte `<details>`-secties wanneer de
-  gefocuste regel daarin staat. De gebruiker mag na een zoek/keuze-actie
-  niet bovenaan de pagina belanden.
+Zie `WORKFLOW.md` — die werkregels (branchstrategie, mergebeleid, wanneer
+expliciet toestemming vragen, commit-taal) staan daar nu vast, zodat ze
+automatisch geladen worden in elke sessie in plaats van dat je dit bestand
+apart moet lezen.
 
 ## Status: work packages
 
@@ -137,6 +117,7 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 | Bugfix | Nep-hamburgermenu linksboven op het beginscherm | Gebruikersrapport: het driestrepen-icoon linksboven op `/` deed niets bij een tik. Uitgezocht: het was een puur decoratief `<Menu>`-icoon (geen link, geen `onClick`) — vermoedelijk restant van een vroege opzet met een uitklapmenu, dat overbodig werd zodra de vaste onderste navigatiebalk die rol overnam. Op alle andere schermen (`/boodschappen`, `/gerechten`, `/controle`, `/recepten`) staat links altijd een écht werkende terugknop en rechts een puur decoratief thema-icoon — het beginscherm had dat precies andersom (links schijnfunctionaliteit, rechts pas de echte link naar "Ons gezin"). Overwogen om er een echt uitklapmenu van te maken, maar alle mogelijke inhoud daarvan (instellingen, Picnic, meldingen, uitloggen) zit al één tik verderop onder "Ons gezin" — een menu zou alleen bestaande navigatie dupliceren. In plaats daarvan `Menu` vervangen door `CalendarDays`, consistent met het decoratieve-icoon-patroon van de andere schermen. Geverifieerd met Playwright tegen een productiebuild dat het icoon geen `<a>`/`<button>` meer is; `tsc`/`eslint`/`npm test` (238/238)/`npm run build`/`npm run test:e2e` (10/10) groen. Geen nieuwe migratie nodig. |
 | WP77 | Inloggen met gebruikersnaam + wachtwoord (i.p.v. losse toegangscode) | Gebruikersverzoek: de bestaande `/login` werkte met één gedeelde toegangscode per huishouden (`Household.accessCodeHash`), met de zorg "stel dat twee mensen hetzelfde wachtwoord kiezen, gaat het dan fout?". Gekozen aanpak (huishoudens optie 2, niet individuele accounts per gezinslid): gebruikersnaam + wachtwoord, nog steeds gedeeld per huishouden. **Eerste implementatie bevatte een echte fout die het exact gevreesde scenario niet voorkwam**: de gebruikersnaam werd samen met het wachtwoord gehasht en gezouten met het huishouden-ID (`hash(householdId + username + password)`), en inloggen probeerde die hash tegen elk huishouden. Met een Playwright-script dat twee huishoudens bewust dezelfde gebruikersnaam+wachtwoord liet kiezen, bleek de tweede meldingsloos in te loggen op het **eerste** huishouden (willekeurige iteratievolgorde besliste, niet de bedoeling van de gebruiker) — het huishouden-ID voorkwam alleen dat een fóúte gok op een ander huishouden zou passen, niet dat twee bewust identieke combinaties elkaar zouden verwarren. Herontworpen met een echte oplossing: `username` is nu een aparte, **unieke** kolom in het schema (`@unique`, genormaliseerd — kleine letters, getrimd) in plaats van onderdeel van de hash; `passwordHash` blijft per huishouden gezouten. Inloggen is daardoor een directe opzoeking op gebruikersnaam (nooit meer dan één kandidaat, dus geen giswerk over huishoudens heen) gevolgd door één wachtwoordcontrole, met nog altijd één generieke foutmelding voor zowel een onbekende gebruikersnaam als een fout wachtwoord (voorkomt dat een bezoeker kan aftasten welke gebruikersnamen bestaan, zelfde WP62-principe als voorheen). Een bezette gebruikersnaam wordt nu al bij het **kiezen** geweigerd (bij onboarding en bij wijzigen via `/ons-gezin`), niet pas bij een verwarrende login achteraf. **Tweede bevinding tijdens verificatie**: een geworpen `Error` uit een server-actie wordt door Next.js in productiebuilds gereduceerd tot een generiek "er is iets misgegaan"-bericht (redactie van foutdetails, standaardgedrag — zie `node_modules/next/dist/docs/.../10-error-handling.md`), waardoor de nieuwe "deze gebruikersnaam is al in gebruik"-melding de gebruiker nooit zou bereiken. `completeOnboarding` (`src/app/onboarding/actions.ts`) geeft verwachte fouten nu terug als `{ error }` in plaats van te throwen (Next's eigen aanbevolen patroon voor server-acties); `updateCredentials` (`src/app/ons-gezin/actions.ts`, aangeroepen via een gewone `<form action>`) redirect bij een botsing naar een statuscode (`?status=username-taken`) die `/ons-gezin` als rode melding toont — zelfde patroon als de bestaande groene statusmeldingen op die pagina. Nieuwe domeinmodule `src/domain/household/credentials.ts` (wachtwoordhashing + gebruikersnaam-normalisatie/validatie, bewust gescheiden van `src/lib/auth.ts` omdat dat bestand `server-only` importeert en dus niet los te unittesten is — zelfde patroon als eerdere domeinmodules). Geverifieerd met een dedicated Playwright-scenario tegen een productiebuild: (1) twee huishoudens met bewust identieke inloggegevens — de tweede wordt nu geweigerd mét zichtbare melding, geen half aangemaakt huishouden blijft achter; (2) inloggen met de gedeelde combinatie gaat naar het juiste (enige) huishouden; (3) een fout wachtwoord toont nog steeds de generieke, niet-lekkende melding; (4) wijzigen naar een bezette gebruikersnaam via `/ons-gezin` toont dezelfde duidelijke fout. `tsc`/`eslint`/`npm test` (245/245)/`npm run build`/`npm run test:e2e` (10/10) groen. **Migratie nodig** (nog niet op productie gedraaid, gebruiker moet toestemming geven): `20260730110756_household_username_password` — verwijdert `access_code_hash`, voegt `username` (uniek) en `password_hash` toe. **Let op voor na de migratie**: de oude toegangscode kan niet worden omgezet (de kolom verdwijnt) — elk huishouden moet na de migratie eenmalig via `/ons-gezin` een nieuwe gebruikersnaam + wachtwoord instellen voordat een nieuwe login-sessie nodig is; de huidige sessiecookie blijft intussen gewoon werken (sessies staan los van de inloggegevens), dus geen acute uitsluiting. |
 | WP78 | Productiemigraties automatisch bij elke deploy | Vervolg op WP77: omdat Vercel bij elke push naar `main` automatisch een nieuwe productiedeploy uitrolt, maar de bijbehorende databasemigratie tot nu toe altijd een **losse, door de gebruiker zelf uit te voeren stap** was, kon appcode die een nieuwe kolom verwacht al live staan vóórdat die kolom in productie bestond (precies dit gebeurde meteen na WP77's merge). Gebruiker vroeg expliciet om dit voortaan automatisch te laten gebeuren. Nieuw: `package.json`'s `build`-script is nu `prisma migrate deploy && next build` — elke Vercel-deploy past dus eerst alle openstaande migraties toe, en faalt de deploy hard (fail-closed) als dat niet lukt, in plaats van appcode live te zetten die niet bij het schema past. Migraties hebben een niet-gepoolde databaseverbinding nodig (Supabase's transaction-mode pooler op poort 6543, waar de app zelf `DATABASE_URL` voor gebruikt, ondersteunt geen Prisma-migratielocking) — `prisma.config.ts` gebruikt daarom een nieuwe, optionele `DIRECT_URL` (valt terug op `DATABASE_URL` als die ontbreekt, zoals lokaal zonder pooler). Eenmalige actie die alleen de gebruiker zelf kan doen (buiten bereik van deze werkomgeving): in Vercel's projectinstellingen een environment variable `DIRECT_URL` toevoegen met Supabase's session-mode-pooler-connectiestring (poort 5432, "Connect to your project" → Session pooler in het Supabase-dashboard). Geverifieerd: lokale `npm run build` bevestigt dat `prisma migrate deploy` zonder `DIRECT_URL` gewoon terugvalt op `DATABASE_URL` en "No pending migrations to apply" meldt vóórdat `next build` start; e2e-tests bouwen via een eigen `next build`-aanroep (niet via `npm run build`) en zijn dus niet geraakt. `tsc`/`eslint`/`npm test` (245/245) groen. Geen nieuwe Prisma-migratie in dit WP zelf. **Update na productiegebruik**: de eerste échte poging op Vercel faalde met `P1013: the scheme is not recognized` — de gebruiker had bij het invullen van `DIRECT_URL` per ongeluk de variabelenaam en de aanhalingstekens (`DIRECT_URL="...”`) mee in de waarde gezet in plaats van alleen de kale `postgresql://...`-string. Na correctie in Vercel's environment variables slaagde de productiedeploy en is bevestigd dat de WP77-migratie (`username`/`password_hash`) automatisch is toegepast: de gebruiker heeft op de live site succesvol een gebruikersnaam+wachtwoord ingesteld, is uitgelogd en daarmee weer ingelogd. Deze automatische migratiepijplijn is dus in de praktijk end-to-end bevestigd, niet alleen lokaal. |
+| WP79 | Agent-workflow-fundamenten (analyse + Fase 1) | Op gebruikersverzoek: een volledige analyse van hoe goed dit project is ingericht voor zelfstandig werken door Claude Code (zie het analyserapport in de chatgeschiedenis). Belangrijkste bevinding: de daadwerkelijke werkregels stonden in `PROGRESS.md`, dat — anders dan `CLAUDE.md`/`AGENTS.md` — niet gegarandeerd geladen wordt in een verse sessie; en er was geen `README.md` met echte projectinhoud, geen samengevoegd verificatiecommando en geen losstaande Definition of Done. Dit WP pakt Fase 1 van het prioriteitenplan op. Nieuw `WORKFLOW.md` (bevat nu de "Manier van werken"-regels uit `PROGRESS.md` plus een expliciete Definition-of-Done-checklist en een sectie "wanneer geen aannames doen") wordt automatisch geladen via `CLAUDE.md` (`@AGENTS.md` + `@WORKFLOW.md`). Nieuw `OPERATIONS.md` bevat de verplaatste "Niet-voor-de-hand-liggende operationele kennis" uit `PROGRESS.md` (Prisma-migraties in de sandbox, productie-migraties/poolerpoorten, testconventies, architectuuroverzicht, beveiligingsincidenten) — gericht te raadplegen, niet elke sessie automatisch geladen, om `CLAUDE.md`'s automatische context klein te houden. `PROGRESS.md` verwijst nu naar beide in plaats van de inhoud te dupliceren. `package.json` heeft nieuwe scripts `typecheck` (`tsc --noEmit`) en `verify` (lint + typecheck + test + build in één commando). `README.md` volledig herschreven van de ongewijzigde `create-next-app`-boilerplate naar projectspecifieke inhoud (wat de app doet, leesvolgorde van de documentatie, lokale setup, commando-overzicht). Nieuw `.env.example` met alle bekende environment-variabelen (verplicht: `DATABASE_URL`; optioneel: `DIRECT_URL`, `WEB_PUSH_*`, `CRON_SECRET`) en toelichting. Geverifieerd: `npm run verify` zelf gedraaid en groen (lint, typecheck, 245/245 tests, migratie+build) — dogfooding van het nieuwe commando. Geen nieuwe Prisma-migratie. Bewust **niet** in dit WP: de CI-workflow (`.github/workflows/`) uit Fase 2 van het prioriteitenplan — dat is een aparte, iets risicovollere stap (introduceert een nieuwe automatische gate) en volgt als eigen WP. |
 
 ## Nog te doen (roadmap, nog niet gestart)
 
@@ -150,112 +131,10 @@ productie (Vercel + Supabase), tenzij anders vermeld.
 - WP72 rondt de WP69–WP72-reeks (attention-laag → pushmeldingen → bezorgmoment-voorkeur → bezorgmoment-pushmelding) af. Verder geen vastgelegde "volgende WP" — kies in overleg met de gebruiker.
 - **Let op voor de volgende sessie:** werk vanaf hier verder op `main`/een nieuwe branch vanaf `main` — zowel Claude- als Codex-sessies hebben recent rechtstreeks tegen dit project gewerkt (zie de WP53–WP57-commits), dus neem niet aan dat de laatst bekende branch-staat uit een eerdere sessie nog actueel is. Controleer altijd eerst `git log origin/main` en dit bestand voordat je verder bouwt.
 
-## Niet-voor-de-hand-liggende operationele kennis
+## Operationele kennis
 
-Deze dingen kostten tijd om uit te zoeken — lees dit voordat je ze opnieuw
-ontdekt.
-
-### Prisma-migraties in een niet-interactieve sandbox
-
-`npx prisma migrate dev` werkt hier niet (vraagt om interactieve input).
-Workflow die wel werkt:
-1. `npx prisma migrate diff --from-config-datasource prisma.config.ts --to-schema prisma/schema.prisma --script` → geeft de exacte SQL.
-2. Maak handmatig een tijdgestempelde map onder `prisma/migrations/<timestamp>_<naam>/migration.sql` met die SQL.
-3. `npx prisma migrate deploy` (lokale Postgres moet draaien: `sudo service postgresql start`).
-4. Draai stap 1 nogmaals om te bevestigen dat er geen drift meer is (moet "empty migration" teruggeven).
-
-Bekende, onschadelijke restdrift (sinds WP60 opgemerkt, niet veroorzaakt
-door WP60 zelf): stap 4 blijft twee `RENAME INDEX`-regels teruggeven voor
-`feedback_events`/`learned_patterns` — cosmetische naamgevingsdrift
-(waarschijnlijk een eerdere Prisma-versiewissel die de truncatie/suffix-
-conventie voor lange indexnamen wijzigde), functioneel identieke index,
-geen data- of queryrisico. Bewust niet meegenomen in een niet-gerelateerde
-migratie; los oppakken als het ooit hindert.
-
-### Productie-migraties tegen Supabase
-
-- De sandbox-omgeving kan geen rechtstreekse TCP-verbinding maken met de
-  Supabase-database (netwerk-egress wordt geblokkeerd) — een migratie kan
-  dus nooit vanuit deze werkomgeving zelf tegen productie gedraaid worden.
-- Sinds **WP78** draait `prisma migrate deploy` automatisch als onderdeel van
-  elke Vercel-deploy (`package.json`: `"build": "prisma migrate deploy && next
-  build"`) — de gebruiker hoeft dus niet meer na elke merge zelf een
-  migratie te draaien. Vereist wel één eenmalige, door de gebruiker zelf
-  gezette Vercel-environment-variable, zie hieronder.
-- Supabase heeft twee poolers:
-  - **Transaction-mode pooler** (poort **6543**, `?pgbouncer=true`) — dit is
-    de `DATABASE_URL` die de Next.js-app zelf gebruikt in Vercel (blijft
-    ongewijzigd). Ondersteunt **geen** Prisma-migratielocking; `prisma
-    migrate deploy` hangt hier oneindig.
-  - **Session-mode pooler / directe verbinding** (poort **5432**, geen
-    `pgbouncer`-parameter) — hiermee moet `prisma migrate deploy` draaien.
-    `prisma.config.ts` gebruikt hiervoor `DIRECT_URL` (valt terug op
-    `DATABASE_URL` als die niet gezet is, zoals lokaal).
-- **Eenmalige actie voor de gebruiker in Vercel** (Project Settings →
-  Environment Variables): een nieuwe variabele `DIRECT_URL` toevoegen met de
-  session-pooler-connectiestring uit het Supabase-dashboard ("Connect to
-  your project" → Session pooler):
-  ```
-  DIRECT_URL="postgresql://postgres.<project-ref>:<wachtwoord>@aws-0-eu-central-1.pooler.supabase.com:5432/postgres"
-  ```
-  Zonder deze variabele mislukt de eerstvolgende deploy in de build-stap
-  (fail-closed: liever een mislukte deploy dan appcode live zetten die niet
-  bij het databaseschema past).
-- Losstaand van elkaar geldig gebleven voor eenmalig handmatig gebruik
-  (bijv. om een migratie te testen vóór een deploy): dezelfde
-  sessie-pooler-string ook rechtstreeks meegeven aan een lokale
-  `prisma migrate deploy`-aanroep:
-  ```
-  DIRECT_URL="postgresql://postgres.<project-ref>:<wachtwoord>@aws-0-eu-central-1.pooler.supabase.com:5432/postgres" npx prisma migrate deploy
-  ```
-
-### Testen
-
-- `npm test` draait `tsx --test $(find src -name '*.test.ts')` — bewust geen
-  extern testframework (Node's ingebouwde `node:test` + `node:assert/strict`).
-- Zowel pure unit tests als integratietests tegen een **echte lokale
-  Postgres** (geen Prisma-mocking) — zie `src/lib/inventory.test.ts` en
-  `src/lib/picnic/cartService.test.ts` voor het gangbare patroon
-  (fixture aanmaken → testen → opruimen in een `finally`-blok).
-- Voor UI-verificatie: Playwright met het voorgeïnstalleerde systeem-Chromium
-  (`executablePath: "/opt/pw-browsers/chromium"`), altijd gecombineerd met
-  een directe Prisma-query als bron van waarheid — niet blind op
-  DOM/screenshot-timing vertrouwen.
-- `npm run test:e2e` (WP59, Fase 15) draait de kritieke-flow-testsuite
-  (`e2e/criticalFlow.e2e.ts`) tegen een eigen `next build && next start` op
-  een losse poort, met een lokale mock-Picnic-server — nooit tegen een live
-  Picnic-account. Bewust geen `next dev`: de dev-websocket bleek in deze
-  sandbox onvoorspelbaar (zie `next.config.ts`/`devIndicators`-fix). Duurt
-  ca. 25-60s, vooral de eigen `next build`-stap; niet in de gewone
-  `npm test`-run opgenomen.
-
-### Architectuur
-
-- Domain-driven, incrementele migratie: nieuwe domeinlogica komt onder
-  `src/domain/<naam>/` (tot nu toe alleen `product-matching`), naast de
-  bestaande `src/lib/`. Geen big-bang herschrijving.
-- Server Components + Server Actions (`"use server"`) zijn de enige manier
-  om te muteren; `revalidatePath` voor cache-invalidatie.
-- Consistent principe door het hele project: **nooit stilzwijgend een
-  aanname doen** bij onzekerheid — onbekende dieetrestrictie-tekst,
-  onbekende pakketgrootte, onbekende voorraadstatus worden allemaal expliciet
-  gemaakt aan de gebruiker in plaats van geraden.
-- Geen `Math.random()`-tiebreaks — altijd een deterministische, uitlegbare
-  volgorde (zie WP5 `matchProduct.ts` als voorbeeld; WP8 moet hetzelfde doen
-  voor `ensureMealPlan`).
-- Sinds WP9 komt het actuele huishouden uit `src/lib/auth.ts` via een
-  HttpOnly-sessiecookie. Server actions mogen een `householdId` uit een form
-  alleen gebruiken nadat `assertCurrentHousehold()` is aangeroepen, of moeten
-  ownership afleiden via de betreffende shopping-list/line.
-- Bestaande productie-installaties met precies één huishouden zonder
-  gebruikersnaam blijven tijdelijk werken via een legacy-pad. Stel daarna bij
-  `/ons-gezin` een gebruikersnaam + wachtwoord in zodat `/login` gebruikt kan
-  worden.
-
-### Beveiliging
-
-- Er is ooit per ongeluk een GitHub Personal Access Token gedeeld in de chat
-  in plaats van een `DATABASE_URL`. Als dat nog niet is gebeurd: de
-  gebruiker is geadviseerd dat token te herroepen via GitHub Settings →
-  Developer settings → Personal access tokens. Gebruik nooit een
-  credential die niet expliciet voor het huidige doel is gegeven.
+Verplaatst naar `OPERATIONS.md`: Prisma-migraties in een niet-interactieve
+sandbox, productie-migraties tegen Supabase (inclusief de poolerpoorten en
+de `DIRECT_URL`-valkuil), testconventies, architectuuroverzicht en
+beveiligingsincident-historie. Raadpleeg dat bestand gericht wanneer je
+tegen een van die onderwerpen aanloopt.
