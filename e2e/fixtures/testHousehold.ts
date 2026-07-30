@@ -27,7 +27,13 @@ export async function deleteTestHousehold(householdId: string) {
  * Prisma-insert: de onboardingflow zelf is stap 1 van de kritieke
  * gebruikersflow uit Fase 15 en moet dus ook echt getest worden.
  */
-export async function completeOnboardingViaUi(page: Page, baseURL: string, householdName: string, accessCode: string) {
+export async function completeOnboardingViaUi(
+  page: Page,
+  baseURL: string,
+  householdName: string,
+  username: string,
+  password: string
+) {
   await page.goto(`${baseURL}/onboarding`, { waitUntil: "load" });
 
   // Stap 1: modus (QUICK staat al standaard aan) → Volgende.
@@ -44,8 +50,9 @@ export async function completeOnboardingViaUi(page: Page, baseURL: string, house
   // Stap 4: weekritme — standaardwaarden zijn prima, gewoon door.
   await page.getByRole("button", { name: "Volgende" }).click();
 
-  // Stap 5 (laatste stap in QUICK-modus): toegangscode + versturen.
-  await page.getByPlaceholder("Minimaal 6 tekens").fill(accessCode);
+  // Stap 5 (laatste stap in QUICK-modus): gebruikersnaam + wachtwoord + versturen.
+  await page.getByPlaceholder("Gebruikersnaam (minimaal 3 tekens)").fill(username);
+  await page.getByPlaceholder("Wachtwoord (minimaal 6 tekens)").fill(password);
   await page.getByRole("button", { name: "Maak mijn eerste week" }).click();
 
   await page.waitForURL(`${baseURL}/`, { timeout: 30_000 });

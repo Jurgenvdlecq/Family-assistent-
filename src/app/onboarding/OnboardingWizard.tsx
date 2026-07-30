@@ -54,7 +54,8 @@ export default function OnboardingWizard() {
     Object.fromEntries(DAYS.map((d) => [d.key, "quiet"])) as Rhythm
   );
   const [categories, setCategories] = useState<string[]>([]);
-  const [accessCode, setAccessCode] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const totalSteps = onboardingMode === "DETAILED" ? 7 : 5;
@@ -81,7 +82,7 @@ export default function OnboardingWizard() {
   function canGoNext(): boolean {
     if (step === 2) return householdName.trim().length > 0;
     if (step === 3) return persons.some((p) => p.name.trim().length > 0);
-    if (step === finalStep) return accessCode.trim().length >= 6;
+    if (step === finalStep) return username.trim().length >= 3 && password.length >= 6;
     return true;
   }
 
@@ -103,15 +104,20 @@ export default function OnboardingWizard() {
     setError(null);
     startTransition(async () => {
       try {
-        await completeOnboarding({
+        const result = await completeOnboarding({
           householdName,
           onboardingMode,
           planningStyle,
           persons,
           weeklyRhythm: rhythm,
           preferredCategories: onboardingMode === "DETAILED" ? categories : [],
-          accessCode,
+          username,
+          password,
         });
+        if ("error" in result) {
+          setError(result.error);
+          return;
+        }
         router.push("/");
       } catch (e) {
         setError(e instanceof Error ? e.message : "Er ging iets mis. Probeer het opnieuw.");
@@ -346,15 +352,25 @@ export default function OnboardingWizard() {
         <div>
           <h2 className="mb-2 text-2xl font-semibold text-ink">Klaar om te beginnen</h2>
           <p className="mb-6 text-ink-muted">
-            Kies een toegangscode voor dit huishouden. Daarmee blijft jullie planning gescheiden
-            van andere huishoudens op dezelfde app.
+            Kies een gebruikersnaam en wachtwoord voor dit huishouden. Daarmee blijft jullie
+            planning gescheiden van andere huishoudens op dezelfde app.
           </p>
           <input
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            minLength={3}
+            autoComplete="username"
+            placeholder="Gebruikersnaam (minimaal 3 tekens)"
+            className="mb-3 w-full min-w-0 rounded-lg border border-line bg-surface px-4 py-3 text-base text-ink outline-none focus:border-accent"
+          />
+          <input
             type="password"
-            value={accessCode}
-            onChange={(e) => setAccessCode(e.target.value)}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             minLength={6}
-            placeholder="Minimaal 6 tekens"
+            autoComplete="new-password"
+            placeholder="Wachtwoord (minimaal 6 tekens)"
             className="mb-4 w-full min-w-0 rounded-lg border border-line bg-surface px-4 py-3 text-base text-ink outline-none focus:border-accent"
           />
           <div className="mb-6 min-w-0 rounded-xl border border-line bg-surface p-4 text-sm">
