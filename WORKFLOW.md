@@ -52,6 +52,11 @@ een nieuwe sessie 'm niet zelf hoeft te reconstrueren.
    unit-/integratietests en de build in één keer. Los draaien
    (`npm run lint`, `npx tsc --noEmit`, `npm test`, `npm run build`) mag
    ook, maar `verify` is de kortste weg om niets te vergeten.
+   - Raakt de wijziging authenticatie/sessiebeheer, household-isolatie,
+     de Picnic-integratie, of het databaseschema? Schakel dan vóór het
+     mergen de `code-reviewer`-subagent in (`.claude/agents/code-reviewer.md`)
+     voor een onafhankelijke, kritische blik — niet pas als de gebruiker
+     erom vraagt.
 3. **`npm run test:e2e` draait** wanneer de wijziging een gebruikersstroom
    raakt die de kritieke flow doorkruist (inloggen/onboarding, weekmenu,
    boodschappen, Picnic-mandje) — niet nodig voor een geïsoleerde
@@ -74,6 +79,23 @@ een nieuwe sessie 'm niet zelf hoeft te reconstrueren.
 Wanneer een van deze punten niet haalbaar is binnen de huidige sandbox
 (bijvoorbeeld: een productiemigratie kan hier nooit zelf gedraaid worden),
 meld dat expliciet in plaats van te doen alsof het wel geverifieerd is.
+
+## Stopvoorwaarden
+
+Stop en leg het aan de gebruiker voor (in plaats van door te werken) wanneer:
+
+- **`npm run verify` (of een losse stap daarvan) na 2-3 gerichte pogingen
+  nog steeds faalt.** Blijf niet almaar opnieuw proberen — vat samen wat je
+  geprobeerd hebt, wat de laatste foutmelding is, en vraag hoe verder.
+- **De wijziging duidelijk groter dreigt te worden dan gevraagd** — bijv.
+  een klein verzoek blijkt onderweg een schemawijziging of een aanpassing
+  aan authenticatie te vereisen. Meld dat expliciet en vraag akkoord voordat
+  je doorgaat, in plaats van de scope stilzwijgend te laten groeien.
+- **Een productiemigratie of destructieve git-actie nodig is** (zie hierboven
+  — dit gold al, herhaald hier omdat het ook een stopvoorwaarde is).
+- **Een architecturale aanname uit `AGENTS.md`/`PRODUCT_VISION.md` conflicteert**
+  met wat er nu gevraagd wordt — leg het conflict voor in plaats van er
+  zelf stilzwijgend van af te wijken of de bestaande visie te negeren.
 
 ## Wanneer geen aannames doen
 
