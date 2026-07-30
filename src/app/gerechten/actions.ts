@@ -7,7 +7,7 @@ import { assertCurrentHousehold } from "@/lib/auth";
 import { logFeedbackEvent } from "@/lib/feedback";
 import { invalidateShoppingList } from "@/lib/shoppingList";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "@/lib/scoring";
-import { getHouseholdHardRestrictions, getHouseholdMealParticipantsByDay } from "@/lib/household";
+import { getHouseholdHardRestrictionsAndParticipantsByDay } from "@/lib/household";
 import { recipeConflictsWithRestrictions } from "@/lib/dietaryRestrictions";
 import { accessibleRecipeWhere } from "@/lib/recipeScope";
 import { DAY_ENUM, DAY_KEYS, type DayKey } from "@/lib/week";
@@ -62,14 +62,14 @@ export async function replaceMealPlanEntry(formData: FormData) {
   // aanroeper kan hetzelfde form-veld met een andere id versturen) — de UI
   // filtert onveilige gerechten al weg, maar dat is geen beveiliging.
   // Daarom hier nogmaals hard controleren, ongeacht wat er binnenkomt.
-  const [variant, hardRestrictions, participantsByDay] = await Promise.all([
+  const [variant, { hardRestrictionsByDay, participantsByDay }] = await Promise.all([
     prisma.recipeVariant.findUniqueOrThrow({
       where: { id: recipeVariantId, recipe: accessibleRecipeWhere(householdId) },
       include: { recipe: { include: { ingredients: { include: { ingredient: true } } } } },
     }),
-    getHouseholdHardRestrictions(householdId, dayKey),
-    getHouseholdMealParticipantsByDay(householdId),
+    getHouseholdHardRestrictionsAndParticipantsByDay(householdId),
   ]);
+  const hardRestrictions = hardRestrictionsByDay[dayKey];
   const neverPreference = await prisma.preference.findFirst({
     where: {
       ownerType: "PERSON",
@@ -235,10 +235,8 @@ export async function chooseLiteralMealPlanEntry(formData: FormData) {
     throw new Error("Ik herkende niet alle ingrediënten.");
   }
 
-  const [hardRestrictions, participantsByDay] = await Promise.all([
-    getHouseholdHardRestrictions(householdId, dayKey),
-    getHouseholdMealParticipantsByDay(householdId),
-  ]);
+  const { hardRestrictionsByDay, participantsByDay } = await getHouseholdHardRestrictionsAndParticipantsByDay(householdId);
+  const hardRestrictions = hardRestrictionsByDay[dayKey];
   const conflicts = recipeConflictsWithRestrictions(
     ingredients.map((ingredient) => ({
       category: ingredient.category,

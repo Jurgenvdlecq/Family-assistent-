@@ -7,7 +7,7 @@ import {
   type PersonPresenceInput,
 } from "@/domain/household/presence";
 
-async function getHouseholdPersonsForMeals(householdId: string): Promise<PersonPresenceInput[]> {
+export async function getHouseholdPersonsForMeals(householdId: string): Promise<PersonPresenceInput[]> {
   return prisma.person.findMany({
     where: { householdId },
     select: {
@@ -55,9 +55,33 @@ export async function getHouseholdPortionScaleByDay(
   return calculatePortionScaleByDay(persons);
 }
 
-export async function getHouseholdMealParticipantsByDay(householdId: string) {
-  const persons = await getHouseholdPersonsForMeals(householdId);
+function deriveParticipantsByDay(persons: PersonPresenceInput[]): Record<DayKey, PersonPresenceInput[]> {
   return Object.fromEntries(
     DAY_KEYS.map((dayKey) => [dayKey, getPresentPersonsForDay(persons, dayKey)])
   ) as Record<DayKey, PersonPresenceInput[]>;
+}
+
+export async function getHouseholdMealParticipantsByDay(householdId: string) {
+  const persons = await getHouseholdPersonsForMeals(householdId);
+  return deriveParticipantsByDay(persons);
+}
+
+/**
+ * Fase 13: combineert harde beperkingen + aanwezigheid per dag in één
+ * `person.findMany` — de aanroepers die beide nodig hebben (mealPlan.ts,
+ * /gerechten) deden voorheen `getHouseholdHardRestrictions(dayKey)` per dag
+ * én `getHouseholdMealParticipantsByDay()` los aan, wat dezelfde
+ * personendata tot 8x per aanroep opnieuw uit de database haalde zonder dat
+ * er tussentijds iets veranderde.
+ */
+export async function getHouseholdHardRestrictionsAndParticipantsByDay(householdId: string): Promise<{
+  hardRestrictionsByDay: Record<DayKey, string[]>;
+  participantsByDay: Record<DayKey, PersonPresenceInput[]>;
+}> {
+  const persons = await getHouseholdPersonsForMeals(householdId);
+  const participantsByDay = deriveParticipantsByDay(persons);
+  const hardRestrictionsByDay = Object.fromEntries(
+    DAY_KEYS.map((dayKey) => [dayKey, collectHardRestrictions(participantsByDay[dayKey])])
+  ) as Record<DayKey, string[]>;
+  return { hardRestrictionsByDay, participantsByDay };
 }
