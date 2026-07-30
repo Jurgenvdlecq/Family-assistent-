@@ -2,7 +2,7 @@ import { prisma } from "./prisma";
 import { logFeedbackEvent } from "./feedback";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "./scoring";
 import { DAY_KEYS, DAY_ENUM, DAY_KEY_BY_ENUM, DAY_LABELS, dateForDay, type DayKey } from "./week";
-import { getHouseholdHardRestrictions, getHouseholdMealParticipantsByDay } from "./household";
+import { getHouseholdHardRestrictionsAndParticipantsByDay } from "./household";
 import { recipeConflictsWithRestrictions } from "./dietaryRestrictions";
 import { accessibleRecipeWhere } from "./recipeScope";
 import {
@@ -120,8 +120,7 @@ async function ensureMealPlanInner(
     dayRecipePreferences,
     recentSuggestions,
     allVariants,
-    hardRestrictionsByDayEntries,
-    participantsByDay,
+    { hardRestrictionsByDay, participantsByDay },
     dayRoutines,
     confirmedAcceptancePatterns,
   ] = await Promise.all([
@@ -163,8 +162,7 @@ async function ensureMealPlanInner(
       where: { recipe: accessibleRecipeWhere(householdId) },
       include: { recipe: { include: { ingredients: { include: { ingredient: true } } } } },
     }),
-    Promise.all(DAY_KEYS.map(async (dayKey) => [dayKey, await getHouseholdHardRestrictions(householdId, dayKey)] as const)),
-    getHouseholdMealParticipantsByDay(householdId),
+    getHouseholdHardRestrictionsAndParticipantsByDay(householdId),
     prisma.dayRoutine.findMany({ where: { householdId } }),
     prisma.learnedPattern.findMany({
       where: {
@@ -203,7 +201,6 @@ async function ensureMealPlanInner(
     },
   });
 
-  const hardRestrictionsByDay = new Map<DayKey, string[]>(hardRestrictionsByDayEntries);
   const personalPreferenceByPersonSubject = new Map(
     personalPreferences.map((preference) => [`${preference.ownerId}:${preference.subjectType}:${preference.subjectId}`, preference])
   );
@@ -268,7 +265,7 @@ async function ensureMealPlanInner(
             category: ri.ingredient.category,
             restrictionTags: ri.ingredient.restrictionTags,
           })),
-          hardRestrictionsByDay.get(dayKey) ?? []
+          hardRestrictionsByDay[dayKey] ?? []
         )
     );
 

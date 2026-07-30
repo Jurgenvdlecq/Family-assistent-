@@ -3,7 +3,7 @@ import { ChevronLeft, UtensilsCrossed, Heart, Sparkles, EyeOff } from "lucide-re
 import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
-import { getHouseholdHardRestrictions, getHouseholdMealParticipantsByDay } from "@/lib/household";
+import { getHouseholdHardRestrictionsAndParticipantsByDay } from "@/lib/household";
 import { recipeConflictsWithRestrictions } from "@/lib/dietaryRestrictions";
 import { accessibleRecipeWhere } from "@/lib/recipeScope";
 import { DAY_KEYS, DAY_ENUM, DAY_LABELS, getCurrentWeekStart, type DayKey } from "@/lib/week";
@@ -112,13 +112,12 @@ export default async function GerechtenPage({
     preferences.filter((p) => p.subjectType === "RECIPE_VARIANT" && p.hiddenAt !== null).map((p) => p.subjectId)
   );
 
-  const [allVariants, hardRestrictions, participantsByDay, dayRecipePreferences] = await Promise.all([
+  const [allVariants, { hardRestrictionsByDay, participantsByDay }, dayRecipePreferences] = await Promise.all([
     prisma.recipeVariant.findMany({
       where: { recipe: accessibleRecipeWhere(household.id) },
       include: VARIANT_INCLUDE,
     }),
-    getHouseholdHardRestrictions(household.id, dayKey),
-    getHouseholdMealParticipantsByDay(household.id),
+    getHouseholdHardRestrictionsAndParticipantsByDay(household.id),
     prisma.preference.findMany({
       where: {
         ownerType: "HOUSEHOLD",
@@ -127,6 +126,7 @@ export default async function GerechtenPage({
       },
     }),
   ]);
+  const hardRestrictions = hardRestrictionsByDay[dayKey];
   const dayPreferenceByVariantId = new Map(
     dayRecipePreferences.map((preference) => [preference.subjectId, preference])
   );

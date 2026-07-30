@@ -7,6 +7,13 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
 function createClient() {
   const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
+  if (process.env.DEBUG_PRISMA_QUERIES === "true") {
+    const client = new PrismaClient({ adapter, log: [{ level: "query", emit: "event" }] });
+    client.$on("query" as never, (e: unknown) => {
+      console.log("PRISMA_QUERY:", (e as { query: string }).query);
+    });
+    return client;
+  }
   return new PrismaClient({ adapter });
 }
 
