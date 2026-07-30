@@ -18,6 +18,7 @@ import PersonalPreferencesManager, { labelPersonalPreferenceSubject } from "./Pe
 import PersonPreferencesCard from "./PersonPreferencesCard";
 import PicnicConnection from "./PicnicConnection";
 import PicnicDeliveryPreferenceForm from "./PicnicDeliveryPreferenceForm";
+import PlanningStyleEditor from "./PlanningStyleEditor";
 import PushNotificationSettings from "./PushNotificationSettings";
 import WeeklyRhythmEditor from "./WeeklyRhythmEditor";
 import { getNotificationPreferences } from "@/lib/notifications";
@@ -52,6 +53,7 @@ const STATUS_MESSAGES: Record<string, string> = {
   "person-updated": "Profiel opgeslagen.",
   "presence-updated": "Aanwezigheid bijgewerkt.",
   "rhythm-updated": "Dagritme opgeslagen.",
+  "planning-style-updated": "Planningsstijl opgeslagen.",
   "product-preference-updated": "Productkeuze-instelling opgeslagen.",
   "category-preference-updated": "Voorkeur opgeslagen.",
   "product-preference-forgotten": "Onthouden productkeuze vergeten.",
@@ -393,6 +395,14 @@ export default async function OnsGezinPage({
           <summary className="cursor-pointer font-medium text-ink">Jullie weekritme</summary>
           <div className="mt-4">
             <WeeklyRhythmEditor householdId={household.id} initialRhythm={rhythm} />
+          </div>
+        </details>
+
+        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <summary className="cursor-pointer font-medium text-ink">Planningsstijl</summary>
+          <p className="mt-2 text-sm text-ink-muted">Hoeveel nieuwe gerechten wil je per week zien?</p>
+          <div className="mt-4">
+            <PlanningStyleEditor householdId={household.id} initialPlanningStyle={household.planningStyle} />
           </div>
         </details>
 

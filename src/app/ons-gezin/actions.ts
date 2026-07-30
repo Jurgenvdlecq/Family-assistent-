@@ -161,6 +161,34 @@ export async function updateWeeklyRhythm(formData: FormData) {
   redirectToOnsGezin("rhythm-updated");
 }
 
+const PLANNING_STYLES = ["SAFE", "BALANCED", "ADVENTUROUS"] as const;
+
+/**
+ * Fase 10: "voorkeur voor herhaalbare gerechten" bestond al als
+ * `Household.planningStyle` (SAFE = vaker bewezen/herhaalde gerechten,
+ * ADVENTUROUS = meer nieuwe suggesties — zie scoreMealPlanCandidate.ts),
+ * maar kon tot nu toe alleen bij onboarding gezet worden. Een huishouden
+ * verandert hier over tijd in, dus dit hoort net als de andere voorkeuren
+ * op deze pagina aanpasbaar te zijn.
+ */
+export async function updatePlanningStyle(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const planningStyle = String(formData.get("planningStyle"));
+
+  if (!PLANNING_STYLES.includes(planningStyle as (typeof PLANNING_STYLES)[number])) {
+    throw new Error("Onbekende planningsstijl.");
+  }
+
+  await prisma.household.update({
+    where: { id: householdId },
+    data: { planningStyle: planningStyle as (typeof PLANNING_STYLES)[number] },
+  });
+
+  revalidatePath("/");
+  redirectToOnsGezin("planning-style-updated");
+}
+
 export async function updateProductChoicePreference(formData: FormData) {
   const householdId = String(formData.get("householdId"));
   await assertCurrentHousehold(householdId);
