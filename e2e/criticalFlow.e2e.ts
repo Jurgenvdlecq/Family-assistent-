@@ -120,7 +120,10 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       const searchInput = page.getByPlaceholder("Zoek Picnic-product, bv. appels");
       await searchInput.waitFor({ state: "visible" });
       await searchInput.fill(MOCK_SEARCH_TERM);
-      await page.getByRole("button", { name: "Zoeken bij Picnic" }).click();
+      // Scoped op #add-fixed-grocery: sinds WP82 heeft de nieuwe
+      // "Product toevoegen"-sectie (#quick-add-product) een eigen, identiek
+      // gelabelde zoekknop.
+      await page.locator("#add-fixed-grocery").getByRole("button", { name: "Zoeken bij Picnic" }).click();
       await page.waitForURL((url) => url.searchParams.get("fixedQ") === MOCK_SEARCH_TERM, { timeout: 15_000 });
 
       const chooseButton = page.getByRole("button", { name: "Kies als vaste boodschap" }).first();

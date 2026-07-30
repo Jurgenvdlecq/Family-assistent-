@@ -1,6 +1,6 @@
 import { prisma } from "../prisma";
 import { PicnicClient, PicnicAuthError, PicnicNetworkError } from "./client";
-import { describeLinePackaging } from "../shoppingList";
+import { describeLinePackaging, isUserChosenPackageCount } from "../shoppingList";
 import { logEvent, createCorrelationId } from "../logger";
 
 export interface PicnicCartResult {
@@ -159,7 +159,7 @@ function getPackageCountForLine(line: {
   source: string;
   product: { packageQuantity: number | null } | null;
 }) {
-  if (line.source === "FIXED" && line.unit === "PIECE") return Math.max(1, Math.ceil(line.quantity));
+  if (isUserChosenPackageCount(line)) return Math.max(1, Math.ceil(line.quantity));
 
   const packaging = describeLinePackaging(line, line.product);
   if (packaging.status === "OK") return packaging.packagesToBuy;

@@ -108,7 +108,17 @@ export async function startMockPicnicServer(port = DEFAULT_PORT): Promise<MockPi
     res.end("{}");
   });
 
-  await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
+  // Zonder een 'error'-listener hier blijft deze promise voor altijd hangen
+  // bij bv. EADDRINUSE (poort al in gebruik door een vorige, onderbroken
+  // testrun) — 'listening' vuurt dan nooit, en zonder reject merkt niemand
+  // het verschil met een test die gewoon nog bezig is.
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
   const { port: boundPort } = server.address() as AddressInfo;
 
   return {

@@ -664,6 +664,11 @@ enum LineSource {
   // dus geen MEAL-regel om aan te vullen. Altijd needsReview: de gebruiker
   // gaf alleen een status door, geen exacte hoeveelheid.
   INVENTORY
+  // Eenmalig, handmatig toegevoegd product (gebruikersverzoek: kinderen
+  // moeten makkelijk iets aan de lijst kunnen toevoegen) — in tegenstelling
+  // tot FIXED wordt dit nooit een blijvende wekelijkse gewoonte, alleen een
+  // regel voor de huidige week.
+  MANUAL
 
   @@map("line_source")
 }

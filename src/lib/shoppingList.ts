@@ -416,6 +416,25 @@ export async function getShoppingListCandidatesByIngredient(
 }
 
 /**
+ * FIXED- en MANUAL-regels laten de gebruiker direct een aantal verpakkingen
+ * kiezen (het formulier op /boodschappen biedt een hoeveelheid + eenheid,
+ * standaard 1×stuks) — in tegenstelling tot MEAL-regels, waar `quantity` een
+ * ruwe receptbehoefte is die eerst door de verpakkingsengine moet. Als de
+ * gebruiker daarbij "stuks" koos, is `quantity` dus al letterlijk het
+ * gewenste aantal verpakkingen, ongeacht in welke eenheid (gram/ml/stuks)
+ * het onderliggende ingrediënt eigenlijk gemeten wordt — de engine zou die
+ * waarde anders proberen te herinterpreteren en op een te laag aantal
+ * uitkomen (bewezen bug: een product van 1,5 liter met quantity=3 stuks gaf
+ * via de engine maar 1 verpakking terug in plaats van 3). Gebruik deze
+ * functie overal waar `describeLinePackaging` normaliter zou draaien, zodat
+ * een toekomstige nieuwe regelbron met hetzelfde "gebruiker kiest zelf een
+ * aantal"-gedrag niet opnieuw op deze valkuil stuit.
+ */
+export function isUserChosenPackageCount(line: { source: string; unit: string }): boolean {
+  return (line.source === "FIXED" || line.source === "MANUAL") && line.unit === "PIECE";
+}
+
+/**
  * Vertaalt een boodschappenregel naar de verpakkingsberekening uit Fase 3
  * (aantal verpakkingen, totaal gekocht, verwacht overschot). `line.quantity`
  * is al de netto hoeveelheid (na aftrek van voorraad, zie ensureShoppingList),

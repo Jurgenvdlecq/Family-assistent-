@@ -74,6 +74,96 @@ async function cleanup(householdId: string) {
   await prisma.household.delete({ where: { id: householdId } });
 }
 
+function fakeAddProductFetchCapturingCount(calls: Array<{ productId: string; count: number }>) {
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/cart/add_product")) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { product_id: string; count: number };
+      calls.push({ productId: body.product_id, count: body.count });
+      return new Response(JSON.stringify({}), { headers: { "Content-Type": "application/json" } });
+    }
+    return new Response(JSON.stringify({ error: { code: "UNKNOWN", message: "onverwacht endpoint" } }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+}
+
+/**
+ * Reproduceert het scenario uit de codereview van WP82: een MANUAL-regel
+ * (net als FIXED) laat de gebruiker rechtstreeks een aantal verpakkingen
+ * kiezen via `unit: PIECE` — dat aantal mag niet worden herinterpreteerd
+ * door de verpakkingsengine, ook al is het onderliggende ingrediënt in
+ * werkelijkheid in ML/GRAM gemeten (hier: een fles van 1.500 ml).
+ */
+async function makeHouseholdWithManualPieceLine(name: string, quantity: number) {
+  const household = await prisma.household.create({
+    data: {
+      name,
+      picnicAuthToken: "test-token",
+      persons: { create: [{ name: "Test", role: "PARENT" }] },
+    },
+  });
+  const ingredient = await prisma.ingredient.create({
+    data: { name: `WP82 testfles ${household.id}`, unit: "ML", category: "OTHER" },
+  });
+  const product = await prisma.product.create({
+    data: {
+      name: "Testfles 1,5 liter",
+      externalRef: `picnic-test-manual-${household.id}`,
+      ingredientId: ingredient.id,
+      packageSize: "1,5 liter",
+      packageQuantity: 1500,
+    },
+  });
+  const mealPlan = await prisma.mealPlan.create({
+    data: { householdId: household.id, weekStart: getCurrentWeekStart(), status: "CONFIRMED" },
+  });
+  const shoppingList = await prisma.shoppingList.create({
+    data: {
+      mealPlanId: mealPlan.id,
+      lines: {
+        create: [
+          {
+            ingredientId: ingredient.id,
+            productId: product.id,
+            quantity,
+            unit: "PIECE",
+            source: "MANUAL",
+            matchStatus: "MANUALLY_SELECTED",
+            matchConfidence: 1,
+            matchReasons: ["Handmatig toegevoegd voor deze week."],
+          },
+        ],
+      },
+    },
+  });
+  return { household, shoppingList, product };
+}
+
+test("addShoppingListToPicnicCart: MANUAL-regel met unit PIECE en een ML-product stuurt het letterlijk gekozen aantal, niet de verpakkingsberekening", async () => {
+  const originalFetch = global.fetch;
+  let household: Awaited<ReturnType<typeof makeHouseholdWithManualPieceLine>>["household"] | undefined;
+
+  try {
+    const fixture = await makeHouseholdWithManualPieceLine("WP82 regressietest — MANUAL + PIECE + ML-product", 3);
+    household = fixture.household;
+    const calls: Array<{ productId: string; count: number }> = [];
+    global.fetch = fakeAddProductFetchCapturingCount(calls);
+
+    const result = await addShoppingListToPicnicCart(fixture.shoppingList.id);
+    assert.equal(result.added.length, 1);
+    assert.equal(calls.length, 1, "precies één add_product-aanroep");
+    assert.equal(
+      calls[0]!.count,
+      3,
+      "de gebruiker koos letterlijk 3 stuks — dat mag de verpakkingsengine niet naar 1 herinterpreteren omdat het onderliggende product in ml gemeten is"
+    );
+  } finally {
+    global.fetch = originalFetch;
+    if (household) await cleanup(household.id);
+  }
+});
+
 test("addShoppingListToPicnicCart: idempotent — een tweede keer slaat de al overgedragen regel over zonder nieuwe netwerkcall", async () => {
   const originalFetch = global.fetch;
   let household: Awaited<ReturnType<typeof makeHouseholdWithShoppingListLine>>["household"] | undefined;

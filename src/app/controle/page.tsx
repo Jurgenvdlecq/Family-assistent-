@@ -13,7 +13,12 @@ import { requireCurrentHousehold } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { getCurrentWeekStart } from "@/lib/week";
-import { ensureShoppingList, getShoppingListCandidatesByIngredient, describeLinePackaging } from "@/lib/shoppingList";
+import {
+  ensureShoppingList,
+  getShoppingListCandidatesByIngredient,
+  describeLinePackaging,
+  isUserChosenPackageCount,
+} from "@/lib/shoppingList";
 import { enrichShoppingListProductImages } from "@/lib/picnic/productEnrichment";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
@@ -67,14 +72,14 @@ function PackagingLine({
   line: { quantity: number; unit: string; source: string };
   product: { packageQuantity: number | null } | null | undefined;
 }) {
-  // Een vaste boodschap in stuks geeft al direct het aantal te bestellen
-  // producten aan ("1x nodig" = 1 verpakking) — Product.packageQuantity is
-  // hier altijd berekend in de eenheid van het ingrediënt (vaak gram/ml),
-  // niet per se in stuks. Verpakkingsrekenwerk hierop loslaten geeft dan
-  // onzinnige uitkomsten (bv. "130x totaal · 129x over" voor 1 pak
-  // rijstwafels van 130 gram). Zelfde regel als `formatOrderQuantity` op
-  // /boodschappen.
-  if (line.source === "FIXED" && line.unit === "PIECE") return null;
+  // Een vaste boodschap of eenmalig product in stuks geeft al direct het
+  // aantal te bestellen producten aan ("1x nodig" = 1 verpakking) —
+  // Product.packageQuantity is hier altijd berekend in de eenheid van het
+  // ingrediënt (vaak gram/ml), niet per se in stuks. Verpakkingsrekenwerk
+  // hierop loslaten geeft dan onzinnige uitkomsten (bv. "130x totaal · 129x
+  // over" voor 1 pak rijstwafels van 130 gram). Zelfde regel als
+  // `formatOrderQuantity` op /boodschappen — zie isUserChosenPackageCount.
+  if (isUserChosenPackageCount(line)) return null;
 
   const breakdown = describeLinePackaging(
     { quantity: line.quantity, unit: line.unit as "GRAM" | "ML" | "PIECE" },

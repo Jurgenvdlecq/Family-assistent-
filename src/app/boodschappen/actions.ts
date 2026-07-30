@@ -16,21 +16,13 @@ import { buildConfirmationSummary, type ConfirmationSummary } from "@/lib/picnic
 import { describeLinePackaging, findShoppingListShortfalls } from "@/lib/shoppingList";
 import { getHouseholdPortionScaleByDay } from "@/lib/household";
 import { getInventoryMap } from "@/lib/inventory";
+import { assertShoppingListAccess } from "@/lib/shoppingListAccess";
 
 export async function confirmTransfer(formData: FormData) {
   const shoppingListId = String(formData.get("shoppingListId"));
   await assertShoppingListAccess(shoppingListId);
   await markTransferred(shoppingListId);
   revalidatePath("/boodschappen");
-}
-
-async function assertShoppingListAccess(shoppingListId: string) {
-  const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
-    where: { id: shoppingListId },
-    include: { mealPlan: { select: { householdId: true } } },
-  });
-  await assertCurrentHousehold(shoppingList.mealPlan.householdId);
-  return shoppingList;
 }
 
 async function loadEditableShoppingLine(lineId: string) {
