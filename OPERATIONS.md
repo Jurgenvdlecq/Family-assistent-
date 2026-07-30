@@ -74,6 +74,15 @@ migratie; los oppakken als het ooit hindert.
   (fixture aanmaken → testen → opruimen in een `finally`-blok). Dit betekent
   dat `npm test` een draaiende lokale Postgres vereist (`sudo service
   postgresql start`) — zie `README.md` voor de basissetup.
+- **Een aantal integratietests verwacht bovendien dat de database al
+  geseed is** (`npm run db:seed`) — ze gaan uit van bestaande, gedeelde
+  ingrediënten/recepten (bijv. "kipfilet") in plaats van hun eigen fixtures
+  volledig zelf op te bouwen. Op een lokale ontwikkeldatabase merk je dit
+  meestal niet (die is toch al geseed), maar een verse database — zoals in
+  CI (`.github/workflows/ci.yml`) — moet expliciet `migrate deploy` én
+  `db:seed` doorlopen vóórdat `npm test` draait, anders falen die tests met
+  een `findUniqueOrThrow`-fout. Dit kostte een mislukte eerste CI-proefdraai
+  (WP80) om te ontdekken.
 - Voor UI-verificatie: Playwright met het voorgeïnstalleerde systeem-Chromium
   (`executablePath: "/opt/pw-browsers/chromium"`), altijd gecombineerd met
   een directe Prisma-query als bron van waarheid — niet blind op

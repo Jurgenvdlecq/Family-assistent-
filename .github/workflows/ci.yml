@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: family_assistant
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/family_assistant
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # De testsuite bevat integratietests tegen een echte Postgres (zie
+      # OPERATIONS.md, "Testen") — het schema moet dus al toegepast zijn
+      # vóórdat `npm run verify` de tests draait. `verify`'s eigen
+      # build-stap draait `prisma migrate deploy` nogmaals, maar dan is het
+      # te laat voor de teststap ervoor.
+      - run: npx prisma migrate deploy
+
+      # Meerdere tests verwachten dat de gedeelde ingrediënten-/receptcatalogus
+      # al bestaat (bijv. `prisma.ingredient.findUniqueOrThrow` op "kipfilet"
+      # in src/domain/product-matching/repository.test.ts) — die komt uit de
+      # seed, niet uit de migraties zelf.
+      - run: npm run db:seed
+
+      - run: npm run verify
