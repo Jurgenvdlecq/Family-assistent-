@@ -10,11 +10,16 @@ import {
 import type { AttentionItemType } from "@/domain/attention/attentionItems";
 import { sendPushNotification, type PushSendResult } from "./webPush";
 import { logEvent, createCorrelationId, errorMessage } from "./logger";
+import { shouldCheckDeliverySlotToday } from "./picnic/deliverySlots";
+import { getPreferredDeliverySlotStatusForHousehold } from "./picnic/deliveryStatus";
+import { DAY_KEY_BY_ENUM, DAY_LABELS } from "./week";
 
-// `NotificationType` (Prisma) heeft sinds WP71 een waarde
-// (PICNIC_DELIVERY_SLOT_AT_RISK) die nog niet in `AttentionItemType`
-// bestaat — die koppeling volgt pas in WP72. Deze guard voorkomt dat zo'n
-// nog-niet-aangesloten waarde hier een verkeerd getypeerde Set oplevert.
+// `NotificationType` (Prisma) heeft naast de vier `AttentionItemType`-waarden
+// ook `PICNIC_DELIVERY_SLOT_AT_RISK` (WP71/72) — die hoort niet bij
+// attentionItems.ts (die is puur DB-afgeleid; het bezorgmoment vraagt een
+// live Picnic-check + de dag-van-de-week, zie `getDeliverySlotNotificationCandidate`
+// hieronder). Deze guard voorkomt dat zo'n extra waarde een verkeerd
+// getypeerde `Set<AttentionItemType>` oplevert bij `selectNotificationToSend`.
 const ATTENTION_ITEM_TYPES = new Set<string>([
   "WEEK_MENU_READY_NO_GROCERIES",
   "PRODUCT_REVIEW_OPEN",
@@ -25,6 +30,15 @@ const ATTENTION_ITEM_TYPES = new Set<string>([
 function isAttentionItemType(type: string): type is AttentionItemType {
   return ATTENTION_ITEM_TYPES.has(type);
 }
+
+type NotificationCandidateType = AttentionItemType | "PICNIC_DELIVERY_SLOT_AT_RISK";
+
+type NotificationCandidate = {
+  type: NotificationCandidateType;
+  title: string;
+  body: string;
+  href: string;
+};
 
 export async function savePushSubscription(
   householdId: string,
@@ -80,6 +94,55 @@ async function getAlreadySentToday(householdId: string, dayKey: string) {
 }
 
 /**
+ * WP72: de tweede — en enige andere — bron voor een pushmelding, los van
+ * attentionItems.ts. Die laag is bewust puur DB-afgeleid (geen `now`, geen
+ * live netwerkaanroep); een bezorgmoment-risico kan alleen bepaald worden
+ * met de dag-van-de-week (`shouldCheckDeliverySlotToday`) én een live
+ * Picnic-check, dus dat hoort hier thuis, niet in attentionItems.ts.
+ * Geeft bewust `null` terug bij `UNKNOWN` (Picnic kon niet gecontroleerd
+ * worden): dat zou een foutmelding pushen in plaats van een echt signaal —
+ * de statuskaart op `/boodschappen` toont dat al eerlijk bij een bezoek.
+ */
+async function getDeliverySlotNotificationCandidate(
+  householdId: string,
+  now: Date
+): Promise<NotificationCandidate | null> {
+  const household = await prisma.household.findUnique({
+    where: { id: householdId },
+    select: { picnicAuthToken: true, picnicDeliveryPreference: true },
+  });
+  const preference = household?.picnicDeliveryPreference;
+  if (!household?.picnicAuthToken || !preference || !preference.notificationsEnabled) return null;
+
+  if (
+    !shouldCheckDeliverySlotToday({
+      preferredDayOfWeek: preference.preferredDayOfWeek,
+      reminderDaysBefore: preference.reminderDaysBefore,
+      now,
+    })
+  ) {
+    return null;
+  }
+
+  const status = await getPreferredDeliverySlotStatusForHousehold({
+    householdId,
+    picnicAuthToken: household.picnicAuthToken,
+    preferredDay: preference.preferredDayOfWeek,
+    preferredTime: preference.preferredTime,
+    windowMinutes: preference.windowMinutes,
+  });
+  if (status.status === "AVAILABLE" || status.status === "UNKNOWN") return null;
+
+  const dayLabel = DAY_LABELS[DAY_KEY_BY_ENUM[preference.preferredDayOfWeek]].toLowerCase();
+  return {
+    type: "PICNIC_DELIVERY_SLOT_AT_RISK",
+    title: `Bezorgmoment ${dayLabel} mogelijk niet meer beschikbaar`,
+    body: status.message,
+    href: "/boodschappen",
+  };
+}
+
+/**
  * Doet het werk voor precies één huishouden: haalt dezelfde attention-items
  * op als de homepage, past het pushbeleid toe (voorkeuren, dedupe,
  * wachttijd), en stuurt — als er iets te sturen is — naar elke actieve
@@ -98,13 +161,10 @@ export async function runReminderSweepForHousehold(
     subscription: { endpoint: string; p256dh: string; auth: string },
     payload: { title: string; body: string; url: string; tag: string }
   ) => Promise<PushSendResult> = sendPushNotification
-): Promise<{ sent: boolean; type?: AttentionItemType }> {
+): Promise<{ sent: boolean; type?: NotificationCandidateType }> {
   const weekStart = getCurrentWeekStart();
   const mealPlan = await ensureMealPlan(householdId, weekStart);
-  if (!mealPlan) return { sent: false };
-
-  const items = await getAttentionItemsForMealPlan(mealPlan.id, mealPlan.createdAt);
-  if (items.length === 0) return { sent: false };
+  const items = mealPlan ? await getAttentionItemsForMealPlan(mealPlan.id, mealPlan.createdAt) : [];
 
   const dayKey = notificationDayKey(now);
   const [preferenceEnabledByType, sentToday] = await Promise.all([
@@ -112,13 +172,17 @@ export async function runReminderSweepForHousehold(
     getAlreadySentToday(householdId, dayKey),
   ]);
 
-  const chosen = selectNotificationToSend({
-    items,
-    now,
-    preferenceEnabledByType,
-    typesAlreadySentToday: sentToday.typesAlreadySentToday,
-    householdAlreadySentAnyToday: sentToday.householdAlreadySentAnyToday,
-  });
+  const chosen: NotificationCandidate | null =
+    selectNotificationToSend({
+      items,
+      now,
+      preferenceEnabledByType,
+      typesAlreadySentToday: sentToday.typesAlreadySentToday,
+      householdAlreadySentAnyToday: sentToday.householdAlreadySentAnyToday,
+    }) ??
+    (sentToday.householdAlreadySentAnyToday
+      ? null
+      : await getDeliverySlotNotificationCandidate(householdId, now));
   if (!chosen) return { sent: false };
 
   const subscriptions = await prisma.pushSubscription.findMany({
