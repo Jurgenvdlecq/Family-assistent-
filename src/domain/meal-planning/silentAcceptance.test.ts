@@ -12,6 +12,7 @@ function entry(input: Partial<SilentAcceptanceEntry> & { id: string }): SilentAc
     ...base,
     source: "AUTO",
     status: "PROPOSED",
+    skipped: false,
     ...input,
   };
 }
@@ -38,4 +39,17 @@ test("entriesForSilentAcceptance is idempotent voor al geaccepteerde regels", ()
   ]);
 
   assert.deepEqual(result, []);
+});
+
+test("entriesForSilentAcceptance negeert een overgeslagen dag (uit eten), ook als die verder aan alle voorwaarden voldoet", () => {
+  const result = entriesForSilentAcceptance([
+    entry({ id: "skipped", source: "AUTO", status: "PROPOSED", skipped: true }),
+    entry({ id: "not-skipped", source: "AUTO", status: "PROPOSED", skipped: false }),
+  ]);
+
+  assert.deepEqual(
+    result.map((item) => item.id),
+    ["not-skipped"],
+    "een overgeslagen dag mag nooit als stille acceptatie tellen — er is niets gekookt om over te oordelen"
+  );
 });

@@ -290,3 +290,42 @@ test("getInventoryChecklist: 'genoeg' geeft needsAttention=false, andere statuss
     await cleanup(household.id);
   }
 });
+
+test("een overgeslagen dag (uit eten) levert geen boodschappenregels op voor die maaltijd, tegen een echte, opgebouwde lijst", async () => {
+  const { household, mealPlan, variant: mondayVariant } = await makeHouseholdWithMealPlan(
+    "WP-uit-eten integratietest",
+    "Pasta bolognese"
+  );
+  const wrapsVariant = await prisma.recipeVariant.findFirstOrThrow({
+    where: { recipe: { title: "Kipwraps" } },
+    include: { recipe: { include: { ingredients: true } } },
+  });
+
+  try {
+    await prisma.mealPlanEntry.create({
+      data: { mealPlanId: mealPlan.id, dayOfWeek: "TUESDAY", recipeVariantId: wrapsVariant.id, skipped: true },
+    });
+
+    const shoppingList = await ensureShoppingList(mealPlan.id, household.id);
+    const lineIngredientIds = new Set(shoppingList.lines.map((line) => line.ingredientId));
+
+    const mondayIngredientIds = mondayVariant.recipe.ingredients.map((ri) => ri.ingredientId);
+    const wrapsOnlyIngredientIds = wrapsVariant.recipe.ingredients
+      .map((ri) => ri.ingredientId)
+      .filter((id) => !mondayIngredientIds.includes(id));
+
+    assert.ok(
+      mondayIngredientIds.some((id) => lineIngredientIds.has(id)),
+      "de niet-overgeslagen maandagmaaltijd moet gewoon op de boodschappenlijst staan"
+    );
+    for (const id of wrapsOnlyIngredientIds) {
+      assert.equal(
+        lineIngredientIds.has(id),
+        false,
+        "een ingrediënt dat alleen bij de overgeslagen (uit eten) dinsdag hoort, mag niet op de boodschappenlijst staan"
+      );
+    }
+  } finally {
+    await cleanup(household.id);
+  }
+});

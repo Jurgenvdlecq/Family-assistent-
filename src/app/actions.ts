@@ -435,3 +435,35 @@ export async function removeDayRoutine(formData: FormData) {
 
   redirectToHome("routine-removed");
 }
+
+/**
+ * Zet een dag op "we eten dit niet thuis" (bv. uit eten) of zet dat weer
+ * terug. De geplande maaltijd zelf blijft gewoon staan (voor geschiedenis/
+ * afwisseling), maar telt niet meer mee in de boodschappenlijst
+ * (aggregateMealNeeds, src/lib/shoppingList.ts) en niet als stille
+ * acceptatie van het voorgestelde gerecht (entriesForSilentAcceptance,
+ * src/domain/meal-planning/silentAcceptance.ts) — anders zou een dag die
+ * je nooit gekookt hebt alsnog voorkeuren/geleerde patronen beïnvloeden.
+ */
+export async function toggleMealPlanEntrySkipped(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+  const dayKey = String(formData.get("dayKey")) as DayKey;
+  if (!DAY_KEYS.includes(dayKey)) throw new Error("Onbekende dag.");
+  const weekStart = new Date(String(formData.get("weekStart")));
+
+  const mealPlan = await prisma.mealPlan.findUniqueOrThrow({
+    where: { householdId_weekStart: { householdId, weekStart } },
+    include: { entries: true },
+  });
+  const entry = mealPlan.entries.find((e) => e.dayOfWeek === DAY_ENUM[dayKey]);
+  if (!entry) throw new Error("Voor deze dag staat nog geen maaltijd gepland.");
+
+  await prisma.mealPlanEntry.update({
+    where: { id: entry.id },
+    data: { skipped: !entry.skipped },
+  });
+  await invalidateShoppingList(mealPlan.id);
+
+  redirectToHome(entry.skipped ? "day-restored" : "day-skipped");
+}

@@ -44,6 +44,7 @@ import {
   setDayRoutine,
   removeDayRoutine,
   submitMealFeedback,
+  toggleMealPlanEntrySkipped,
 } from "./actions";
 
 // Deze pagina schrijft (idempotent) naar de database bij elk bezoek
@@ -64,6 +65,8 @@ const STATUS_MESSAGES: Record<string, string> = {
   "meal-replaced": "Gerecht gewisseld.",
   "meal-wish-planned": "Maaltijdwens ingepland.",
   "meal-unchanged": "Dit gerecht stond al op die dag.",
+  "day-skipped": "Deze dag telt niet meer mee.",
+  "day-restored": "Deze dag telt weer gewoon mee.",
 };
 
 const PERSONAL_STANCE_LABELS = {
@@ -406,8 +409,12 @@ export default async function Home({
             recipe &&
             (recipe.status === "FOUND" || recipe.status === "ADAPTED") &&
             !alreadyAsked.has(entry.recipeVariantId);
+          const skipped = entry?.skipped ?? false;
           return (
-            <div key={dayKey} className="flex min-w-0 flex-col gap-3 px-6 py-4">
+            <div
+              key={dayKey}
+              className={`flex min-w-0 flex-col gap-3 px-6 py-4 ${skipped ? "opacity-60" : ""}`}
+            >
               <div className="flex min-w-0 items-center gap-3">
                 <div className="w-11 shrink-0 text-center">
                   <p className="text-[10px] font-semibold tracking-wide text-ink-faint">
@@ -423,6 +430,7 @@ export default async function Home({
                     {recipe?.title ?? "—"}
                   </p>
                   <div className="mt-1 flex flex-wrap gap-1.5">
+                    {skipped && <Tag tone="amber">Uit eten</Tag>}
                     {entry && (
                       <Tag tone={variantTone(entry.recipeVariant.variantType)}>
                         {VARIANT_LABELS[entry.recipeVariant.variantType]}
@@ -435,6 +443,29 @@ export default async function Home({
                     )}
                   </div>
                 </div>
+
+                {entry && (
+                  <form action={toggleMealPlanEntrySkipped}>
+                    <input type="hidden" name="householdId" value={household.id} />
+                    <input type="hidden" name="dayKey" value={dayKey} />
+                    <input
+                      type="hidden"
+                      name="weekStart"
+                      value={weekStart.toISOString()}
+                    />
+                    <button
+                      type="submit"
+                      aria-label={
+                        skipped
+                          ? `Zet ${DAY_LABELS[dayKey].toLowerCase()} terug in de planning`
+                          : `We eten ${DAY_LABELS[dayKey].toLowerCase()} niet thuis`
+                      }
+                      className="shrink-0 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-ink-muted transition-colors hover:border-accent/60 hover:bg-surface-2 hover:text-accent"
+                    >
+                      {skipped ? "Toch wel" : "Uit eten"}
+                    </button>
+                  </form>
+                )}
 
                 <a
                   href={`/gerechten?day=${dayKey}&direction=day`}
