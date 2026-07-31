@@ -106,6 +106,25 @@ model HouseholdSession {
   @@map("household_sessions")
 }
 
+// Rate limiting voor /login (SYSTEM_AUDIT.md, "Login rate limiting" —
+// WP-vervolg deel A5). Eén rij per mislukte inlogpoging, per genormaliseerde
+// gebruikersnaam. Bewust database-gebaseerd i.p.v. een in-memory Map: de app
+// draait serverless (Vercel) — in-memory state wordt niet betrouwbaar
+// gedeeld tussen aanroepen/instanties, en dit project heeft geen Redis/KV
+// of vergelijkbare gedeelde cache (geverifieerd: geen zulke dependency in
+// package.json). Bevat bewust geen IP-adres — alleen de genormaliseerde
+// gebruikersnaam, wat het directe dreigingsmodel uit de audit afdekt
+// (herhaald gokken tegen één bekende/geraden gebruikersnaam) zonder
+// aanvullende persoonsgegevens te hoeven bewaren.
+model LoginAttempt {
+  id         String   @id @default(uuid())
+  identifier String   @map("identifier")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([identifier, createdAt])
+  @@map("login_attempts")
+}
+
 enum OnboardingStatus {
   NOT_STARTED
   IN_PROGRESS
