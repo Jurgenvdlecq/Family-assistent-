@@ -381,6 +381,13 @@ model MealPlanEntry {
   score                       Float?              @map("score")
   confidenceLevel             ConfidenceLevel?    @map("confidence_level")
   replacedFromRecipeVariantId String?             @map("replaced_from_recipe_variant_id")
+  // Gebruiker eet deze dag niet thuis (bv. uit eten) — de dag blijft
+  // gewoon een geplande maaltijd behouden (voor geschiedenis/varatie),
+  // maar telt niet mee in de boodschappenlijst en niet als stille
+  // acceptatie van het voorgestelde gerecht (dat zou anders ten onrechte
+  // voorkeuren/geleerde patronen beïnvloeden voor een maaltijd die nooit
+  // gekookt is).
+  skipped                     Boolean             @default(false) @map("skipped")
   updatedAt                   DateTime            @updatedAt @map("updated_at")
 
   mealPlan            MealPlan       @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)

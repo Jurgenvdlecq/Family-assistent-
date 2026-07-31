@@ -14,11 +14,18 @@ const NORMAL_SCALE = {
 };
 
 function mealPlanWithNeed(
-  entries: Array<{ dayOfWeek: "MONDAY" | "TUESDAY" | "WEDNESDAY"; ingredientId: string; quantity: number; unit: "GRAM" | "PIECE" }>
+  entries: Array<{
+    dayOfWeek: "MONDAY" | "TUESDAY" | "WEDNESDAY";
+    ingredientId: string;
+    quantity: number;
+    unit: "GRAM" | "PIECE";
+    skipped?: boolean;
+  }>
 ) {
   return {
     entries: entries.map((e) => ({
       dayOfWeek: e.dayOfWeek,
+      skipped: e.skipped ?? false,
       recipeVariant: { recipe: { ingredients: [{ ingredientId: e.ingredientId, quantity: e.quantity, unit: e.unit }] } },
     })),
   };
@@ -89,6 +96,16 @@ test("findShoppingListShortfalls: ingrediënt dat deze week niet gebruikt wordt 
   const lines = [line({ id: "l1", ingredientId: "kaas", quantity: 200, unit: "GRAM" })];
   const result = findShoppingListShortfalls(mealPlan, NORMAL_SCALE, NO_INVENTORY, lines);
   assert.deepEqual(result, []);
+});
+
+test("findShoppingListShortfalls: een overgeslagen dag (uit eten) telt niet mee in de behoefte", () => {
+  const mealPlan = mealPlanWithNeed([
+    { dayOfWeek: "MONDAY", ingredientId: "kipfilet", quantity: 500, unit: "GRAM" },
+    { dayOfWeek: "WEDNESDAY", ingredientId: "kipfilet", quantity: 400, unit: "GRAM", skipped: true },
+  ]);
+  const lines = [line({ id: "l1", ingredientId: "kipfilet", quantity: 500, unit: "GRAM" })];
+  const result = findShoppingListShortfalls(mealPlan, NORMAL_SCALE, NO_INVENTORY, lines);
+  assert.deepEqual(result, [], "de 400g van de overgeslagen woensdag mag niet meetellen in de behoefte");
 });
 
 test("describeLinePackaging: verpakking bekend -> OK met aantal/totaal/overschot", () => {

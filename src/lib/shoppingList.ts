@@ -25,6 +25,8 @@ type PortionScaleByDay = Record<DayKey, { scale: number }>;
 interface MealPlanWithEntries {
   entries: Array<{
     dayOfWeek: DayOfWeek;
+    /** Huishouden eet deze dag niet thuis — telt niet mee in de behoefte. */
+    skipped: boolean;
     recipeVariant: {
       recipe: {
         ingredients: Array<{ ingredientId: string; quantity: number; unit: Unit }>;
@@ -46,6 +48,7 @@ function aggregateMealNeeds(
 ): Map<string, { ingredientId: string; quantity: number; unit: Unit }> {
   const totals = new Map<string, { ingredientId: string; quantity: number; unit: Unit }>();
   for (const entry of mealPlan.entries) {
+    if (entry.skipped) continue;
     const dayKey = DAY_KEY_BY_ENUM[entry.dayOfWeek];
     const scale = portionScaleByDay[dayKey]?.scale ?? 1;
     for (const ri of entry.recipeVariant.recipe.ingredients) {
@@ -300,6 +303,7 @@ export async function syncShoppingListForInventoryChange(householdId: string, in
 
   let rawNeed: BaseQuantity | null = null;
   for (const entry of mealPlan.entries) {
+    if (entry.skipped) continue;
     const dayKey = DAY_KEY_BY_ENUM[entry.dayOfWeek];
     const scale = portionScaleByDay[dayKey]?.scale ?? 1;
     for (const ri of entry.recipeVariant.recipe.ingredients) {
