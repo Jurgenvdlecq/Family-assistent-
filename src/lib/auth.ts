@@ -4,9 +4,15 @@ import crypto from "node:crypto";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "./prisma";
-import { hashHouseholdPassword, normalizeUsername, validateCredentialsShape } from "@/domain/household/credentials";
-
-export { hashHouseholdPassword };
+import {
+  DUMMY_PASSWORD_HASH_FOR_TIMING,
+  hashHouseholdPassword,
+  normalizeUsername,
+  validateCredentialsShape,
+  verifyHouseholdPassword,
+} from "@/domain/household/credentials";
+import { selectLegacySingleHousehold } from "@/domain/household/legacyAccess";
+import { checkLoginRateLimit, clearLoginAttempts, recordFailedLoginAttempt } from "./loginRateLimit";
 
 const SESSION_COOKIE = "family_assistant_session";
 const SESSION_DAYS = 30;
@@ -66,7 +72,7 @@ export async function setHouseholdCredentials(householdId: string, username: str
       where: { id: householdId },
       data: {
         username: normalizeUsername(username),
-        passwordHash: hashHouseholdPassword(householdId, password),
+        passwordHash: hashHouseholdPassword(password),
       },
     });
   } catch (error) {
@@ -77,15 +83,34 @@ export async function setHouseholdCredentials(householdId: string, username: str
   }
 }
 
+// SYSTEM_AUDIT.md-vervolg (sectie 9, "getLegacySingleHousehold"): sinds
+// WP77 zet elke onboarding (src/app/onboarding/actions.ts) altijd
+// meteen een gebruikersnaam+wachtwoord, en rolt het huishouden terug als
+// dat mislukt — een normaal aangemaakt huishouden kan dus nooit meer
+// zonder `username` blijven staan. Dit legacy-pad blijft alleen bedoeld
+// voor een productie-installatie die al vóór WP77 bestond en nog niet via
+// `/ons-gezin` is bijgewerkt (zie OPERATIONS.md). Kon in deze sandbox niet
+// worden bevestigd of de productie-installatie van de gebruiker inmiddels
+// een gebruikersnaam heeft (geen netwerktoegang tot de productiedatabase,
+// zie WORKFLOW.md) — vandaar bewust niet stilzwijgend verwijderd.
+//
+// In plaats daarvan expliciet begrensd (`selectLegacySingleHousehold`,
+// src/domain/household/legacyAccess.ts) met een vaste datumgrens: alleen
+// een huishouden dat al vóór deze wijziging bestond komt nog in
+// aanmerking. Dat sluit het randgeval af dat de audit noemde ("blijft
+// voor altijd actief als niemand ooit een gebruikersnaam instelt") voor
+// elk toekomstig huishouden — een nieuw aangemaakt huishouden kan door
+// deze grens nooit meer via dit pad toegang krijgen, ook niet in het
+// (zeer onwaarschijnlijke) geval dat onboarding halverwege crasht vóórdat
+// `setHouseholdCredentials` liep. Het bestaande, mogelijk nog niet
+// gemigreerde productiehuishouden blijft intussen gewoon werken totdat de
+// gebruiker zelf een gebruikersnaam instelt.
 async function getLegacySingleHousehold() {
   const households = await prisma.household.findMany({
     orderBy: { createdAt: "asc" },
     take: 2,
   });
-  if (households.length === 1 && households[0].username === null) {
-    return households[0];
-  }
-  return null;
+  return selectLegacySingleHousehold(households);
 }
 
 export async function getCurrentHousehold() {
@@ -132,23 +157,50 @@ export async function assertCurrentHousehold(householdId: string) {
  * aanvaller kunnen aftasten welke gebruikersnamen al bestaan (WP62).
  */
 export async function signInByCredentials(username: string, password: string) {
+  // Rate limiting vóór elke opzoeking of hashvergelijking (SYSTEM_AUDIT.md,
+  // "Login rate limiting" — WP-vervolg deel A5). De blokmelding is bewust
+  // anders dan de generieke "klopt niet"-melding hierboven, maar lekt zelf
+  // niets over of de gebruikersnaam bestaat: elke gebruikersnaam kan
+  // geblokkeerd raken, dus het feit van blokkering bevestigt niets.
+  const rateLimit = await checkLoginRateLimit(username);
+  if (rateLimit.blocked) {
+    throw new Error("Te veel mislukte inlogpogingen. Probeer het over enkele minuten opnieuw.");
+  }
+
   const household = await prisma.household.findUnique({
     where: { username: normalizeUsername(username) },
   });
 
   if (household?.passwordHash) {
-    const attemptedHash = hashHouseholdPassword(household.id, password);
-    if (attemptedHash.length === household.passwordHash.length) {
-      const matches = crypto.timingSafeEqual(
-        Buffer.from(attemptedHash, "hex"),
-        Buffer.from(household.passwordHash, "hex")
-      );
-      if (matches) {
-        await createHouseholdSession(household.id);
-        return household;
+    const { valid, needsRehash } = verifyHouseholdPassword(household.id, password, household.passwordHash);
+    if (valid) {
+      // Een geldig legacy-wachtwoord (het oude, ongesalte sha256-formaat)
+      // wordt meteen herhasht naar het nieuwe scrypt-formaat — aansluitend
+      // op de geslaagde controle, zodat een huishouden dat gewoon blijft
+      // inloggen vanzelf overstapt, zonder zelf iets te hoeven doen.
+      if (needsRehash) {
+        await prisma.household.update({
+          where: { id: household.id },
+          data: { passwordHash: hashHouseholdPassword(password) },
+        });
       }
+      await clearLoginAttempts(username);
+      await createHouseholdSession(household.id);
+      return household;
     }
+  } else {
+    // Onafhankelijke review (WP83): zonder dit voert een onbekende
+    // gebruikersnaam geen enkele hashberekening uit, terwijl een bestaande
+    // gebruikersnaam met een fout wachtwoord nu een volle scrypt-berekening
+    // kost (~45ms, tegen sha256's ~0.04ms voorheen) — een goed meetbaar
+    // timingverschil dat precies zou verraden welke gebruikersnamen bestaan,
+    // ondanks de identieke foutmelding hieronder. Deze dummy-berekening (met
+    // hetzelfde wachtwoord, tegen een vaste dummy-hash die nooit kan
+    // overeenkomen) kost evenveel tijd en trekt de responstijd gelijk. Het
+    // resultaat wordt bewust genegeerd.
+    verifyHouseholdPassword("dummy-household-id-voor-timing", password, DUMMY_PASSWORD_HASH_FOR_TIMING);
   }
 
+  await recordFailedLoginAttempt(username);
   throw new Error("Deze inloggegevens kloppen niet.");
 }

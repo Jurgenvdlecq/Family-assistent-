@@ -211,6 +211,18 @@ export async function addFixedGrocery(formData: FormData) {
   const unit = parseUnit(formData.get("unit"));
   const shoppingListId = formData.get("shoppingListId");
 
+  // shoppingListId komt los uit het formulier mee — assertCurrentHousehold
+  // hierboven bewijst alleen dát het meegestuurde householdId bij de eigen
+  // sessie hoort, niet dat déze shoppingListId ook echt bij dat huishouden
+  // hoort (zelfde reden als bij addFixedPicnicProduct/addBulkFixedPicnicProducts
+  // hieronder). Deze check staat bewust vóór upsertFixedGrocery: bij een
+  // ongeldige shoppingListId wordt zo helemaal niets geschreven, ook niet de
+  // vaste-boodschap-standaard zelf — geen transactie nodig, want er is op dat
+  // moment nog geen enkele write geweest.
+  if (shoppingListId) {
+    await assertShoppingListAccess(String(shoppingListId));
+  }
+
   await upsertFixedGrocery(householdId, ingredientId, quantity, unit);
 
   if (shoppingListId) {
@@ -377,9 +389,22 @@ export async function removeFixedGroceryPermanently(formData: FormData) {
   const ingredientId = String(formData.get("ingredientId"));
   const lineId = formData.get("lineId");
 
-  await removeFixedGrocery(householdId, ingredientId);
+  // lineId komt los uit het formulier mee — controleer via de bestaande
+  // shoppingList->mealPlan-keten (loadFixedLine, ook gebruikt door
+  // removeFixedLineThisWeek/updateFixedLineQuantity hierboven) dat de regel
+  // écht bij dit huishouden hoort en een FIXED-regel is, vóórdat er iets
+  // verwijderd wordt. Zonder deze check zou een geldige sessie een lineId
+  // van een ander huishouden kunnen meesturen en zo een regel bij dat andere
+  // huishouden kunnen verwijderen. Staat bewust vóór de transactie hieronder
+  // — bij een ongeldige lineId wordt dan ook de vaste-boodschap-standaard
+  // zelf niet verwijderd.
   if (lineId) {
-    await prisma.shoppingListLine.deleteMany({ where: { id: String(lineId), source: "FIXED" } });
+    await loadFixedLine(String(lineId));
   }
+
+  await prisma.$transaction([
+    prisma.fixedGrocery.deleteMany({ where: { householdId, ingredientId } }),
+    ...(lineId ? [prisma.shoppingListLine.deleteMany({ where: { id: String(lineId), source: "FIXED" } })] : []),
+  ]);
   redirectToFixedGroceries("fixed-removed");
 }

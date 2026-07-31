@@ -1099,6 +1099,12 @@ niet gedocumenteerde instanties van datzelfde patroon zijn gevonden.
 
 ### Bevinding 1 — IDOR: `addFixedGrocery` kan een regel in een ANDER huishouden schrijven
 
+> **Opgelost — WP83 (2026-07-31).** `addFixedGrocery` roept nu eerst
+> `assertShoppingListAccess(shoppingListId)` aan (zelfde bewezen patroon als
+> `addFixedPicnicProduct`) vóór er iets geschreven wordt. Bevestigd via een
+> nieuw e2e-aanvalsscenario in `e2e/shoppingListAccess.e2e.ts`, met
+> revert-en-bevestig geverifieerd. Zie `PROGRESS.md` WP83.
+
 **Ernst: Hoog.**
 **Bestand**: `src/app/boodschappen/fixedGroceriesActions.ts:206-232`.
 **Bewijs**:
@@ -1140,6 +1146,13 @@ en elders gefixt scenario met een eigen e2e-regressietest).
 
 ### Bevinding 2 — IDOR: `removeFixedGroceryPermanently` kan een regel van een ANDER huishouden verwijderen
 
+> **Opgelost — WP83 (2026-07-31).** Verifieert nu eerst eigenaarschap via
+> `loadFixedLine(lineId)` (dezelfde helper als de rest van dit bestand)
+> vóór de delete; de twee gekoppelde deletes (`fixedGrocery` +
+> `shoppingListLine`) zijn samengevoegd in één `prisma.$transaction([...])`.
+> Bevestigd via een nieuw e2e-aanvalsscenario, revert-en-bevestig
+> geverifieerd. Zie `PROGRESS.md` WP83.
+
 **Ernst: Hoog.**
 **Bestand**: `src/app/boodschappen/fixedGroceriesActions.ts:374-385`.
 **Bewijs**:
@@ -1171,6 +1184,29 @@ elders in dezelfde en aanpalende bestanden, die dit wél correct doen).
 
 ### Bevinding 3 — Elk huishouden kan de gedeelde `Ingredient`-catalogus wijzigen, inclusief allergie-tags
 
+> **Opgelost — WP83 (2026-07-31).** `updateIngredient` staat `category`/
+> `restrictionTags` niet meer toe (alleen `name`/`likelyInStock` blijven
+> aanpasbaar); `/recepten` toont categorie/restricties nu read-only. Geen
+> schemawijziging, geen aparte catalogus per huishouden — kleinste veilige
+> fix per de expliciete voorkeursvolgorde uit de opdracht. Bevestigd via
+> een nieuw e2e-aanvalsscenario met een vervalst formulierveld, revert-en-
+> bevestig geverifieerd.
+>
+> **Gedeeltelijk, niet volledig — bewust openstaand vervolgpunt** (gevonden
+> door de onafhankelijke `code-reviewer`-review): dit dekt alleen het
+> *bewerkpad* van een bestaand ingrediënt. `createIngredient` en
+> `upsertParsedRecipeIngredients` (`src/app/recepten/actions.ts`, het
+> aanmaakpad, incl. automatische recepttekst-parsing) laten een huishouden
+> nog steeds `category`/`restrictionTags` zetten op een **nieuw** gedeeld
+> ingrediënt. `Ingredient.name` is weliswaar `@unique` (kan dus geen
+> bestaand ingrediënt overschaduwen), maar dekt niet het scenario waarin
+> huishouden A een nieuw ingrediënt aanmaakt met onvolledige/foutieve
+> `restrictionTags`, en huishouden B dat ingrediënt later hergebruikt en op
+> de allergiefiltering vertrouwt. Bewust niet in WP83 mee opgelost (buiten
+> de afgebakende scope van bevinding 3 zelf, die over het bewerkpad ging) —
+> blijft hier als openstaand punt staan in plaats van als opgelost geteld
+> te worden.
+
 **Ernst: Hoog.**
 **Bestand**: `src/app/recepten/actions.ts:516-538` (`updateIngredient`).
 **Bewijs**: `Ingredient` heeft géén `householdId` in het schema (bewust —
@@ -1200,6 +1236,30 @@ mogelijk veiligheidskritiek ingrediënt wijzigen).
 
 ### Bevinding 4 — Wachtwoordhashing zonder work factor
 
+> **Opgelost — WP83 (2026-07-31).** `hashHouseholdPassword`/
+> `verifyHouseholdPassword` gebruiken nu Node's ingebouwde `scrypt` met een
+> echte, willekeurige salt per wachtwoord en een zelfbeschrijvend
+> opslagformaat. Volledig achterwaarts-compatibel: een bestaande legacy-hash
+> wordt nog herkend/geverifieerd en bij een geslaagde login automatisch
+> herhasht naar het nieuwe formaat — geen huishouden wordt uitgesloten.
+> Bevestigd met zowel pure-functie-tests (`credentials.test.ts`) als een
+> e2e-scenario dat een live legacy-login-en-migratie doorloopt, beide
+> revert-en-bevestig geverifieerd. Zie `PROGRESS.md` WP83.
+>
+> **Nieuw, door de overstap zelf geïntroduceerd risico — ook binnen WP83
+> opgelost**: de onafhankelijke `code-reviewer`-review vóór het mergen
+> vond dat scrypt (~45ms) versus de oude sha256 (~0.04ms) een goed
+> meetbaar timingverschil introduceerde tussen "onbekende gebruikersnaam"
+> (geen hash om tegen te controleren) en "bestaande gebruikersnaam, fout
+> wachtwoord" (wél een volle scrypt-berekening) — een
+> username-enumeratielek via responstijd, ondanks de identieke
+> foutmelding (WP62). Gefixt met een vaste dummy-hash
+> (`DUMMY_PASSWORD_HASH_FOR_TIMING`) waartegen bij een onbekende
+> gebruikersnaam alsnog een even dure scrypt-berekening wordt uitgevoerd
+> (`src/lib/auth.ts`). Empirisch bevestigd (niet als geautomatiseerde
+> test, timing is inherent te ruisgevoelig voor een betrouwbare CI-assert):
+> het gemeten verschil ging van ~42ms vóór de fix naar ~0.1ms erna.
+
 **Ernst: Hoog.**
 **Bestand**: `src/domain/household/credentials.ts:23-25`.
 ```
@@ -1223,8 +1283,8 @@ app met individuele logins, maar rechtvaardigt geen fast-hash.
 
 | Bevinding | Ernst | Bewijs | Toelichting |
 |---|---|---|---|
-| `getLegacySingleHousehold` (`src/lib/auth.ts:80-89`) geeft impliciet toegang zonder sessie als er precies 1 huishouden zonder `username` bestaat | Middel | Code gelezen, regels 80-105 | Bewust migratiepad (WP77) voor bestaande installaties vóór gebruikersnaam/wachtwoord bestond. In een vers of net-gemigreerd systeem met 0 of 1 nog-niet-geconfigureerd huishouden betekent dit: **geen enkele authenticatie is nodig** om als dat huishouden te werken. Beperkt tijdvenster (verdwijnt zodra dat ene huishouden een `username` instelt), maar niet tijdgebonden afgedwongen in code — blijft voor altijd actief als niemand ooit een gebruikersnaam instelt. |
-| `DayRoutine.recipeVariantId` niet gevalideerd bij het schrijven (`src/app/actions.ts:411-425`) | Laag/Informatief | Code gelezen; leespad in `mealPlan.ts:161-162,340` is wél scoped op `accessibleRecipeWhere` | Geen aangetoond exploitpad — een ontoegankelijke variant-ID matcht simpelweg niets bij het lezen. Ontbrekende defense-in-depth, geen bevestigd lek. |
+| `getLegacySingleHousehold` (`src/lib/auth.ts:80-89`) geeft impliciet toegang zonder sessie als er precies 1 huishouden zonder `username` bestaat | Middel | Code gelezen, regels 80-105 | **Begrensd — WP83 (2026-07-31).** Kon niet worden geverifieerd of de productie-installatie van de gebruiker inmiddels een `username` heeft (geen netwerktoegang tot productie vanuit deze sandbox), dus bewust niet stilzwijgend verwijderd. In plaats daarvan begrensd met een vaste datumgrens (`src/domain/household/legacyAccess.ts`, `selectLegacySingleHousehold`, `LEGACY_SINGLE_HOUSEHOLD_CUTOFF`): alleen een huishouden dat al vóór WP83 bestond komt nog in aanmerking — een nieuw aangemaakt huishouden kan hier nooit meer via toegang krijgen (onboarding zet sinds WP77 altijd meteen een `username`). Bewust migratiepad (WP77) voor bestaande installaties vóór gebruikersnaam/wachtwoord bestond. Zie `PROGRESS.md` WP83, Deel B. |
+| `DayRoutine.recipeVariantId` niet gevalideerd bij het schrijven (`src/app/actions.ts:411-425`) | Laag/Informatief | Code gelezen; leespad in `mealPlan.ts:161-162,340` is wél scoped op `accessibleRecipeWhere` | **Herbevestigd, bewust niet gefixt — WP83 (2026-07-31).** Opnieuw expliciet geverifieerd tijdens de brede IDOR-hercontrole (Deel C): geen aangetoond exploitpad — een ontoegankelijke variant-ID matcht simpelweg niets bij het lezen. Ontbrekende defense-in-depth, geen bevestigd lek, dus buiten scope gehouden (geen speculatieve wijziging). |
 | Sessietoken-hash is ongesalte SHA-256 | Informatief | `hashSessionToken` in `auth.ts:18-20` | Acceptabel: het token zelf is `crypto.randomBytes(32)` (hoge entropie), dus een snelle hash van een hoge-entropie-geheim is standaardpraktijk (vergelijkbaar met API-key-hashing). Geen actie nodig. |
 | Cookie `secure` alleen in productie | Informatief | `auth.ts:38` | Correct gedrag voor lokale http-ontwikkeling; in productie (Vercel, altijd https) is dit wel actief. |
 | CSRF | Informatief | Server actions gebruiken Next.js' ingebouwde Origin-verificatie voor `"use server"`-aanroepen (framework-niveau, niet los in deze codebase geïmplementeerd) | Niet zelf geverifieerd met een exploit (buiten scope, "geen exploitcode"), maar dit is een architecturale bescherming van Next.js zelf, geen aanvullende eigen maatregel nodig voor form-based actions. |
@@ -1249,6 +1309,30 @@ apart genoemd hier als **Middel**, want gecombineerd met bevinding 4 (snel
 te toetsen hash) verlaagt dit de drempel voor online brute-force, al is
 online brute-force sowieso trager dan offline).
 
+> **Opgelost — WP83 (2026-07-31).** Nieuwe, database-gebaseerde
+> `src/lib/loginRateLimit.ts` (bewust geen in-memory `Map` — de app draait
+> serverless en heeft geen Redis/KV), gekoppeld aan `signInByCredentials`:
+> na 8 mislukte pogingen binnen 15 minuten per genormaliseerde
+> gebruikersnaam wordt zelfs een correct wachtwoord tijdelijk geblokkeerd
+> (geen bypass), met dezelfde generieke foutmelding als een gewoon fout
+> wachtwoord. Bevestigd met zowel pure-functie-tests
+> (`loginRateLimit.test.ts`, met een injecteerbare `now` voor
+> deterministisch testen) als een live e2e-scenario, revert-en-bevestig
+> geverifieerd. Zie `PROGRESS.md` WP83.
+>
+> **Bekende, bewust geaccepteerde beperking** (gevonden door de
+> onafhankelijke `code-reviewer`-review vóór het mergen van WP83): de
+> teller is een `count(...)` gevolgd door een losse `create(...)`, niet
+> atomair. Bij veel **parallelle** (niet-sequentiële) aanvragen tegen
+> dezelfde gebruikersnaam kunnen meerdere requests de teller lezen vóórdat
+> een eerdere mislukte poging gecommit is, en zo allemaal langs de limiet
+> van 8/15 min heen komen. De praktische impact wordt gedempt doordat elke
+> poging sinds A4 ook een scrypt-berekening (~45ms) kost, maar dat is
+> toeval, geen ontworpen bescherming. Niet gefixt in WP83 (zou een
+> atomaire aanpak vereisen, bv. een advisory lock of een gecombineerde
+> insert-met-voorwaarde) — expliciet als vervolgpunt genoteerd in plaats
+> van stilzwijgend achtergelaten.
+
 ---
 
 ## 10. Technische schuld en onderhoudbaarheid
@@ -1256,11 +1340,11 @@ online brute-force sowieso trager dan offline).
 | Bevinding | Bestand(en) | Impact | Urgentie | Bewijs | Aanbevolen richting |
 |---|---|---|---|---|---|
 | Zeer groot paginabestand met gemengde verantwoordelijkheden | `src/app/boodschappen/page.tsx` (1454 regels) | Onderhoudbaarheid — moeilijk te overzien, hoger risico op regressies bij wijzigingen | Middel | Regel geteld; bevat zowel JSX-presentatie als aggregatie-/formatteerlogica (`formatOrderQuantity`, `orderPackageCount` e.d.) die conceptueel in `src/lib/shoppingList.ts` thuishoort | Beschrijvend: overweeg presentatie-only componenten te extraheren en de resterende berekeningshelpers naar `src/lib` te verplaatsen — niet in deze audit uitgevoerd |
-| Twee onbeveiligde server actions in een verder consistent beveiligd bestand | `src/app/boodschappen/fixedGroceriesActions.ts` | Zie sectie 9, bevinding 1/2 | **Hoog** | Zie sectie 9 | `assertShoppingListAccess` toepassen zoals al gedaan bij de buurfuncties in hetzelfde bestand |
+| Twee onbeveiligde server actions in een verder consistent beveiligd bestand | `src/app/boodschappen/fixedGroceriesActions.ts` | Zie sectie 9, bevinding 1/2 | **Hoog** — **opgelost, WP83** | Zie sectie 9 | `assertShoppingListAccess`/`loadFixedLine` toegepast, zie sectie 9 bevinding 1/2 |
 | Ongebruikte/verweesde schemavelden | `prisma/schema.prisma` (`Recipe.imageUrl/imageAttribution/imageSourceUrl/promotedAt`, mogelijk `RecipeVariant.ingredientOverrides`) | Laag — geen functioneel risico, wel verwarrend voor een nieuwe sessie die aanneemt dat een veld "dus ergens gebruikt wordt" | Laag | Grep bevestigd, zie sectie 5 | Beschrijvend: bij een toekomstige schema-opschoning meenemen, niet urgent |
 | `MealSuggestion`-model waarschijnlijk grotendeels overbodig sinds WP52 | `prisma/schema.prisma`, `src/lib/mealPlan.ts` | Laag-Middel — nog actief geschreven, onduidelijk of nog ergens gelezen | Laag | `PROGRESS.md` WP52 zelf al signaleert dit gedeeltelijk | Beschrijvend: eerst uitzoeken of er nog een lezer is vóór verwijderen |
 | Grote, monolithische `ensureMealPlan` | `src/lib/mealPlan.ts` (551 regels totaal, kernfunctie ruim 300 regels) | Middel — hoog cognitief gewicht per wijziging | Laag (werkt, goed getest) | Regels geteld/gelezen | Beschrijvend: functioneel al opgesplitst in duidelijke stappen (comments per blok), geen acute noodzaak |
-| Geen rate limiting op `/login` | `src/app/login/actions.ts` | Zie sectie 9 | Middel | Code gelezen — geen enkele vorm van pogingenteller/lockout | Beschrijvend: een eenvoudige, per-IP of per-gebruikersnaam poging-teller zou de kosten van bevinding 4 verlagen |
+| Geen rate limiting op `/login` | `src/app/login/actions.ts` | Zie sectie 9 | Middel — **opgelost, WP83** | Code gelezen — geen enkele vorm van pogingenteller/lockout | `src/lib/loginRateLimit.ts` toegevoegd, zie sectie 9 |
 | `DEBUG_PRISMA_QUERIES`-querylogging als tijdelijk instrument, nog in de code | `src/lib/prisma.ts` | Laag | Laag | Env-var-gated, standaard uit, geen productierisico | Geen actie nodig — dit is precies hoe het bedoeld is (WP75) |
 | Geen TODO/FIXME/HACK-markeringen gevonden | — | — | — | `grep -rn "TODO\|FIXME\|HACK" src` → 0 treffers | Positief: consistent met het project-principe "geen half afgemaakte implementaties" |
 | N+1-risico's | — | Reeds actief onderzocht en (deels) verholpen | — | `PROGRESS.md` WP75 documenteert een gemeten, gerichte fix (personendata 8×→1×); niet in deze audit opnieuw gemeten | Geen nieuwe bevinding — bestaand werk, niet dubbel doen |

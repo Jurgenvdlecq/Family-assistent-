@@ -255,17 +255,19 @@ export default async function ReceptenPage({
                         {UNIT_LABELS[ingredient.unit] ?? ingredient.unit}
                       </div>
                     </div>
-                    <select name="category" defaultValue={ingredient.category} className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink">
-                      {INGREDIENT_CATEGORY_OPTIONS.map(([value, label]) => (
-                        <option key={value} value={value}>{label}</option>
-                      ))}
-                    </select>
-                    <input
-                      name="restrictionTags"
-                      defaultValue={ingredient.restrictionTags.join(", ")}
-                      placeholder="Dieettags"
-                      className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-                    />
+                    {/*
+                      Categorie en dieettags bepalen de harde allergie-/
+                      dieetfiltering (src/lib/dietaryRestrictions.ts) voor
+                      ALLE huishoudens die dit gedeelde ingrediënt gebruiken
+                      — Ingredient heeft geen householdId, dus deze twee
+                      velden zijn hier bewust alleen-lezen (SYSTEM_AUDIT.md,
+                      bevinding 3). updateIngredient negeert deze velden nu
+                      ook server-side, ongeacht wat een formulier zou sturen.
+                    */}
+                    <div className="rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink-muted">
+                      {INGREDIENT_CATEGORY_LABELS[ingredient.category] ?? ingredient.category}
+                      {ingredient.restrictionTags.length > 0 && ` · ${ingredient.restrictionTags.join(", ")}`}
+                    </div>
                     <div className="flex items-center justify-between gap-3">
                       <label className="flex min-w-0 items-center gap-2 text-sm text-ink-muted">
                         <input

@@ -513,12 +513,29 @@ export async function createIngredient(formData: FormData) {
   redirectToRecipes("ingredient-created");
 }
 
+/**
+ * `Ingredient` is een globale, tussen alle huishoudens gedeelde catalogus
+ * (SYSTEM_AUDIT.md, bevinding 3) — er is geen `householdId` op dit model en
+ * dat is bewust (zie DATAMODEL_AUDIT.md). `category` en `restrictionTags`
+ * zijn de twee velden waarop harde dieet-/allergiefiltering daadwerkelijk
+ * draait (zie `src/lib/dietaryRestrictions.ts`: `category` bepaalt de
+ * vegetarisch/veganistisch-uitsluiting, `restrictionTags` de directe
+ * allergie-/dieetmatch). Zonder een `householdId`-kolom op `Ingredient` kan
+ * geen enkel huishouden hier op dit moment technisch onderscheiden worden
+ * van een ander — dus mag ook geen enkel huishouden deze twee velden van
+ * een al bestaand ingrediënt via deze algemene beheerpagina kunnen
+ * wijzigen, zelfs niet zijn eigen (`name`/`likelyInStock` zijn niet
+ * veiligheidskritiek en blijven wel gewoon aanpasbaar). Een verkeerde
+ * wijziging zou stilzwijgend de allergiebescherming van een ánder
+ * huishouden kunnen verzwakken. Correcties aan `category`/`restrictionTags`
+ * van een bestaand ingrediënt lopen voortaan alleen nog via seeddata, een
+ * migratie, of rechtstreeks databasebeheer — niet via een UI die elk
+ * huishouden kan bereiken.
+ */
 export async function updateIngredient(formData: FormData) {
   const householdId = await requireRecipeEditor(formData);
   const ingredientId = String(formData.get("ingredientId"));
   const name = String(formData.get("name") ?? "").trim();
-  const category = parseEnum(formData.get("category"), INGREDIENT_CATEGORIES, "OTHER");
-  const restrictionTags = parseList(formData.get("restrictionTags"));
   const likelyInStock = formData.get("likelyInStock") === "on";
 
   if (!name) throw new Error("Ingrediëntnaam is verplicht.");
@@ -530,7 +547,7 @@ export async function updateIngredient(formData: FormData) {
 
   await prisma.ingredient.update({
     where: { id: ingredientId },
-    data: { name, category, restrictionTags, likelyInStock },
+    data: { name, likelyInStock },
   });
 
   await invalidateCurrentShoppingList(householdId);
