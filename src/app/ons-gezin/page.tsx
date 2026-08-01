@@ -27,6 +27,7 @@ import {
   logout,
   updateCredentials,
   updateHouseholdCategoryPreference,
+  updateHouseholdHardRestrictions,
   updateProductChoicePreference,
 } from "./actions";
 
@@ -58,6 +59,7 @@ const STATUS_MESSAGES: Record<string, string> = {
   "person-updated": "Profiel opgeslagen.",
   "presence-updated": "Aanwezigheid bijgewerkt.",
   "rhythm-updated": "Dagritme opgeslagen.",
+  "household-restrictions-updated": "Huishoudregel opgeslagen.",
   "planning-style-updated": "Planningsstijl opgeslagen.",
   "product-preference-updated": "Productkeuze-instelling opgeslagen.",
   "category-preference-updated": "Voorkeur opgeslagen.",
@@ -398,6 +400,35 @@ export default async function OnsGezinPage({
             </div>
             <button type="submit" className="mt-3 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink hover:bg-accent/90">
               Productkeuze opslaan
+            </button>
+          </form>
+        </details>
+
+        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <summary className="cursor-pointer font-medium text-ink">Huishoudbrede beperkingen</summary>
+          <p className="mt-2 text-sm text-ink-muted">
+            Geldt voor iedereen, ongeacht wie er die dag mee-eet — bijvoorbeeld
+            &ldquo;wij eten geen vis&rdquo;. Voor een allergie van één gezinslid: gebruik
+            de harde beperkingen bij die persoon hieronder.
+          </p>
+          <form action={updateHouseholdHardRestrictions} className="mt-4 flex min-w-0 flex-col gap-2">
+            <input type="hidden" name="householdId" value={household.id} />
+            <input
+              type="text"
+              name="hardRestrictions"
+              defaultValue={
+                Array.isArray(household.hardRestrictions)
+                  ? (household.hardRestrictions as string[]).join(", ")
+                  : ""
+              }
+              placeholder="bijv. vis"
+              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+            />
+            <button
+              type="submit"
+              className="w-fit rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-ink"
+            >
+              Opslaan
             </button>
           </form>
         </details>
