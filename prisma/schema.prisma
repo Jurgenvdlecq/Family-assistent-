@@ -24,6 +24,14 @@ model Household {
   onboardingMode              OnboardingMode   @default(QUICK) @map("onboarding_mode")
   planningStyle               PlanningStyle    @default(BALANCED) @map("planning_style")
   maxSmartQuestionsPerSession Int              @default(2) @map("max_smart_questions_per_session")
+  // Huishoudbrede harde regel (MEAL_PLANNING_GAP_PLAN.md, wens 2: "geen vis"),
+  // los van een individuele allergie op Person.hardRestrictions — geen
+  // gezondheidsreden maar een bewuste gezinskeuze die voor iedereen geldt,
+  // ongeacht wie er die dag mee-eet. Zelfde gecontroleerde vocabulaire en
+  // opslagvorm als Person.hardRestrictions (zie src/lib/dietaryRestrictions.ts),
+  // zodat de bestaande matching-/filterlogica dit zonder aparte code kan
+  // meenemen — alleen de plek waar de tags vandaan komen verschilt.
+  hardRestrictions            Json             @default("[]") @map("hard_restrictions")
   // Vervangt de oude losse toegangscode (gebruikersverzoek: gebruikersnaam +
   // wachtwoord is makkelijker te onthouden). `username` is uniek over ALLE
   // huishoudens — dat is bewust de eigenlijke bescherming tegen twee

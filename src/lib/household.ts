@@ -22,30 +22,42 @@ export async function getHouseholdPersonsForMeals(householdId: string): Promise<
   });
 }
 
-function collectHardRestrictions(persons: PersonPresenceInput[]): string[] {
-  const combined: string[] = [];
+function parseRestrictionsArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+/**
+ * Combineert de harde beperkingen van aanwezige gezinsleden mét de
+ * huishoudbrede regel (MEAL_PLANNING_GAP_PLAN.md, wens 2: "geen vis"). Die
+ * laatste geldt bewust altijd, ongeacht wie er die dag mee-eet — het is geen
+ * allergie van een specifiek persoon maar een gezinskeuze.
+ */
+function collectHardRestrictions(persons: PersonPresenceInput[], householdRestrictions: unknown): string[] {
+  const combined: string[] = [...parseRestrictionsArray(householdRestrictions)];
   for (const person of persons) {
-    if (Array.isArray(person.hardRestrictions)) {
-      combined.push(...(person.hardRestrictions as string[]));
-    }
+    combined.push(...parseRestrictionsArray(person.hardRestrictions));
   }
   return [...new Set(combined.map((item) => item.trim()).filter(Boolean))];
 }
 
 /**
- * Alle harde beperkingen van gezinsleden die op deze dag mee-eten. Allergieën
- * en "nooit"-regels worden hiermee vroeg gefilterd en dus niet als gewone
- * negatieve voorkeur behandeld.
+ * Alle harde beperkingen van gezinsleden die op deze dag mee-eten, plus de
+ * huishoudbrede regel. Allergieën en "nooit"-regels worden hiermee vroeg
+ * gefilterd en dus niet als gewone negatieve voorkeur behandeld.
  */
 export async function getHouseholdHardRestrictions(
   householdId: string,
   dayKey?: DayKey
 ): Promise<string[]> {
-  const persons = await getHouseholdPersonsForMeals(householdId);
+  const [persons, household] = await Promise.all([
+    getHouseholdPersonsForMeals(householdId),
+    prisma.household.findUniqueOrThrow({ where: { id: householdId }, select: { hardRestrictions: true } }),
+  ]);
   const presentPersons = dayKey
     ? getPresentPersonsForDay(persons, dayKey)
     : persons.filter((person) => person.defaultPresent);
-  return collectHardRestrictions(presentPersons);
+  return collectHardRestrictions(presentPersons, household.hardRestrictions);
 }
 
 export async function getHouseholdPortionScaleByDay(
@@ -78,10 +90,13 @@ export async function getHouseholdHardRestrictionsAndParticipantsByDay(household
   hardRestrictionsByDay: Record<DayKey, string[]>;
   participantsByDay: Record<DayKey, PersonPresenceInput[]>;
 }> {
-  const persons = await getHouseholdPersonsForMeals(householdId);
+  const [persons, household] = await Promise.all([
+    getHouseholdPersonsForMeals(householdId),
+    prisma.household.findUniqueOrThrow({ where: { id: householdId }, select: { hardRestrictions: true } }),
+  ]);
   const participantsByDay = deriveParticipantsByDay(persons);
   const hardRestrictionsByDay = Object.fromEntries(
-    DAY_KEYS.map((dayKey) => [dayKey, collectHardRestrictions(participantsByDay[dayKey])])
+    DAY_KEYS.map((dayKey) => [dayKey, collectHardRestrictions(participantsByDay[dayKey], household.hardRestrictions)])
   ) as Record<DayKey, string[]>;
   return { hardRestrictionsByDay, participantsByDay };
 }

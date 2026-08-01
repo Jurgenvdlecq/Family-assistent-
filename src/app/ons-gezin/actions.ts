@@ -58,6 +58,29 @@ async function invalidateCurrentShoppingList(householdId: string) {
   await prisma.shoppingList.deleteMany({ where: { mealPlanId: mealPlan.id } });
 }
 
+/**
+ * Huishoudbrede harde regel (MEAL_PLANNING_GAP_PLAN.md, wens 2: "geen vis"),
+ * los van een individuele allergie op een gezinslid — geldt voor iedereen,
+ * ongeacht wie er die dag mee-eet. Zelfde gecontroleerde vocabulaire en
+ * invoerpatroon als een persoonlijke harde beperking (parseHardRestrictions),
+ * alleen op een ander model.
+ */
+export async function updateHouseholdHardRestrictions(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
+
+  await prisma.household.update({
+    where: { id: householdId },
+    data: { hardRestrictions: parseHardRestrictions(formData.get("hardRestrictions")) },
+  });
+
+  await invalidateCurrentShoppingList(householdId);
+  revalidatePath("/");
+  revalidatePath("/gerechten");
+  revalidatePath("/boodschappen");
+  redirectToOnsGezin("household-restrictions-updated");
+}
+
 export async function addPerson(formData: FormData) {
   const householdId = String(formData.get("householdId"));
   await assertCurrentHousehold(householdId);
