@@ -15,6 +15,7 @@ import {
   createRecipe,
   createRecipeVariant,
   deleteRecipe,
+  importRecipeFromUrl,
   rejectProductForIngredient,
   setDefaultProductForIngredient,
   updateIngredient,
@@ -45,6 +46,7 @@ const UNIT_OPTIONS = Object.entries(UNIT_LABELS);
 
 const STATUS_MESSAGES: Record<string, string> = {
   "recipe-created": "Recept toegevoegd.",
+  "recipe-imported": "Recept geïmporteerd — controleer de ingrediënten en pas aan waar nodig.",
   "recipe-updated": "Recept opgeslagen.",
   "recipe-deleted": "Recept verwijderd.",
   "ingredients-updated": "Ingrediënten opgeslagen.",
@@ -404,6 +406,29 @@ export default async function ReceptenPage({
         </details>
           </div>
         </details>
+
+        <section className="order-1 mb-5 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <div className="mb-4 flex items-center gap-2 font-medium text-ink">
+            <Plus size={16} className="text-accent" />
+            Recept importeren via link
+          </div>
+          <form action={importRecipeFromUrl} className="grid min-w-0 gap-3">
+            <input type="hidden" name="householdId" value={household.id} />
+            <input
+              name="url"
+              type="url"
+              required
+              placeholder="https://voorbeeld.nl/recept/kip-curry"
+              className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+            />
+            <p className="text-xs text-ink-muted">
+              Werkt bij de meeste receptensites. Lukt het niet, plak dan de tekst hieronder bij &quot;Snel toevoegen&quot;.
+            </p>
+            <button type="submit" className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90">
+              Importeren
+            </button>
+          </form>
+        </section>
 
         <section className="order-1 mb-5 min-w-0 rounded-xl border border-line bg-surface p-4">
           <div className="mb-4 flex items-center gap-2 font-medium text-ink">
