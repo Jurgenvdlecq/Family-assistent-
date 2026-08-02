@@ -441,7 +441,10 @@ export default async function ReceptenPage({
               className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
             />
             <p className="text-xs text-ink-muted">
-              Werkt bij de meeste receptensites. Lukt het niet, plak dan de tekst hieronder bij &quot;Snel toevoegen&quot;.
+              Werkt bij de meeste receptensites. Engelse ingrediënten en Amerikaanse maten (cup,
+              tbsp, oz, ...) worden waar herkend automatisch omgezet naar het Nederlands en
+              gram/ml — titel en bereidingswijze blijven in de brontaal. Lukt het niet, plak dan
+              de tekst hieronder bij &quot;Snel toevoegen&quot;.
             </p>
             <PendingSubmitButton pendingText="Importeren..." className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90">
               Importeren
