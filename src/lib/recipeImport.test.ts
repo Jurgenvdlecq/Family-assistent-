@@ -87,6 +87,16 @@ test("isDisallowedAddress blokkeert interne IPv6-adressen", () => {
   }
 });
 
+test("isDisallowedAddress herkent een IPv4-mapped IPv6-adres ook in hex-vorm", () => {
+  // ::ffff:a9fe:a9fe is de hex-vorm van ::ffff:169.254.169.254 (het cloud-metadata-adres)
+  assert.equal(isDisallowedAddress("::ffff:a9fe:a9fe"), true);
+  assert.equal(isDisallowedAddress("::ffff:7f00:1"), true); // hex-vorm van 127.0.0.1
+});
+
+test("isDisallowedAddress geeft geen vals-positief bij een publiek IPv6-adres", () => {
+  assert.equal(isDisallowedAddress("2001:4860:4860::8888"), false);
+});
+
 test("assertPubliclyReachableUrl weigert niet-http(s)-schema's", async () => {
   await assert.rejects(() => assertPubliclyReachableUrl("file:///etc/passwd"), /http\(s\)/);
   await assert.rejects(() => assertPubliclyReachableUrl("ftp://voorbeeld.nl/x"), /http\(s\)/);
@@ -140,9 +150,33 @@ test("fetchRecipePageHtml volgt een doorverwijzing naar een publiek adres wel", 
 });
 
 test("fetchRecipePageHtml geeft een duidelijke fout bij een niet-html-response", async () => {
+  const fakeLookup = async () => [{ address: "93.184.216.34", family: 4 }];
   const fakeFetch = (async () => new Response("{}", { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch;
   await assert.rejects(
-    () => fetchRecipePageHtml(new URL("https://voorbeeld.nl/x"), { fetchImpl: fakeFetch }),
+    () => fetchRecipePageHtml(new URL("https://voorbeeld.nl/x"), { lookup: fakeLookup, fetchImpl: fakeFetch }),
     /geen webpagina met een recept/
+  );
+});
+
+test("fetchRecipePageHtml valideert ook zijn eigen startpunt, niet alleen doorverwijzingen", async () => {
+  const fakeLookup = async () => [{ address: "169.254.169.254", family: 4 }];
+  const fakeFetch = (async () => {
+    throw new Error("fetch had nooit aangeroepen mogen worden voor een niet-gevalideerd startpunt");
+  }) as typeof fetch;
+
+  await assert.rejects(
+    () => fetchRecipePageHtml(new URL("http://interne-metadata.voorbeeld/"), { lookup: fakeLookup, fetchImpl: fakeFetch }),
+    /normale website/
+  );
+});
+
+test("fetchRecipePageHtml geeft een duidelijke fout bij een te grote response", async () => {
+  const fakeLookup = async () => [{ address: "93.184.216.34", family: 4 }];
+  const hugeBody = "x".repeat(6 * 1024 * 1024); // boven de 5MB-limiet
+  const fakeFetch = (async () => new Response(hugeBody, { status: 200, headers: { "content-type": "text/html" } })) as typeof fetch;
+
+  await assert.rejects(
+    () => fetchRecipePageHtml(new URL("https://groot.voorbeeld/x"), { lookup: fakeLookup, fetchImpl: fakeFetch }),
+    /te groot/
   );
 });

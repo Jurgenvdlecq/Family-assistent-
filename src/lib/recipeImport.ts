@@ -110,14 +110,56 @@ function isPrivateIPv4(ip: string): boolean {
   return false;
 }
 
+/**
+ * Zet een IPv6-adres om naar 8 hextets (16-bit groepen), inclusief het
+ * uitschrijven van een `::`-compressie en een eventuele ingebedde
+ * dotted-decimal IPv4-staart (`::ffff:1.2.3.4`). Geeft `null` terug bij een
+ * onherkenbare vorm — de aanroeper behandelt dat dan als "niet duidelijk
+ * publiek", dus veilig aan de voorzichtige kant.
+ */
+function expandIPv6Hextets(ip: string): string[] | null {
+  const clean = ip.replace(/^\[|\]$/g, "");
+  const sides = clean.split("::");
+  if (sides.length > 2) return null;
+
+  function expandDottedTail(segments: string[]): string[] | null {
+    if (segments.length === 0) return segments;
+    const last = segments[segments.length - 1];
+    if (!last.includes(".")) return segments;
+    const octets = last.split(".").map(Number);
+    if (octets.length !== 4 || octets.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) return null;
+    const hex1 = ((octets[0] << 8) | octets[1]).toString(16);
+    const hex2 = ((octets[2] << 8) | octets[3]).toString(16);
+    return [...segments.slice(0, -1), hex1, hex2];
+  }
+
+  const head = sides[0] ? expandDottedTail(sides[0].split(":").filter(Boolean)) : [];
+  const tail = sides.length === 2 && sides[1] ? expandDottedTail(sides[1].split(":").filter(Boolean)) : [];
+  if (head === null || tail === null) return null;
+
+  if (sides.length === 1) return head.length === 8 ? head : null;
+
+  const missing = 8 - (head.length + tail.length);
+  if (missing < 0) return null;
+  return [...head, ...Array(missing).fill("0"), ...tail];
+}
+
 function isPrivateIPv6(ip: string): boolean {
   const normalized = ip.toLowerCase();
   if (normalized === "::1" || normalized === "::") return true;
   if (normalized.startsWith("fe80:") || normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
-  if (normalized.startsWith("::ffff:")) {
-    const mapped = normalized.slice("::ffff:".length);
-    if (mapped.includes(".")) return isPrivateIPv4(mapped);
+
+  const hextets = expandIPv6Hextets(normalized);
+  if (hextets) {
+    const isIPv4Mapped = hextets.slice(0, 5).every((h) => h === "0") && hextets[5] === "ffff";
+    if (isIPv4Mapped) {
+      const high = parseInt(hextets[6], 16);
+      const low = parseInt(hextets[7], 16);
+      const ipv4 = `${(high >> 8) & 0xff}.${high & 0xff}.${(low >> 8) & 0xff}.${low & 0xff}`;
+      return isPrivateIPv4(ipv4);
+    }
   }
+
   return false;
 }
 
@@ -170,10 +212,33 @@ export async function assertPubliclyReachableUrl(rawUrl: string, lookup: LookupF
 
 type FetchFn = typeof fetch;
 
+const MAX_RESPONSE_BYTES = 5 * 1024 * 1024; // een receptpagina is nooit zo groot
+
+async function readBodyWithLimit(response: Response, maxBytes: number): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) return response.text();
+
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    received += value.byteLength;
+    if (received > maxBytes) {
+      await reader.cancel();
+      throw new Error("Deze pagina is te groot om te importeren.");
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf-8");
+}
+
 /**
  * Haalt de pagina op en herhaalt de SSRF-check bij elke doorverwijzing —
  * een publieke link die intern doorstuurt zou anders alsnog de bescherming
- * in `assertPubliclyReachableUrl` omzeilen.
+ * in `assertPubliclyReachableUrl` omzeilen. Valideert ook het startpunt
+ * zelf (niet alleen doorverwijzingen), zodat deze functie op zichzelf
+ * veilig is en niet blindelings op een al-gevalideerde aanroeper leunt.
  */
 export async function fetchRecipePageHtml(
   startUrl: URL,
@@ -182,7 +247,7 @@ export async function fetchRecipePageHtml(
   const lookup = options.lookup ?? dns.lookup;
   const fetchImpl = options.fetchImpl ?? fetch;
 
-  let currentUrl = startUrl;
+  let currentUrl = await assertPubliclyReachableUrl(startUrl.toString(), lookup);
   for (let hop = 0; hop < 5; hop += 1) {
     const response = await fetchImpl(currentUrl, {
       redirect: "manual",
@@ -209,7 +274,7 @@ export async function fetchRecipePageHtml(
       throw new Error("Deze link lijkt geen webpagina met een recept te zijn.");
     }
 
-    return response.text();
+    return readBodyWithLimit(response, MAX_RESPONSE_BYTES);
   }
 
   throw new Error("Te veel doorverwijzingen bij het ophalen van deze link.");
