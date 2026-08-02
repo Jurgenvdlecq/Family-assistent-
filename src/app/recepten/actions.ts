@@ -9,6 +9,7 @@ import { parsePackageQuantity } from "@/lib/quantity/parsePackageSize";
 import { accessibleRecipeWhere, editableRecipeWhere } from "@/lib/recipeScope";
 import { recordProductChosen, recordProductRejected } from "@/domain/product-matching/repository";
 import { parseRecipeIngredientText } from "@/lib/recipeIngredientText";
+import { translateIngredientTextToDutch } from "@/lib/ingredientTranslation";
 import { assertPubliclyReachableUrl, extractRecipeFromHtml, fetchRecipePageHtml } from "@/lib/recipeImport";
 import { PicnicClient } from "@/lib/picnic/client";
 import { picnicPriceToEuros, picnicProductRef } from "@/lib/picnic/products";
@@ -339,7 +340,8 @@ async function tryImportRecipeFromUrl(
       );
     }
 
-    const parsedLines = parseRecipeIngredientText(extracted.ingredientLines.join("\n"));
+    const translatedIngredientLines = extracted.ingredientLines.map(translateIngredientTextToDutch);
+    const parsedLines = parseRecipeIngredientText(translatedIngredientLines.join("\n"));
     if (parsedLines.length === 0) {
       throw new Error("Kon geen ingrediënten herkennen op deze pagina. Plak de tekst hieronder handmatig.");
     }

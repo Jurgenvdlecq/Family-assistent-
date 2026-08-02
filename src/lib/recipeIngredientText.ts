@@ -14,6 +14,17 @@ const UNIT_ALIASES: Array<{ pattern: RegExp; unit: Unit; factor: number }> = [
   { pattern: /^(l|liter)$/i, unit: Unit.ML, factor: 1000 },
   { pattern: /^(ml|milliliter)$/i, unit: Unit.ML, factor: 1 },
   { pattern: /^(x|stuk|stuks)$/i, unit: Unit.PIECE, factor: 1 },
+  // Amerikaanse/Engelse maatvoering, vooral voor geïmporteerde recepten (zie
+  // recipeImport.ts) — Amerikaanse (US customary) hoeveelheden, afgerond op
+  // een gangbare, in de praktijk bruikbare waarde i.p.v. exacte precisie.
+  { pattern: /^(cups?)$/i, unit: Unit.ML, factor: 240 },
+  { pattern: /^(tablespoons?|tbsp)$/i, unit: Unit.ML, factor: 15 },
+  { pattern: /^(teaspoons?|tsp)$/i, unit: Unit.ML, factor: 5 },
+  { pattern: /^(pints?)$/i, unit: Unit.ML, factor: 473 },
+  { pattern: /^(quarts?)$/i, unit: Unit.ML, factor: 946 },
+  { pattern: /^(gallons?)$/i, unit: Unit.ML, factor: 3785 },
+  { pattern: /^(oz|ounces?)$/i, unit: Unit.GRAM, factor: 28 },
+  { pattern: /^(lbs?|pounds?)$/i, unit: Unit.GRAM, factor: 454 },
 ];
 
 const PACKAGING_WORDS = new Set([

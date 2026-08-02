@@ -37,6 +37,23 @@ test("parseRecipeIngredientText haalt verpakkingswoorden uit de zoeknaam", () =>
   );
 });
 
+test("parseRecipeIngredientText herkent Amerikaanse maateenheden en zet ze om naar gram/ml", () => {
+  const parsed = parseRecipeIngredientText(
+    "1 cup kokosmelk\n2 tbsp sojasaus\n1 tsp zout\n8 oz kipfilet\n1 lb rundergehakt"
+  );
+
+  assert.deepEqual(
+    parsed.map((line) => ({ name: line.name, quantity: line.quantity, unit: line.unit })),
+    [
+      { name: "Kokosmelk", quantity: 240, unit: "ML" },
+      { name: "Sojasaus", quantity: 30, unit: "ML" },
+      { name: "Zout", quantity: 5, unit: "ML" },
+      { name: "Kipfilet", quantity: 224, unit: "GRAM" },
+      { name: "Rundergehakt", quantity: 454, unit: "GRAM" },
+    ]
+  );
+});
+
 test("parseRecipeIngredientText negeert persoon-prefixen bij losse maaltijden", () => {
   const parsed = parseRecipeIngredientText("Kai: frikandel\nLynn: kaasstengels\nEllen: Carrero, mini kaassouffle");
 
