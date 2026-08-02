@@ -280,6 +280,81 @@ export async function createQuickRecipe(formData: FormData) {
 }
 
 /**
+ * Vertaalt een fout uit de import-stap naar een vaste statuscode i.p.v. de
+ * ruwe foutmelding zelf door te geven — Next.js toont in productie bij een
+ * `throw` uit een server-actie alleen een generieke "dat lukte niet"-tekst
+ * (bewust, om te voorkomen dat interne details lekken), waardoor de eerder
+ * zorgvuldig geschreven Nederlandse meldingen de gebruiker nooit bereikten.
+ * Dezelfde vaste-statuscode-aanpak als de bestaande succesmeldingen op deze
+ * pagina (en de twee foutmeldingen op `/ons-gezin`) — geen nieuwe patroon.
+ */
+function classifyImportError(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  if (message.includes("Vul een link")) return "import-url-missing";
+  if (message.includes("geen geldige link") || message.includes("http(s)-links")) return "import-url-invalid";
+  if (message.includes("normale website")) return "import-url-blocked";
+  if (
+    message.includes("niet vinden op internet") ||
+    message.includes("niet ophalen") ||
+    message.includes("duurde te lang") ||
+    message.includes("geen webpagina met een recept") ||
+    message.includes("te groot om te importeren") ||
+    message.includes("Te veel doorverwijzingen")
+  ) {
+    return "import-url-unreachable";
+  }
+  if (message.includes("niet automatisch herkennen")) return "import-no-recipe-found";
+  if (message.includes("geen ingrediënten herkennen")) return "import-no-ingredients";
+  if (message.includes("bestaat al een eigen recept")) return "import-duplicate-title";
+  return "import-failed";
+}
+
+type ImportedRecipeData = {
+  title: string;
+  sourceUrl: string;
+  instructions: string[];
+  parsedLines: ReturnType<typeof parseRecipeIngredientText>;
+};
+
+/**
+ * Doet het eigenlijke ophaal-/leeswerk en geeft een resultaat terug in
+ * plaats van te gooien. Next.js schrijft voor dat `redirect()` altijd
+ * buiten een `try/catch` aangeroepen wordt (het gooit zelf een interne
+ * `NEXT_REDIRECT`-marker) — dus deze functie blijft binnen haar eigen
+ * try/catch, en `importRecipeFromUrl` hieronder roept `redirectToRecipes`
+ * pas aan ná deze functie, nooit vanuit een catch-blok.
+ */
+async function tryImportRecipeFromUrl(
+  householdId: string,
+  rawUrl: string
+): Promise<{ ok: true; data: ImportedRecipeData } | { ok: false; errorCode: string }> {
+  try {
+    const url = await assertPubliclyReachableUrl(rawUrl);
+    const html = await fetchRecipePageHtml(url);
+    const extracted = extractRecipeFromHtml(html);
+
+    if (!extracted) {
+      throw new Error(
+        'Kon dit recept niet automatisch herkennen op deze pagina. Plak de ingrediënten hieronder handmatig bij "Nieuw recept snel toevoegen".'
+      );
+    }
+
+    const parsedLines = parseRecipeIngredientText(extracted.ingredientLines.join("\n"));
+    if (parsedLines.length === 0) {
+      throw new Error("Kon geen ingrediënten herkennen op deze pagina. Plak de tekst hieronder handmatig.");
+    }
+
+    const title = await pickAvailableRecipeTitle(householdId, extracted.title, url.hostname);
+    return {
+      ok: true,
+      data: { title, sourceUrl: url.toString(), instructions: extracted.instructions, parsedLines },
+    };
+  } catch (error) {
+    return { ok: false, errorCode: classifyImportError(error) };
+  }
+}
+
+/**
  * Importeert één recept via een door de gebruiker aangewezen link. Leest
  * alleen de machineleesbare schema.org/Recipe-data die de meeste
  * receptensites al standaard meeleveren (zie `recipeImport.ts`) — geen
@@ -292,24 +367,14 @@ export async function createQuickRecipe(formData: FormData) {
 export async function importRecipeFromUrl(formData: FormData) {
   const householdId = await requireRecipeEditor(formData);
   const rawUrl = String(formData.get("url") ?? "").trim();
-  if (!rawUrl) throw new Error("Vul een link naar een recept in.");
+  if (!rawUrl) redirectToRecipes("import-url-missing");
 
-  const url = await assertPubliclyReachableUrl(rawUrl);
-  const html = await fetchRecipePageHtml(url);
-  const extracted = extractRecipeFromHtml(html);
-
-  if (!extracted) {
-    throw new Error(
-      'Kon dit recept niet automatisch herkennen op deze pagina. Plak de ingrediënten hieronder handmatig bij "Nieuw recept snel toevoegen".'
-    );
+  const imported = await tryImportRecipeFromUrl(householdId, rawUrl);
+  if (!imported.ok) {
+    redirectToRecipes(imported.errorCode);
   }
 
-  const parsedLines = parseRecipeIngredientText(extracted.ingredientLines.join("\n"));
-  if (parsedLines.length === 0) {
-    throw new Error("Kon geen ingrediënten herkennen op deze pagina. Plak de tekst hieronder handmatig.");
-  }
-
-  const title = await pickAvailableRecipeTitle(householdId, extracted.title, url.hostname);
+  const { title, sourceUrl, instructions, parsedLines } = imported.data;
   const ingredientRows = await upsertParsedRecipeIngredients(parsedLines);
 
   await prisma.recipe.create({
@@ -320,8 +385,8 @@ export async function importRecipeFromUrl(formData: FormData) {
       scope: "HOUSEHOLD",
       householdId,
       originHouseholdId: householdId,
-      source: url.toString(),
-      instructions: extracted.instructions,
+      source: sourceUrl,
+      instructions,
       ingredients: {
         create: ingredientRows.map((row) => ({
           ingredientId: row.ingredientId,

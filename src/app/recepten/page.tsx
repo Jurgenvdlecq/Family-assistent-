@@ -45,6 +45,18 @@ const INGREDIENT_CATEGORY_LABELS: Record<string, string> = {
 const INGREDIENT_CATEGORY_OPTIONS = Object.entries(INGREDIENT_CATEGORY_LABELS);
 const UNIT_OPTIONS = Object.entries(UNIT_LABELS);
 
+const ERROR_STATUS_MESSAGES: Record<string, string> = {
+  "import-url-missing": "Vul een link naar een recept in.",
+  "import-url-invalid": "Dit is geen geldige link.",
+  "import-url-blocked": "Deze link wijst niet naar een normale website.",
+  "import-url-unreachable": "Kon deze pagina niet ophalen. Probeer het later opnieuw, of plak de tekst hieronder handmatig.",
+  "import-no-recipe-found":
+    'Kon dit recept niet automatisch herkennen op deze pagina. Plak de ingrediënten hieronder handmatig bij "Nieuw recept snel toevoegen".',
+  "import-no-ingredients": "Kon geen ingrediënten herkennen op deze pagina. Plak de tekst hieronder handmatig.",
+  "import-duplicate-title": "Er bestaat al een eigen recept met deze titel.",
+  "import-failed": "Dit recept kon niet geïmporteerd worden. Probeer het opnieuw of plak de tekst handmatig.",
+};
+
 const STATUS_MESSAGES: Record<string, string> = {
   "recipe-created": "Recept toegevoegd.",
   "recipe-imported": "Recept geïmporteerd — controleer de ingrediënten en pas aan waar nodig.",
@@ -142,6 +154,7 @@ export default async function ReceptenPage({
   const searchQuery = String(params.q ?? "").trim();
   const normalizedQuery = searchQuery.toLowerCase();
   const statusMessage = params.status ? STATUS_MESSAGES[params.status] : undefined;
+  const errorMessage = params.status ? ERROR_STATUS_MESSAGES[params.status] : undefined;
   const household = await requireCurrentHousehold();
   const [recipes, ingredients] = await Promise.all([
     prisma.recipe.findMany({
@@ -187,6 +200,11 @@ export default async function ReceptenPage({
         {statusMessage && (
           <p className="mb-4 rounded-lg border border-tag-green-ink/20 bg-tag-green-bg px-3 py-2 text-sm font-medium text-tag-green-ink">
             {statusMessage}
+          </p>
+        )}
+        {errorMessage && (
+          <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+            {errorMessage}
           </p>
         )}
         <h1 className="mb-1 text-[1.6rem] font-semibold leading-tight text-ink">Recepten</h1>
