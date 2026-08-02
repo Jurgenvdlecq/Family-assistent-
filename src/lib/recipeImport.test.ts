@@ -180,3 +180,32 @@ test("fetchRecipePageHtml geeft een duidelijke fout bij een te grote response", 
     /te groot/
   );
 });
+
+test("assertPubliclyReachableUrl geeft een duidelijke fout als de DNS-opzoeking te lang duurt", async () => {
+  const neverResolvingLookup = () => new Promise<never>(() => {}); // simuleert een niet-reagerende naamserver
+  await assert.rejects(
+    () => assertPubliclyReachableUrl("https://traag.voorbeeld/recept", neverResolvingLookup, 50),
+    /internet/
+  );
+});
+
+test("fetchRecipePageHtml stopt met een duidelijke fout zodra het totaalbudget op is, ook over meerdere doorverwijzingen heen", async () => {
+  // Elke hop laat zijn eigen fetch een beetje langer duren dan het (kunstmatig
+  // kleine) totaalbudget toestaat na de eerste hop — dit dekt precies de bug
+  // die WP88 fixte: eerder kreeg élke hop een eigen volle timeout in plaats
+  // van samen één begrensd budget, waardoor veel doorverwijzingen samen ver
+  // boven de tijdslimiet van de serverless-functie konden uitkomen.
+  const fakeLookup = async () => [{ address: "93.184.216.34", family: 4 }];
+  let hop = 0;
+  const fakeFetch = (async () => {
+    hop += 1;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    return new Response(null, { status: 302, headers: { location: `https://volgende-stap-${hop}.voorbeeld/` } });
+  }) as typeof fetch;
+
+  await assert.rejects(
+    () => fetchRecipePageHtml(new URL("https://start.voorbeeld/"), { lookup: fakeLookup, fetchImpl: fakeFetch, totalBudgetMs: 100 }),
+    /duurde te lang/
+  );
+  assert.ok(hop < 5, "had moeten stoppen op het totaalbudget, niet pas na de hop-limiet van 5");
+});
