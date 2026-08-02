@@ -6,6 +6,7 @@ import { CATEGORY_LABELS, STATUS_LABELS, VARIANT_LABELS } from "@/lib/categorySt
 import { accessibleRecipeWhere } from "@/lib/recipeScope";
 import { picnicImageUrl } from "@/lib/picnic/products";
 import NavBar from "@/components/NavBar";
+import PendingSubmitButton from "@/components/PendingSubmitButton";
 import {
   allowProductForIngredient,
   copyRecipeToHousehold,
@@ -230,9 +231,9 @@ export default async function ReceptenPage({
               <input type="checkbox" name="likelyInStock" className="h-4 w-4 accent-accent" />
               Vaak al in huis / voorraadcontrole
             </label>
-            <button type="submit" className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink">
+            <PendingSubmitButton pendingText="Toevoegen..." className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink">
               Ingrediënt toevoegen
-            </button>
+            </PendingSubmitButton>
           </form>
         </details>
 
@@ -280,9 +281,9 @@ export default async function ReceptenPage({
                         />
                         Voorraadcontrole
                       </label>
-                      <button type="submit" className="rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
+                      <PendingSubmitButton pendingText="Opslaan..." className="rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
                         Opslaan
-                      </button>
+                      </PendingSubmitButton>
                     </div>
                   </form>
 
@@ -320,9 +321,9 @@ export default async function ReceptenPage({
                                   <input type="hidden" name="householdId" value={household.id} />
                                   <input type="hidden" name="ingredientId" value={ingredient.id} />
                                   <input type="hidden" name="productId" value={product.id} />
-                                  <button type="submit" className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
+                                  <PendingSubmitButton pendingText="Bezig..." className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
                                     Maak standaard
-                                  </button>
+                                  </PendingSubmitButton>
                                 </form>
                               )}
                               {isRejected ? (
@@ -330,18 +331,18 @@ export default async function ReceptenPage({
                                   <input type="hidden" name="householdId" value={household.id} />
                                   <input type="hidden" name="ingredientId" value={ingredient.id} />
                                   <input type="hidden" name="productId" value={product.id} />
-                                  <button type="submit" className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
+                                  <PendingSubmitButton pendingText="Bezig..." className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
                                     Weer toestaan
-                                  </button>
+                                  </PendingSubmitButton>
                                 </form>
                               ) : (
                                 <form action={rejectProductForIngredient}>
                                   <input type="hidden" name="householdId" value={household.id} />
                                   <input type="hidden" name="ingredientId" value={ingredient.id} />
                                   <input type="hidden" name="productId" value={product.id} />
-                                  <button type="submit" className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink-faint hover:border-red-300 hover:text-red-600">
+                                  <PendingSubmitButton pendingText="Bezig..." className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink-faint hover:border-red-300 hover:text-red-600">
                                     Uitsluiten
-                                  </button>
+                                  </PendingSubmitButton>
                                 </form>
                               )}
                             </div>
@@ -392,9 +393,9 @@ export default async function ReceptenPage({
                             <input type="checkbox" name="setAsDefault" className="h-4 w-4 accent-accent" />
                             Meteen standaard maken
                           </label>
-                          <button type="submit" className="w-fit rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-ink">
+                          <PendingSubmitButton pendingText="Toevoegen..." className="w-fit rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-ink">
                             Product toevoegen
-                          </button>
+                          </PendingSubmitButton>
                         </form>
                       </details>
                     </div>
@@ -424,9 +425,9 @@ export default async function ReceptenPage({
             <p className="text-xs text-ink-muted">
               Werkt bij de meeste receptensites. Lukt het niet, plak dan de tekst hieronder bij &quot;Snel toevoegen&quot;.
             </p>
-            <button type="submit" className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90">
+            <PendingSubmitButton pendingText="Importeren..." className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90">
               Importeren
-            </button>
+            </PendingSubmitButton>
           </form>
         </section>
 
@@ -450,9 +451,9 @@ export default async function ReceptenPage({
               placeholder={"400g kipfilet\n300 gram rijst\n2 paprika\n1 ui\n250 ml kookroom"}
               className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
             />
-            <button type="submit" className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90">
+            <PendingSubmitButton pendingText="Opslaan..." className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90">
               Recept opslaan en producten zoeken
-            </button>
+            </PendingSubmitButton>
           </form>
         </section>
 
@@ -507,9 +508,9 @@ export default async function ReceptenPage({
 
             <IngredientRows ingredients={ingredients} />
 
-            <button type="submit" className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink">
+            <PendingSubmitButton pendingText="Toevoegen..." className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink">
               Recept toevoegen
-            </button>
+            </PendingSubmitButton>
           </form>
         </details>
 
@@ -610,25 +611,25 @@ export default async function ReceptenPage({
                       placeholder="Bereiding"
                       className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
                     />
-                    <button type="submit" className="w-fit rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
+                    <PendingSubmitButton pendingText="Opslaan..." className="w-fit rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
                       Recept opslaan
-                    </button>
+                    </PendingSubmitButton>
                   </form>
                   <form action={deleteRecipe} className="mt-3 border-t border-line pt-3">
                     <input type="hidden" name="householdId" value={household.id} />
                     <input type="hidden" name="recipeId" value={recipe.id} />
-                    <button type="submit" className="w-fit rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:border-red-300 hover:bg-red-50">
+                    <PendingSubmitButton pendingText="Verwijderen..." className="w-fit rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:border-red-300 hover:bg-red-50">
                       Recept verwijderen
-                    </button>
+                    </PendingSubmitButton>
                   </form>
                   </details>
                 ) : (
                   <form action={copyRecipeToHousehold}>
                     <input type="hidden" name="householdId" value={household.id} />
                     <input type="hidden" name="recipeId" value={recipe.id} />
-                    <button type="submit" className="rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
+                    <PendingSubmitButton pendingText="Kopiëren..." className="rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
                       Maak eigen kopie
-                    </button>
+                    </PendingSubmitButton>
                   </form>
                 )}
 
@@ -643,9 +644,9 @@ export default async function ReceptenPage({
                         recipeIngredients={recipe.ingredients.map((ri) => ({ ingredientId: ri.ingredientId, quantity: ri.quantity }))}
                         minRows={recipe.ingredients.length}
                       />
-                      <button type="submit" className="w-fit rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
+                      <PendingSubmitButton pendingText="Opslaan..." className="w-fit rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
                         Ingrediënten opslaan
-                      </button>
+                      </PendingSubmitButton>
                     </form>
                   </details>
                 )}
@@ -664,9 +665,9 @@ export default async function ReceptenPage({
                         placeholder="Context-signalen, bv. drukke_dag, kindvriendelijk"
                         className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
                       />
-                      <button type="submit" className="w-fit rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
+                      <PendingSubmitButton pendingText="Opslaan..." className="w-fit rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent">
                         Variant opslaan
-                      </button>
+                      </PendingSubmitButton>
                     </form>
                   ))}
 
@@ -688,9 +689,9 @@ export default async function ReceptenPage({
                         placeholder="Context-signalen"
                         className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
                       />
-                      <button type="submit" className="w-fit rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-ink">
+                      <PendingSubmitButton pendingText="Toevoegen..." className="w-fit rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-ink">
                         Variant toevoegen
-                      </button>
+                      </PendingSubmitButton>
                     </form>
                   </details>
                   </div>

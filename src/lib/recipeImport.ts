@@ -179,7 +179,11 @@ type LookupFn = (hostname: string, options: { all: true }) => Promise<Array<{ ad
  * (het opgeloste IP wordt niet vastgepind voor de daadwerkelijke fetch),
  * geaccepteerde beperking voor een kleinschalige huishoud-app.
  */
-export async function assertPubliclyReachableUrl(rawUrl: string, lookup: LookupFn = dns.lookup): Promise<URL> {
+export async function assertPubliclyReachableUrl(
+  rawUrl: string,
+  lookup: LookupFn = dns.lookup,
+  timeoutMs = 5000
+): Promise<URL> {
   let url: URL;
   try {
     url = new URL(rawUrl);
@@ -198,7 +202,16 @@ export async function assertPubliclyReachableUrl(rawUrl: string, lookup: LookupF
 
   let addresses: Array<{ address: string; family: number }>;
   try {
-    addresses = await lookup(hostname, { all: true });
+    // `dns.lookup` heeft geen ingebouwde timeout — zonder deze race zou een
+    // trage of niet-reagerende naamserver deze actie (en daarmee de hele
+    // serverless-aanroep) onbegrensd lang laten hangen, met geen enkele
+    // feedback voor de gebruiker.
+    addresses = await Promise.race([
+      lookup(hostname, { all: true }),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("dns-timeout")), timeoutMs);
+      }),
+    ]);
   } catch {
     throw new Error("Kon deze link niet vinden op internet.");
   }
@@ -233,6 +246,15 @@ async function readBodyWithLimit(response: Response, maxBytes: number): Promise<
   return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf-8");
 }
 
+// Vercel's serverless-functies hebben zelf een harde tijdslimiet (10s op de
+// standaard/Hobby-laag) die ook de rest van de actie (ingrediënten opslaan,
+// Picnic-kandidaten zoeken) nog binnen dezelfde aanroep moet passen. Eerder
+// kon elke doorverwijzing opnieuw een volle 10s duren (tot 5 hops = tot 50s)
+// zonder dat de gebruiker ook maar iets te zien kreeg — de functie werd dan
+// hard afgebroken door het platform in plaats van door onze eigen, nette
+// foutmelding. Nu geldt één totaalbudget over de hele operatie heen.
+const TOTAL_FETCH_BUDGET_MS = 6000;
+
 /**
  * Haalt de pagina op en herhaalt de SSRF-check bij elke doorverwijzing —
  * een publieke link die intern doorstuurt zou anders alsnog de bescherming
@@ -242,16 +264,23 @@ async function readBodyWithLimit(response: Response, maxBytes: number): Promise<
  */
 export async function fetchRecipePageHtml(
   startUrl: URL,
-  options: { lookup?: LookupFn; fetchImpl?: FetchFn } = {}
+  options: { lookup?: LookupFn; fetchImpl?: FetchFn; totalBudgetMs?: number } = {}
 ): Promise<string> {
   const lookup = options.lookup ?? dns.lookup;
   const fetchImpl = options.fetchImpl ?? fetch;
+  const deadline = Date.now() + (options.totalBudgetMs ?? TOTAL_FETCH_BUDGET_MS);
 
-  let currentUrl = await assertPubliclyReachableUrl(startUrl.toString(), lookup);
+  function remainingBudget(): number {
+    const left = deadline - Date.now();
+    if (left <= 0) throw new Error("Het ophalen van deze pagina duurde te lang.");
+    return left;
+  }
+
+  let currentUrl = await assertPubliclyReachableUrl(startUrl.toString(), lookup, remainingBudget());
   for (let hop = 0; hop < 5; hop += 1) {
     const response = await fetchImpl(currentUrl, {
       redirect: "manual",
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(remainingBudget()),
       headers: {
         "User-Agent": "Mozilla/5.0 (compatible; FamilyAssistantRecipeImport/1.0)",
         Accept: "text/html",
@@ -261,7 +290,7 @@ export async function fetchRecipePageHtml(
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       if (!location) throw new Error("Kon de pagina niet ophalen (ongeldige doorverwijzing).");
-      currentUrl = await assertPubliclyReachableUrl(new URL(location, currentUrl).toString(), lookup);
+      currentUrl = await assertPubliclyReachableUrl(new URL(location, currentUrl).toString(), lookup, remainingBudget());
       continue;
     }
 
