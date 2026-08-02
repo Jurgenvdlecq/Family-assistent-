@@ -6,6 +6,21 @@ apart moet lezen. Zet hier daarom alleen de regels die je **elke keer**
 moet kennen, niet de volledige geschiedenis of diepgaande troubleshooting
 (dat hoort in `PROGRESS.md` respectievelijk `OPERATIONS.md`).
 
+## Context- en tokenefficiëntie
+
+- Houd `AGENTS.md` + dit bestand samen klein (richtlijn: onder de ~2.000
+  tokens) — ze worden elke beurt opnieuw meegestuurd. Historische/
+  afgeronde plannen horen in een apart, alleen-op-aanvraag bestand (zie
+  `PROJECT_BLUEPRINT.md`), niet hier.
+- Comprimeer oudere `PROGRESS.md`-regels periodiek tot titel-only, met de
+  volledige beschrijving in `PROGRESS_ARCHIVE.md` — niet elke sessie de
+  volle geschiedenis opnieuw laten meelezen.
+- Wacht bij CI/build-status in één realistische periode, niet vaak kort
+  achter elkaar pollen.
+- Herhaal een volledige testsuite niet vaker dan nodig. Bij een duidelijk
+  ongerelateerde flake volstaat één gerichte herhaling, tenzij de gebruiker
+  zelf om extra zekerheid vraagt.
+
 ## Manier van werken
 
 - **Werk per work package (WP)**, niet alles in één keer. Na elk work
@@ -102,7 +117,7 @@ Stop en leg het aan de gebruiker voor (in plaats van door te werken) wanneer:
 - Bij harde beperkingen/allergieën van gezinsleden — nooit als gewone
   negatieve voorkeur behandelen (zie `PRODUCT_VISION.md`).
 - Bij twijfelachtige productmatches — eerst laten controleren, nooit
-  stilzwijgend kiezen (zie `PRODUCT_VISION.md`, `AGENTS.md` Fase 6).
+  stilzwijgend kiezen (zie `PRODUCT_VISION.md`, `PROJECT_BLUEPRINT.md` Fase 6).
 - Bij elke wijziging aan authenticatie, sessiebeheer of household-isolatie
   (`src/lib/auth.ts` en aanverwante server actions) — dit raakt direct of
   de juiste gebruiker bij de juiste data komt. Verifieer expliciet met een

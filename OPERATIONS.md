@@ -105,10 +105,10 @@ migratie; los oppakken als het ooit hindert.
 - Domain-driven, incrementele migratie: nieuwe domeinlogica komt onder
   `src/domain/<naam>/` (`household`, `attention`, `learning`,
   `meal-planning`, `meal-tags`, `product-matching`), naast de bestaande
-  `src/lib/`. Geen big-bang herschrijving — `AGENTS.md`'s Fase 1 beschrijft
-  een verdergaande doelstructuur (`application/`, `infrastructure/`), maar
-  die is nog niet volledig doorgevoerd; neem de daadwerkelijke `src/`-mappen
-  als waarheid, niet de Fase 1-tekst alleen.
+  `src/lib/`. Geen big-bang herschrijving — `PROJECT_BLUEPRINT.md`'s Fase 1
+  beschrijft een verdergaande doelstructuur (`application/`,
+  `infrastructure/`), maar die is nog niet volledig doorgevoerd; neem de
+  daadwerkelijke `src/`-mappen als waarheid, niet de Fase 1-tekst alleen.
 - Server Components + Server Actions (`"use server"`) zijn de enige manier
   om te muteren; `revalidatePath` voor cache-invalidatie.
 - Consistent principe door het hele project: **nooit stilzwijgend een

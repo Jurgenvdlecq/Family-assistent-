@@ -13,8 +13,10 @@ Prisma en PostgreSQL. Live op Vercel + Supabase.
 Dit project leunt zwaar op vastgelegde documentatie in plaats van
 tribal knowledge. In deze volgorde:
 
-1. **`AGENTS.md`** — de oorspronkelijke productspecificatie en het
-   gefaseerde bouwplan.
+1. **`AGENTS.md`** — de actieve kernregels (wordt automatisch geladen
+   door Claude Code via `CLAUDE.md`). Het oorspronkelijke, gefaseerde
+   bouwplan waarmee het project begon staat — inmiddels grotendeels
+   uitgevoerd en niet meer actief sturend — in `PROJECT_BLUEPRINT.md`.
 2. **`PRODUCT_VISION.md`** — het actuele productkompas: kernbelofte,
    productprincipes, gebruikersstromen, bedrijfsregels.
 3. **`DATAMODEL_AUDIT.md`** — toetsing van het Prisma-schema tegen de

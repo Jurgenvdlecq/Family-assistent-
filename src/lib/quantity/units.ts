@@ -3,7 +3,7 @@ import type { Unit } from "@/generated/prisma/enums";
 /**
  * Eenheden zoals een gebruiker of Picnic ze aanlevert (kilogram, liter) zijn
  * ruimer dan de eenheden die we in de database opslaan (Unit: alleen GRAM,
- * ML, PIECE — zie AGENTS.md Fase 2). Alle berekeningen in dit domein werken
+ * ML, PIECE — zie PROJECT_BLUEPRINT.md Fase 2). Alle berekeningen in dit domein werken
  * daarom op de database-eenheid; deze module converteert ernaartoe.
  */
 export type ExtendedUnit = Unit | "KILOGRAM" | "LITER";

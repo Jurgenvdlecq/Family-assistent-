@@ -91,7 +91,7 @@ route of functie — **zeker**, geverifieerd met gerichte greps door de hele
 
 **Sterkste onderdelen**
 1. De verpakkings-/hoeveelhedenengine (`src/lib/quantity/*`) — puur, goed
-   getest (zie sectie 8), sluit exact aan op het AGENTS.md-voorbeeld.
+   getest (zie sectie 8), sluit exact aan op het PROJECT_BLUEPRINT.md-voorbeeld.
 2. De uitlegbare scoring-engines (weekplanning, productmatching) — geen
    `Math.random()`, deterministische tiebreaks, concrete redenen per
    beslissing (zeker, zelf gelezen — sectie 6).
@@ -132,7 +132,7 @@ in de praktijk, geen kind/volwassene-gescheiden maaltijden per dag, geen
    mag nooit als gewone voorkeur worden behandeld").
 4. `src/app/boodschappen/page.tsx` is 1454 regels — een paginabestand met
    aanzienlijke presentatie- én afgeleide-berekeningslogica, in spanning met
-   `AGENTS.md` Fase 1 ("pagina's geen ingewikkelde business logic"). Geen
+   `PROJECT_BLUEPRINT.md` Fase 1 ("pagina's geen ingewikkelde business logic"). Geen
    correctheidsrisico geconstateerd, wel een onderhoudbaarheidsrisico.
    **Zeker** (regel geteld), risico-inschatting **waarschijnlijk**.
 
@@ -211,7 +211,7 @@ CI/build-pijplijn.
 **Waar zit businesslogica?**
 Grotendeels in `src/lib/*.ts` en `src/domain/**/*.ts` — met een
 belangrijke, expliciet gedocumenteerde nuance (`OPERATIONS.md`): dit is een
-**incrementele** migratie naar de Fase-1-doelstructuur uit `AGENTS.md`
+**incrementele** migratie naar de Fase-1-doelstructuur uit `PROJECT_BLUEPRINT.md`
 (`domain/`, `application/`, `infrastructure/`), niet volledig doorgevoerd.
 `src/lib/` bevat zowel pure functies (`quantity/`) als Prisma-aanroepende
 code (`mealPlan.ts`, `shoppingList.ts`) — geen strikte scheiding tussen
@@ -225,7 +225,7 @@ direct in server actions (`src/app/**/actions.ts`) — pagina's
 weergave (bijv. `src/app/boodschappen/page.tsx` bevat zelf
 `prisma.household.findUnique`/afgeleide berekeningen naast puur
 presentatiewerk). Dit is de belangrijkste concrete afwijking van
-`AGENTS.md`'s Fase-1-principe "pagina's geen ingewikkelde business logic" —
+`PROJECT_BLUEPRINT.md`'s Fase-1-principe "pagina's geen ingewikkelde business logic" —
 zie sectie 10 voor de precieze vindplaats en omvang.
 
 **Waar zijn externe integraties afgeschermd?**
@@ -693,7 +693,7 @@ Er is geen aparte "hele week in één keer optimaliseren"-stap.
   naar boven af, met expliciete bescherming tegen floating-point-ruis
   (`0.3/0.1`-voorbeeld in de code-comment).
 - **Verpakkingen**: `calculatePackageRequirement` (zie sectie 8 voor het
-  AGENTS.md-voorbeeld dat exact hierin terugkomt).
+  PROJECT_BLUEPRINT.md-voorbeeld dat exact hierin terugkomt).
 - **Handmatig gekozen aantallen**: `isUserChosenPackageCount`
   (`src/lib/shoppingList.ts`) — FIXED/MANUAL-regels met `unit: PIECE`
   slaan de verpakkingsengine bewust over (dit was de bron van de WP82-bug,
@@ -938,7 +938,7 @@ flowchart LR
   G --> I["'Ik heb besteld'\n(optionele zelfbevestiging)"]
 ```
 Belangrijk: dit vult het mandje, maar **bestelt nooit automatisch** —
-consistent met `PRODUCT_VISION.md` regel 10 en `AGENTS.md` Fase 8.
+consistent met `PRODUCT_VISION.md` regel 10 en `PROJECT_BLUEPRINT.md` Fase 8.
 
 ### 11. Gezinslid/voorkeur aanpassen
 
@@ -1031,7 +1031,7 @@ valideren") voor wat de product owner hiervoor zelf zou moeten doen.
 
 ### Welke domeinen zijn goed getest?
 
-Quantity-/verpakkingsengine (5 testbestanden, dekt exact de AGENTS.md-
+Quantity-/verpakkingsengine (5 testbestanden, dekt exact de PROJECT_BLUEPRINT.md-
 scenario's), productmatching, weekplan-scoring (352 regels aan tests, het
 grootste testbestand naast de test-infrastructuur), Picnic-
 foutafhandeling (`client.test.ts`), household-isolatie voor de MANUAL/
@@ -1565,7 +1565,7 @@ onafhankelijke menselijke reviewer buiten de product owner zelf.
 - Community-receptenpromotie volledig bouwen vóórdat er meerdere actieve
   huishoudens zijn om iets te promoveren — het schema is klaar, de
   functionaliteit zou nu geen gebruikers hebben.
-- Grote her-architectuur richting de volledige `AGENTS.md`-Fase-1-
+- Grote her-architectuur richting de volledige `PROJECT_BLUEPRINT.md`-Fase-1-
   doelstructuur (`application/`, `infrastructure/`) — de huidige,
   gedocumenteerd-bewuste afwijking werkt en is consistent; een big-bang-
   herstructurering zou tegen `AGENTS.md`'s eigen "houd de app werkend"-
