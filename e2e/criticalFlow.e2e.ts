@@ -9,7 +9,7 @@ import { completeOnboardingViaUi, deleteTestHousehold, cleanupMockProducts } fro
 
 /**
  * End-to-end test voor de kritieke gebruikersflow uit Fase 15 van
- * AGENTS.md: onboarding, weekmenu bekijken, gerecht vervangen, boodschappen
+ * PROJECT_BLUEPRINT.md: onboarding, weekmenu bekijken, gerecht vervangen, boodschappen
  * opbouwen, vaste boodschappen/extra producten toevoegen (in deze app één
  * flow — zie stap 5), voorraad aanpassen, een twijfelproduct corrigeren,
  * het mandje vullen en een fout herstellen (mandje legen).

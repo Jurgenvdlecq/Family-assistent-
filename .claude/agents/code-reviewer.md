@@ -21,7 +21,7 @@ Playwright-scenario aan het licht kwam).
    bevestiging.
 2. `WORKFLOW.md` — met name de secties "Wanneer geen aannames doen" en
    "Definition of Done".
-3. `AGENTS.md`, Fase 14 (Security) — voor de concrete beveiligingseisen.
+3. `PROJECT_BLUEPRINT.md`, Fase 14 (Security) — voor de concrete beveiligingseisen.
 4. De diff van de wijziging zelf (`git diff main...HEAD` of de PR-diff die
    je meekrijgt).
 
