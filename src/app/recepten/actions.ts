@@ -9,6 +9,7 @@ import { parsePackageQuantity } from "@/lib/quantity/parsePackageSize";
 import { accessibleRecipeWhere, editableRecipeWhere } from "@/lib/recipeScope";
 import { recordProductChosen, recordProductRejected } from "@/domain/product-matching/repository";
 import { parseRecipeIngredientText } from "@/lib/recipeIngredientText";
+import { assertPubliclyReachableUrl, extractRecipeFromHtml, fetchRecipePageHtml } from "@/lib/recipeImport";
 import { PicnicClient } from "@/lib/picnic/client";
 import { picnicPriceToEuros, picnicProductRef } from "@/lib/picnic/products";
 
@@ -65,6 +66,20 @@ async function assertRecipeTitleAvailableForHousehold(householdId: string, title
     select: { id: true },
   });
   if (existing) throw new Error("Er bestaat al een eigen recept met deze titel.");
+}
+
+async function pickAvailableRecipeTitle(householdId: string, title: string, suffixHint: string) {
+  const existing = await prisma.recipe.findFirst({ where: { householdId, title }, select: { id: true } });
+  if (!existing) return title;
+
+  const alternative = `${title} (${suffixHint})`;
+  const existingAlternative = await prisma.recipe.findFirst({
+    where: { householdId, title: alternative },
+    select: { id: true },
+  });
+  if (!existingAlternative) return alternative;
+
+  throw new Error(`Er bestaat al een eigen recept met de titel "${title}".`);
 }
 
 async function invalidateCurrentShoppingList(householdId: string) {
@@ -262,6 +277,70 @@ export async function createQuickRecipe(formData: FormData) {
   await savePicnicCandidatesForIngredients(householdId, ingredientRows);
   await invalidateCurrentShoppingList(householdId);
   redirectToRecipes("recipe-created");
+}
+
+/**
+ * Importeert één recept via een door de gebruiker aangewezen link. Leest
+ * alleen de machineleesbare schema.org/Recipe-data die de meeste
+ * receptensites al standaard meeleveren (zie `recipeImport.ts`) — geen
+ * losse HTML-scraping, en geen hele site leegtrekken. Ingrediënten gaan
+ * door dezelfde tekstparser als "snel toevoegen"; de gebruiker wordt na
+ * import expliciet naar controle gestuurd, want machinaal geparste
+ * hoeveelheden uit vrije (vaak Engelstalige) tekst zijn per definitie een
+ * twijfelgeval.
+ */
+export async function importRecipeFromUrl(formData: FormData) {
+  const householdId = await requireRecipeEditor(formData);
+  const rawUrl = String(formData.get("url") ?? "").trim();
+  if (!rawUrl) throw new Error("Vul een link naar een recept in.");
+
+  const url = await assertPubliclyReachableUrl(rawUrl);
+  const html = await fetchRecipePageHtml(url);
+  const extracted = extractRecipeFromHtml(html);
+
+  if (!extracted) {
+    throw new Error(
+      'Kon dit recept niet automatisch herkennen op deze pagina. Plak de ingrediënten hieronder handmatig bij "Nieuw recept snel toevoegen".'
+    );
+  }
+
+  const parsedLines = parseRecipeIngredientText(extracted.ingredientLines.join("\n"));
+  if (parsedLines.length === 0) {
+    throw new Error("Kon geen ingrediënten herkennen op deze pagina. Plak de tekst hieronder handmatig.");
+  }
+
+  const title = await pickAvailableRecipeTitle(householdId, extracted.title, url.hostname);
+  const ingredientRows = await upsertParsedRecipeIngredients(parsedLines);
+
+  await prisma.recipe.create({
+    data: {
+      title,
+      category: "OTHER",
+      status: "FOUND",
+      scope: "HOUSEHOLD",
+      householdId,
+      originHouseholdId: householdId,
+      source: url.toString(),
+      instructions: extracted.instructions,
+      ingredients: {
+        create: ingredientRows.map((row) => ({
+          ingredientId: row.ingredientId,
+          quantity: row.quantity,
+          unit: row.unit,
+        })),
+      },
+      variants: {
+        create: {
+          variantType: "FRESH",
+          contextFit: [],
+        },
+      },
+    },
+  });
+
+  await savePicnicCandidatesForIngredients(householdId, ingredientRows);
+  await invalidateCurrentShoppingList(householdId);
+  redirectToRecipes("recipe-imported");
 }
 
 export async function createRecipe(formData: FormData) {
