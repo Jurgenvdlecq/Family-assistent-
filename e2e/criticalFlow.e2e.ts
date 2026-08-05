@@ -93,13 +93,29 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       await page.getByPlaceholder("Gebruikersnaam (minimaal 3 tekens)").fill("mismatchtest");
       await page.getByPlaceholder("Wachtwoord (minimaal 6 tekens)").fill(PASSWORD);
       await page.getByPlaceholder("Bevestig wachtwoord").fill(`${PASSWORD}-anders`);
-      await page.getByRole("button", { name: "Maak mijn eerste week" }).click();
 
-      await page.locator("text=Wachtwoorden komen niet overeen").waitFor({ state: "visible", timeout: 5_000 });
+      // Zolang de velden niet overeenkomen staat de knop uit — de gebruiker
+      // ziet de fout dus al vóórdat die per ongeluk kan versturen, i.p.v.
+      // pas na een klik een foutmelding te krijgen.
+      const submitButton = page.getByRole("button", { name: "Maak mijn eerste week" });
+      assert.equal(
+        await submitButton.isDisabled(),
+        true,
+        "De submitknop moet uitstaan zolang de wachtwoorden niet overeenkomen"
+      );
       assert.ok(page.url().includes("/onboarding"), "Bij niet-overeenkomende wachtwoorden mag er geen redirect zijn");
 
+      // Wachtwoord corrigeren maakt de knop weer bruikbaar (en het bewijst
+      // meteen dat de disabled-check niet per ongeluk permanent blokkeert).
+      await page.getByPlaceholder("Bevestig wachtwoord").fill(PASSWORD);
+      assert.equal(
+        await submitButton.isDisabled(),
+        false,
+        "De submitknop moet weer aanstaan zodra de wachtwoorden wél overeenkomen"
+      );
+
       const household = await prisma.household.findFirst({ where: { name: `${HOUSEHOLD_NAME} (mismatch)` } });
-      assert.equal(household, null, "Er mag geen huishouden zijn aangemaakt bij niet-overeenkomende wachtwoorden");
+      assert.equal(household, null, "Er mag geen huishouden zijn aangemaakt vóórdat er daadwerkelijk verzonden is");
     });
 
     await t.test("2. Weekmenu bekijken", async () => {

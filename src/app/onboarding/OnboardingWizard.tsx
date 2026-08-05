@@ -419,7 +419,7 @@ export default function OnboardingWizard() {
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={isPending}
+              disabled={isPending || (confirmPassword.length > 0 && password !== confirmPassword)}
               className="w-full rounded-lg bg-accent px-4 py-3 font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {isPending ? "Bezig..." : "Maak mijn eerste week"}
