@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { recordProductChosen } from "@/domain/product-matching/repository";
 import { resolvePicnicProductChoice } from "@/lib/picnicProductChoice";
+import { removeBulkFixedGroceryLine } from "@/lib/fixedGroceryProductChoice";
 import { assertShoppingListAccess } from "@/lib/shoppingListAccess";
 import { Unit } from "@/generated/prisma/enums";
 
@@ -86,5 +87,22 @@ export async function addManualProduct(formData: FormData) {
 
   revalidatePath("/boodschappen");
   revalidatePath("/controle");
+
+  // Kom je hier via "Zelf zoeken" bij een regel uit "Snel meerdere producten
+  // toevoegen" (geen van de 3 voorstellen was goed)? Dan is deze regel nu
+  // opgelost — streep 'm uit de resterende batchtekst en ga terug naar
+  // #quick-order, zodat de rest van je lijstje in beeld blijft in plaats van
+  // te verdwijnen achter deze op-zichzelf-staande zoekbox.
+  const raw = String(formData.get("raw") ?? "").trim();
+  if (raw) {
+    const quickOrderText = String(formData.get("quickOrderText") ?? "");
+    const remainingQuickOrderText = removeBulkFixedGroceryLine(quickOrderText, raw);
+    if (remainingQuickOrderText) {
+      const params = new URLSearchParams({ quickOrder: remainingQuickOrderText, status: "quick-order-added" });
+      redirect(`/boodschappen?${params.toString()}#quick-order`);
+    }
+    redirect("/boodschappen?status=quick-order-added#quick-order");
+  }
+
   redirect("/boodschappen?status=manual-added#quick-add-product");
 }

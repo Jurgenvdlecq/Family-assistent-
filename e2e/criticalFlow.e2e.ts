@@ -187,6 +187,44 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       assert.ok(pickedLine, "De handmatig gekozen regel moet als MANUAL-regel zijn opgeslagen");
     });
 
+    await t.test("5c. Zelf zoeken als geen van de voorstellen goed is", async () => {
+      // Gebruikersmelding: "kan je ook nog een 4e erbij zetten die ik zelf
+      // kan zoeken?" — i.p.v. een 4e optie hergebruikt dit de bestaande
+      // "Product toevoegen"-zoekbox (#quick-add-product), met de zoekterm
+      // alvast ingevuld. Na toevoegen moet je automatisch terug naar
+      // #quick-order komen, met deze regel uit het lijstje gestreept.
+      await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
+      const quickOrderInput = page.locator("#quick-order textarea[name=quickOrder]");
+      await quickOrderInput.fill("spruitjes");
+      await page.locator("#quick-order").getByRole("button", { name: "Zoeken" }).click();
+      await page.waitForURL((url) => url.searchParams.get("quickOrder") === "spruitjes", { timeout: 15_000 });
+
+      const zelfZoekenLink = page.locator("#quick-order").getByRole("link", { name: "Niet het goede product? Zelf zoeken" });
+      await zelfZoekenLink.waitFor({ state: "visible", timeout: 10_000 });
+      await zelfZoekenLink.click();
+      await page.waitForURL((url) => url.searchParams.get("manualQ") === "spruitjes", { timeout: 15_000 });
+
+      const hint = page.locator("#quick-add-product", { hasText: "Je zoekt zelf een product voor" });
+      await hint.first().waitFor({ state: "visible", timeout: 10_000 });
+
+      const toevoegenButton = page.locator("#quick-add-product").getByRole("button", { name: "Toevoegen" });
+      await toevoegenButton.waitFor({ state: "visible", timeout: 10_000 });
+      await toevoegenButton.click();
+      await page.waitForURL(
+        (url) => url.searchParams.get("status") === "quick-order-added" && !url.searchParams.has("quickOrder"),
+        { timeout: 15_000 }
+      );
+
+      const selfSearchedLine = await prisma.shoppingListLine.findFirst({
+        where: {
+          shoppingList: { mealPlan: { householdId } },
+          source: "MANUAL",
+          ingredient: { name: "Spruitjes" },
+        },
+      });
+      assert.ok(selfSearchedLine, "De via 'Zelf zoeken' gekozen regel moet als MANUAL-regel zijn opgeslagen");
+    });
+
     await t.test("6. Voorraad aanpassen", async () => {
       await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
 

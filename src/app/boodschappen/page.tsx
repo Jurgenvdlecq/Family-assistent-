@@ -589,6 +589,7 @@ export default async function BoodschappenPage({
     shortfallLine?: string;
     inventory?: string;
     manualQ?: string;
+    quickOrderRaw?: string;
     status?: string;
   }>;
 }) {
@@ -596,6 +597,7 @@ export default async function BoodschappenPage({
   const household = await requireCurrentHousehold();
   const fixedSearchQuery = String(params.fixedQ ?? "").trim();
   const manualSearchQuery = String(params.manualQ ?? "").trim();
+  const quickOrderRawFocus = String(params.quickOrderRaw ?? "").trim();
   const bulkFixedText = String(params.bulkFixed ?? "").trim();
   const quickOrderText = String(params.quickOrder ?? "").trim();
   const focusedFixedLineId = String(params.fixedLine ?? "").trim();
@@ -763,7 +765,19 @@ export default async function BoodschappenPage({
         <div id="quick-add-product" className="mb-6 scroll-mt-6 rounded-xl border border-line bg-surface p-4">
           <h2 className="mb-1 text-sm font-semibold text-ink">Product toevoegen</h2>
           <p className="mb-3 text-xs text-ink-muted">Voor deze week alleen — dit wordt geen vaste gewoonte.</p>
+          {quickOrderRawFocus && (
+            <p className="mb-3 rounded-md bg-accent-soft px-2.5 py-2 text-xs text-ink-muted">
+              Je zoekt zelf een product voor &ldquo;{quickOrderRawFocus}&rdquo; uit je snelle lijstje — na het
+              toevoegen kom je daar automatisch weer terug.
+            </p>
+          )}
           <form action="/boodschappen#quick-add-product" className="flex min-w-0 gap-2">
+            {quickOrderRawFocus && (
+              <>
+                <input type="hidden" name="quickOrder" value={quickOrderText} />
+                <input type="hidden" name="quickOrderRaw" value={quickOrderRawFocus} />
+              </>
+            )}
             <input
               name="manualQ"
               defaultValue={manualSearchQuery}
@@ -796,6 +810,12 @@ export default async function BoodschappenPage({
                 <form key={item.externalRef} action={addManualProduct} className="rounded-lg border border-line p-3">
                   <input type="hidden" name="shoppingListId" value={shoppingList.id} />
                   <input type="hidden" name="searchTerm" value={manualSearchQuery} />
+                  {quickOrderRawFocus && (
+                    <>
+                      <input type="hidden" name="raw" value={quickOrderRawFocus} />
+                      <input type="hidden" name="quickOrderText" value={quickOrderText} />
+                    </>
+                  )}
                   <input type="hidden" name="externalRef" value={item.externalRef} />
                   <input type="hidden" name="productName" value={item.name ?? ""} />
                   <input type="hidden" name="packageSize" value={item.unit_quantity ?? ""} />
@@ -929,7 +949,9 @@ export default async function BoodschappenPage({
                 <div key={`${line.raw}-${lineIndex}`} className="rounded-lg border border-line bg-surface-2 p-3">
                   <p className="mb-2 text-sm font-semibold text-ink">{line.raw}</p>
                   {line.results.length === 0 ? (
-                    <p className="text-sm text-ink-muted">Geen Picnic-product gevonden. Probeer een andere zoekterm.</p>
+                    <p className="mb-2 text-sm text-ink-muted">
+                      Geen Picnic-product gevonden. Probeer een andere zoekterm.
+                    </p>
                   ) : (
                     <div className="grid gap-2">
                       {line.results.map((item, itemIndex) => (
@@ -974,6 +996,16 @@ export default async function BoodschappenPage({
                       ))}
                     </div>
                   )}
+                  <Link
+                    href={`/boodschappen?${new URLSearchParams({
+                      manualQ: line.searchTerm,
+                      quickOrder: quickOrderText,
+                      quickOrderRaw: line.raw,
+                    }).toString()}#quick-add-product`}
+                    className="mt-2 inline-block text-xs font-medium text-ink-faint underline decoration-dotted hover:text-accent"
+                  >
+                    Niet het goede product? Zelf zoeken
+                  </Link>
                 </div>
               ))}
               {quickOrderPickLines.some((line) => line.results.length > 0) && (
