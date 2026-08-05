@@ -20,6 +20,14 @@ moet kennen, niet de volledige geschiedenis of diepgaande troubleshooting
 - Herhaal een volledige testsuite niet vaker dan nodig. Bij een duidelijk
   ongerelateerde flake volstaat één gerichte herhaling, tenzij de gebruiker
   zelf om extra zekerheid vraagt.
+- Blokkeer niet stil op een lopende achtergrondtaak (bv. de `code-reviewer`-
+  subagent): ga door met voorbereidend werk voor de volgende stap in plaats
+  van te wachten tot de taak terug is.
+- Vraag de `code-reviewer` niet standaard om alles wat je zelf al hebt
+  gedraaid (`npm run verify`, `test:e2e`) nog een keer over te doen — geef
+  gerichte vragen over de risicovolle logica. Laat de suite zelf alleen
+  herhalen bij een concrete twijfel (bv. een wisselende testuitslag), niet
+  standaard.
 
 ## Manier van werken
 
@@ -67,11 +75,18 @@ een nieuwe sessie 'm niet zelf hoeft te reconstrueren.
    unit-/integratietests en de build in één keer. Los draaien
    (`npm run lint`, `npx tsc --noEmit`, `npm test`, `npm run build`) mag
    ook, maar `verify` is de kortste weg om niets te vergeten.
-   - Raakt de wijziging authenticatie/sessiebeheer, household-isolatie,
-     de Picnic-integratie, of het databaseschema? Schakel dan vóór het
-     mergen de `code-reviewer`-subagent in (`.claude/agents/code-reviewer.md`)
-     voor een onafhankelijke, kritische blik — niet pas als de gebruiker
-     erom vraagt.
+   - Schakel vóór het mergen de `code-reviewer`-subagent in
+     (`.claude/agents/code-reviewer.md`) — niet pas als de gebruiker erom
+     vraagt — wanneer de wijziging **rechtstreeks** raakt aan: `src/lib/auth.ts`
+     (authenticatie/sessiebeheer), `src/lib/picnic/*` (de Picnic-client/
+     cartService zelf — niet elke pagina die toevallig boodschappenlijst-
+     data toont die ooit bij Picnic terechtkomt), het Prisma-schema, of een
+     nieuwe/gewijzigde server action die een door de client aangeleverde id
+     gebruikt voor een databaselookup/-schrijfactie (het IDOR-patroon — dít
+     is de kern van "household-isolatie", niet elke wijziging die toevallig
+     huishouden-gebonden data raakt). Een UI-wijziging op /boodschappen,
+     /controle of /gerechten die geen van deze dingen zelf wijzigt, heeft
+     dus geen aparte review nodig.
 3. **`npm run test:e2e` draait** wanneer de wijziging een gebruikersstroom
    raakt die de kritieke flow doorkruist (inloggen/onboarding, weekmenu,
    boodschappen, Picnic-mandje) — niet nodig voor een geïsoleerde
