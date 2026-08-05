@@ -284,10 +284,16 @@ export default async function Home({
         <h1 className="mb-1 text-[1.65rem] font-semibold leading-tight text-ink">
           Goedemorgen, {greetingName}
         </h1>
-        <p className="mb-5 text-[15px] text-ink-muted">
+        <p className="mb-2 text-[15px] text-ink-muted">
           Dit is jullie week. Corrigeer alleen wat niet klopt, dan regel ik de
           rest.
         </p>
+        <Link
+          href="/boodschappen#loose-list"
+          className="mb-5 inline-block text-xs font-medium text-ink-faint underline decoration-dotted hover:text-accent"
+        >
+          Alleen boodschappen nodig? Start een losse lijst
+        </Link>
 
         <section className="mb-4 rounded-xl border border-accent/30 bg-surface p-4">
           <div className="flex min-w-0 gap-3">
