@@ -83,6 +83,11 @@ export class PicnicClient {
     const headers: Record<string, string> = {
       "User-Agent": "okhttp/4.9.0",
       "Content-Type": "application/json; charset=UTF-8",
+      // Bugfix: Picnic wees mandje-aanroepen (add/remove/clear/preview) af
+      // met "Client version is required..." — deze twee headers werden
+      // voorheen alleen bij inloggen/2FA/zoeken meegestuurd, terwijl Picnic
+      // ze inmiddels kennelijk op alle endpoints verwacht. Nu altijd mee.
+      ...PICNIC_HEADERS,
       ...extraHeaders,
     };
     if (this.authToken) headers[AUTH_HEADER] = this.authToken;
@@ -152,12 +157,7 @@ export class PicnicClient {
   /** MD5(wachtwoord) + inloggen — exact zoals de officiële Picnic-app. */
   async login(username: string, password: string) {
     const secret = createHash("md5").update(password, "utf8").digest("hex");
-    const data = await this.requestJson(
-      "POST",
-      "/user/login",
-      { key: username, secret, client_id: 30100 },
-      PICNIC_HEADERS
-    );
+    const data = await this.requestJson("POST", "/user/login", { key: username, secret, client_id: 30100 });
     if (data.second_factor_authentication_required === true) {
       throw new Picnic2FARequiredError(
         data.error?.message ?? "Tweestapsverificatie vereist"
@@ -167,12 +167,12 @@ export class PicnicClient {
   }
 
   async generate2FACode(channel: "SMS" | "EMAIL" = "SMS") {
-    const res = await this.request("POST", "/user/2fa/generate", { channel }, PICNIC_HEADERS);
+    const res = await this.request("POST", "/user/2fa/generate", { channel });
     await this.throwOn2FAError(res);
   }
 
   async verify2FACode(code: string) {
-    const res = await this.request("POST", "/user/2fa/verify", { otp: code }, PICNIC_HEADERS);
+    const res = await this.request("POST", "/user/2fa/verify", { otp: code });
     await this.throwOn2FAError(res);
   }
 
@@ -189,12 +189,7 @@ export class PicnicClient {
   }
 
   async search(term: string): Promise<PicnicSearchResultItem[]> {
-    const data = await this.requestJson(
-      "GET",
-      `/pages/search-page-results?search_term=${encodeURIComponent(term)}`,
-      undefined,
-      PICNIC_HEADERS
-    );
+    const data = await this.requestJson("GET", `/pages/search-page-results?search_term=${encodeURIComponent(term)}`);
     return extractSearchResults(data);
   }
 

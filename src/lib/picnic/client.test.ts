@@ -123,6 +123,35 @@ test("PicnicClient.getDeliverySlots: AUTH_ERROR wordt een PicnicAuthError", asyn
   }
 });
 
+/**
+ * Bugfix (gebruikersmelding: Picnic gaf "Client version is required to
+ * preview the cart page" terug bij mandje-acties): x-picnic-agent/
+ * x-picnic-did werden voorheen alleen bij inloggen/2FA/zoeken meegestuurd,
+ * niet bij mandje-aanroepen (add/remove/clear/preview). Nu op elk verzoek.
+ */
+test("PicnicClient: stuurt x-picnic-agent/x-picnic-did mee op elk verzoek, ook mandje-aanroepen", async () => {
+  const original = global.fetch;
+  const capturedHeaders: Record<string, string>[] = [];
+  global.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    capturedHeaders.push(Object.fromEntries(new Headers(init?.headers).entries()));
+    return jsonResponse({});
+  }) as typeof fetch;
+  try {
+    const client = new PicnicClient("token");
+    await client.addProduct("abc");
+    await client.clearCart();
+    await client.search("rijst");
+
+    assert.equal(capturedHeaders.length, 3);
+    for (const headers of capturedHeaders) {
+      assert.ok(headers["x-picnic-agent"], "elk verzoek moet x-picnic-agent bevatten");
+      assert.ok(headers["x-picnic-did"], "elk verzoek moet x-picnic-did bevatten");
+    }
+  } finally {
+    global.fetch = original;
+  }
+});
+
 test("PicnicClient.getDeliverySlots: netwerkfout wordt een PicnicNetworkError", async () => {
   const original = global.fetch;
   global.fetch = (async () => {
