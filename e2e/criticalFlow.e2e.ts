@@ -137,6 +137,52 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       assert.ok(fixedGrocery, "De gekozen vaste boodschap moet zijn opgeslagen");
     });
 
+    await t.test("5b. Snel meerdere producten toevoegen (WP92)", async () => {
+      await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
+
+      // "aardappelen" heeft na stap 5 al een vertrouwde Picnic-keuze
+      // (MATCHED_TRUSTED) — die regel hoort automatisch herkend te worden,
+      // zonder opnieuw door zoekresultaten te bladeren. "bloemkool" is nieuw
+      // voor dit huishouden en moet dus wél een keuze uit de resultaten
+      // vragen — dat bewijst dat beide paden (automatisch/handmatig) binnen
+      // dezelfde batch naast elkaar werken.
+      const quickOrderInput = page.locator("#quick-order textarea[name=quickOrder]");
+      await quickOrderInput.fill(`${MOCK_SEARCH_TERM}, bloemkool`);
+      await page.locator("#quick-order").getByRole("button", { name: "Zoeken" }).click();
+      await page.waitForURL((url) => url.searchParams.has("quickOrder"), { timeout: 15_000 });
+
+      await page.locator("text=1 herkend als jullie eerdere keuze:").waitFor({ state: "visible", timeout: 10_000 });
+      const autoAddButton = page.getByRole("button", { name: "Automatisch toevoegen" });
+      await autoAddButton.waitFor({ state: "visible" });
+      await autoAddButton.click();
+      await page.waitForURL((url) => url.searchParams.get("status") === "quick-order-bulk-added", { timeout: 15_000 });
+
+      const autoAddedLine = await prisma.shoppingListLine.findFirst({
+        where: {
+          shoppingList: { mealPlan: { householdId } },
+          source: "MANUAL",
+          ingredient: { name: "Aardappelen" },
+        },
+      });
+      assert.ok(autoAddedLine, "De automatisch herkende regel moet als MANUAL-regel zijn opgeslagen");
+
+      // Na de bulk-toevoeging moet de nog-niet-gekozen regel ("bloemkool")
+      // gewoon in beeld blijven, met haar eigen zoekresultaat.
+      const pickButton = page.locator("#quick-order").getByRole("button", { name: "Toevoegen" }).first();
+      await pickButton.waitFor({ state: "visible", timeout: 10_000 });
+      await pickButton.click();
+      await page.waitForURL((url) => url.searchParams.get("status") === "quick-order-added", { timeout: 15_000 });
+
+      const pickedLine = await prisma.shoppingListLine.findFirst({
+        where: {
+          shoppingList: { mealPlan: { householdId } },
+          source: "MANUAL",
+          ingredient: { name: "Bloemkool" },
+        },
+      });
+      assert.ok(pickedLine, "De handmatig gekozen regel moet als MANUAL-regel zijn opgeslagen");
+    });
+
     await t.test("6. Voorraad aanpassen", async () => {
       await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
 

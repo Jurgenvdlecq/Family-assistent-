@@ -20,7 +20,8 @@ import { enrichShoppingListProductImages } from "@/lib/picnic/productEnrichment"
 import { picnicImageUrl, picnicPriceToEuros, picnicProductRef } from "@/lib/picnic/products";
 import { PicnicClient } from "@/lib/picnic/client";
 import type { PicnicSearchResultItem } from "@/lib/picnic/searchResults";
-import { inferFixedProductOrderQuantity, parseBulkFixedGroceryInput } from "@/lib/fixedGroceryProductChoice";
+import { inferFixedProductOrderQuantity, parseBulkFixedGroceryInput, titleCaseSearchTerm } from "@/lib/fixedGroceryProductChoice";
+import { getTrustedPreferences } from "@/domain/product-matching/repository";
 import NavBar from "@/components/NavBar";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import PicnicTransfer from "./PicnicTransfer";
@@ -44,6 +45,7 @@ import {
   removeFixedGroceryPermanently,
 } from "./fixedGroceriesActions";
 import { addManualProduct } from "./manualProductActions";
+import { addQuickOrderProduct, addQuickOrderTrustedProducts } from "./quickOrderActions";
 import { updateInventoryStatus } from "./inventoryActions";
 
 const UNIT_LABELS: Record<string, string> = { GRAM: "gram", ML: "ml", PIECE: "stuks" };
@@ -66,6 +68,8 @@ const STATUS_MESSAGES: Record<string, string> = {
   "fixed-removed": "Vaste boodschap verwijderd.",
   "inventory-updated": "Voorraadstatus opgeslagen.",
   "manual-added": "Toegevoegd aan de lijst van deze week.",
+  "quick-order-added": "Toegevoegd aan de lijst van deze week.",
+  "quick-order-bulk-added": "Herkende producten toegevoegd aan de lijst van deze week.",
 };
 
 const INVENTORY_STATUS_OPTIONS = [
@@ -383,6 +387,141 @@ async function searchBulkFixedProductResults(householdId: string, token: string,
   return previews;
 }
 
+type QuickOrderTrustedChoice = {
+  searchTerm: string;
+  productName: string;
+  externalRef: string;
+  packageSize: string | null;
+  picnicImageId: string | null;
+  price: number | null;
+};
+
+type QuickOrderPreviewLine = {
+  raw: string;
+  searchTerm: string;
+  quantity: number;
+  unit: "GRAM" | "ML" | "PIECE";
+  /** Al eerder bewust gekozen Picnic-product voor dit ingrediënt (MATCHED_TRUSTED) — kan direct toegevoegd worden zonder te bladeren. */
+  trustedChoice: QuickOrderTrustedChoice | null;
+  results: BulkFixedProductResult[];
+};
+
+/**
+ * WP92: "snel meerdere producten toevoegen" — voor elke regel eerst kijken
+ * of DIT huishouden al zelf bewust een Picnic-product voor dit ingrediënt
+ * heeft gekozen (een echte `HouseholdProductPreference`-rij) vóórdat er live
+ * bij Picnic gezocht wordt. Dat is zowel sneller (geen netwerkcall nodig)
+ * als precies "volgens onze wensen en voorkeuren" zoals gevraagd.
+ *
+ * Bewust `getTrustedPreferences` rechtstreeks, niet `matchProductForIngredient`
+ * — die laatste geeft óók MATCHED_TRUSTED terug wanneer er wereldwijd maar
+ * één Product-kandidaat voor een ingrediënt bestaat (Product is een gedeelde
+ * catalogus, niet per huishouden), ook als dít huishouden dat product nooit
+ * zelf gekozen heeft. Voor de weekmenu-lijst is dat acceptabel (blijft een
+ * concept-regel die nog gecontroleerd wordt), maar hier belooft de knop
+ * expliciet "jullie eerdere keuze" en voegt 'm toe zonder enige preview —
+ * dat mag nooit op een toevallige wereldwijde coïncidentie berusten
+ * (AGENTS.md: "nooit stilzwijgend of ongecontroleerd").
+ *
+ * Onbekende/twijfelachtige ingrediënten krijgen gewoon de bestaande
+ * zoekresultaten-picker, net als bij vaste boodschappen.
+ */
+async function searchQuickOrderPreview(
+  householdId: string,
+  token: string | null,
+  text: string
+): Promise<QuickOrderPreviewLine[]> {
+  const parsedLines = parseBulkFixedGroceryInput(text).slice(0, 20);
+  if (parsedLines.length === 0) return [];
+
+  let client: PicnicClient | null = null;
+  const lines: QuickOrderPreviewLine[] = [];
+
+  try {
+    for (const parsed of parsedLines) {
+      const inferred = inferFixedProductOrderQuantity(parsed.multiplier);
+      const ingredientName = titleCaseSearchTerm(parsed.searchTerm);
+      const existingIngredient = await prisma.ingredient.findUnique({ where: { name: ingredientName } });
+
+      if (existingIngredient) {
+        const trustedMap = await getTrustedPreferences(householdId, [existingIngredient.id]);
+        const trusted = trustedMap.get(existingIngredient.id);
+        const product = trusted ? await prisma.product.findUnique({ where: { id: trusted.productId } }) : null;
+        if (product && product.externalRef) {
+          lines.push({
+            raw: parsed.raw,
+            searchTerm: parsed.searchTerm,
+            quantity: inferred.quantity,
+            unit: inferred.unit,
+            trustedChoice: {
+              searchTerm: parsed.searchTerm,
+              productName: product.name,
+              externalRef: product.externalRef,
+              packageSize: product.packageSize,
+              picnicImageId: product.picnicImageId,
+              price: product.price !== null ? Number(product.price) : null,
+            },
+            results: [],
+          });
+          continue;
+        }
+      }
+
+      if (!token) {
+        lines.push({
+          raw: parsed.raw,
+          searchTerm: parsed.searchTerm,
+          quantity: inferred.quantity,
+          unit: inferred.unit,
+          trustedChoice: null,
+          results: [],
+        });
+        continue;
+      }
+
+      client ??= new PicnicClient(token);
+      const results = await client.search(parsed.searchTerm);
+      const seenRefs = new Set<string>();
+      const productResults = results
+        .map((item): BulkFixedProductResult | null => {
+          const externalRef = picnicProductRef(item);
+          if (!externalRef || !item.name || seenRefs.has(externalRef)) return null;
+          seenRefs.add(externalRef);
+          return {
+            ...item,
+            externalRef,
+            fixedQuantity: inferred.quantity,
+            fixedUnit: inferred.unit,
+            suggestedQuantity: inferred.quantity,
+          };
+        })
+        .filter((item) => item !== null)
+        .slice(0, 3);
+
+      lines.push({
+        raw: parsed.raw,
+        searchTerm: parsed.searchTerm,
+        quantity: inferred.quantity,
+        unit: inferred.unit,
+        trustedChoice: null,
+        results: productResults,
+      });
+    }
+  } finally {
+    if (client) {
+      const refreshedToken = client.getAuthToken();
+      if (refreshedToken && refreshedToken !== token) {
+        await prisma.household.update({
+          where: { id: householdId },
+          data: { picnicAuthToken: refreshedToken, picnicTokenUpdatedAt: new Date() },
+        });
+      }
+    }
+  }
+
+  return lines;
+}
+
 function FixedProductImage({ item }: { item: { image_id?: string; name?: string } }) {
   const imageUrl = picnicImageUrl(item.image_id, "small");
   return (
@@ -442,6 +581,7 @@ export default async function BoodschappenPage({
     fixedLine?: string;
     fixedReplaceLineId?: string;
     bulkFixed?: string;
+    quickOrder?: string;
     focusLine?: string;
     shortfallLine?: string;
     inventory?: string;
@@ -454,6 +594,7 @@ export default async function BoodschappenPage({
   const fixedSearchQuery = String(params.fixedQ ?? "").trim();
   const manualSearchQuery = String(params.manualQ ?? "").trim();
   const bulkFixedText = String(params.bulkFixed ?? "").trim();
+  const quickOrderText = String(params.quickOrder ?? "").trim();
   const focusedFixedLineId = String(params.fixedLine ?? "").trim();
   const fixedReplaceLineId = String(params.fixedReplaceLineId ?? "").trim();
   const focusedLineId = String(params.focusLine ?? "").trim();
@@ -506,6 +647,7 @@ export default async function BoodschappenPage({
     fixedProductResults,
     manualProductResults,
     bulkFixedPreviewLines,
+    quickOrderPreviewLines,
     portionScaleByDay,
     candidatesByIngredient,
     inventoryMap,
@@ -522,10 +664,15 @@ export default async function BoodschappenPage({
       bulkFixedText && household.picnicAuthToken
         ? searchBulkFixedProductResults(household.id, household.picnicAuthToken, bulkFixedText)
         : Promise.resolve([]),
+      quickOrderText
+        ? searchQuickOrderPreview(household.id, household.picnicAuthToken, quickOrderText)
+        : Promise.resolve([]),
       getHouseholdPortionScaleByDay(household.id),
       getShoppingListCandidatesByIngredient(household.id, mealLines.map((line) => line.ingredientId)),
       getInventoryMap(household.id),
     ]);
+  const quickOrderAutoLines = quickOrderPreviewLines.filter((line) => line.trustedChoice);
+  const quickOrderPickLines = quickOrderPreviewLines.filter((line) => !line.trustedChoice);
   const inventoryAttentionItems = inventoryChecklist.filter((item) => item.needsAttention);
   const inventoryConfirmedItems = inventoryChecklist.filter((item) => !item.needsAttention);
   const focusedInventoryIsConfirmed = inventoryConfirmedItems.some(
@@ -683,6 +830,157 @@ export default async function BoodschappenPage({
                     </div>
                   </div>
                 </form>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div id="quick-order" className="mb-6 scroll-mt-6 rounded-xl border border-line bg-surface p-4">
+          <h2 className="mb-1 text-sm font-semibold text-ink">Snel meerdere producten toevoegen</h2>
+          <p className="mb-3 text-xs text-ink-muted">
+            Typ producten onder elkaar of gescheiden door komma&rsquo;s, bijvoorbeeld &quot;Rijst, Sperziebonen&quot;.
+            Voor deze week alleen.
+          </p>
+          <form action="/boodschappen#quick-order" className="grid gap-2">
+            <textarea
+              name="quickOrder"
+              defaultValue={quickOrderText}
+              rows={3}
+              placeholder={"Rijst, Sperziebonen, Appelmoes"}
+              className="min-h-20 min-w-0 resize-y rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+            />
+            <button
+              type="submit"
+              className="w-fit rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
+            >
+              Zoeken
+            </button>
+          </form>
+
+          {quickOrderText && !household.picnicAuthToken && quickOrderPickLines.length > 0 && (
+            <p className="mt-3 text-sm text-ink-muted">Koppel eerst Picnic om onbekende producten op te zoeken.</p>
+          )}
+
+          {quickOrderAutoLines.length > 0 && (
+            <form
+              action={addQuickOrderTrustedProducts}
+              className="mt-4 rounded-lg border border-accent/30 bg-accent-soft p-3"
+            >
+              <input type="hidden" name="householdId" value={household.id} />
+              <input type="hidden" name="quickOrderText" value={quickOrderText} />
+              {quickOrderAutoLines.map((line, index) => (
+                <input
+                  key={`${line.raw}-${index}`}
+                  type="hidden"
+                  name="choice"
+                  value={JSON.stringify({
+                    householdId: household.id,
+                    shoppingListId: shoppingList.id,
+                    raw: line.raw,
+                    searchTerm: line.trustedChoice!.searchTerm,
+                    productName: line.trustedChoice!.productName,
+                    externalRef: line.trustedChoice!.externalRef,
+                    packageSize: line.trustedChoice!.packageSize,
+                    picnicImageId: line.trustedChoice!.picnicImageId,
+                    quantity: line.quantity,
+                    unit: line.unit,
+                    price: line.trustedChoice!.price,
+                  })}
+                />
+              ))}
+              <p className="mb-2 text-sm font-medium text-ink">
+                {quickOrderAutoLines.length} herkend als jullie eerdere keuze:
+              </p>
+              <ul className="mb-3 grid gap-1 text-xs text-ink-muted">
+                {quickOrderAutoLines.map((line, index) => (
+                  <li key={`${line.raw}-${index}`}>
+                    {line.raw} → {line.trustedChoice!.productName}
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="submit"
+                className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
+              >
+                Automatisch toevoegen
+              </button>
+            </form>
+          )}
+
+          {quickOrderPickLines.length > 0 && (
+            <div className="mt-4 grid gap-4">
+              {quickOrderPickLines.map((line, index) => (
+                <div key={`${line.raw}-${index}`} className="rounded-lg border border-line bg-surface-2 p-3">
+                  <p className="mb-2 text-sm font-semibold text-ink">{line.raw}</p>
+                  {line.results.length === 0 ? (
+                    <p className="text-sm text-ink-muted">Geen Picnic-product gevonden. Probeer een andere zoekterm.</p>
+                  ) : (
+                    <div className="grid gap-2">
+                      {line.results.map((item) => (
+                        <form
+                          key={item.externalRef}
+                          action={addQuickOrderProduct}
+                          className="rounded-lg border border-line bg-surface p-3"
+                        >
+                          <input type="hidden" name="shoppingListId" value={shoppingList.id} />
+                          <input type="hidden" name="searchTerm" value={line.searchTerm} />
+                          <input type="hidden" name="externalRef" value={item.externalRef} />
+                          <input type="hidden" name="productName" value={item.name ?? ""} />
+                          <input type="hidden" name="packageSize" value={item.unit_quantity ?? ""} />
+                          <input type="hidden" name="picnicImageId" value={item.image_id ?? ""} />
+                          <input
+                            type="hidden"
+                            name="price"
+                            value={picnicPriceToEuros(item.display_price ?? item.price) ?? ""}
+                          />
+                          <input type="hidden" name="quickOrderText" value={quickOrderText} />
+                          <input type="hidden" name="quickOrderRaw" value={line.raw} />
+                          <div className="flex min-w-0 gap-3">
+                            <FixedProductImage item={item} />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex min-w-0 items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="line-clamp-2 text-sm font-medium text-ink">{item.name}</p>
+                                  <p className="text-xs text-ink-faint">{item.unit_quantity ?? "Geen verpakkingsinfo"}</p>
+                                </div>
+                                <span className="shrink-0 text-sm font-semibold text-ink">
+                                  {picnicPriceToEuros(item.display_price ?? item.price) != null
+                                    ? `€ ${picnicPriceToEuros(item.display_price ?? item.price)!.toFixed(2)}`
+                                    : "Prijs onbekend"}
+                                </span>
+                              </div>
+                              <div className="mt-3 flex flex-wrap items-center gap-2">
+                                <input
+                                  type="number"
+                                  name="quantity"
+                                  defaultValue={line.quantity}
+                                  min="0.01"
+                                  step="any"
+                                  className="w-24 rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
+                                />
+                                <select
+                                  name="unit"
+                                  defaultValue={line.unit}
+                                  className="rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
+                                >
+                                  <option value="PIECE">stuks</option>
+                                  <option value="GRAM">gram</option>
+                                  <option value="ML">ml</option>
+                                </select>
+                                <button
+                                  type="submit"
+                                  className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
+                                >
+                                  Toevoegen
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </form>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           )}
