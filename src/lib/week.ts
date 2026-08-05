@@ -99,3 +99,34 @@ export function formatWeekRange(weekStart: Date): string {
     : `${weekStart.getDate()} ${SHORT_MONTHS[weekStart.getMonth()]}`;
   return `${startLabel} - ${formatDayShort(end)}`;
 }
+
+// Zelfde vaste Europe/Amsterdam-tijdzone als notificationPolicy.ts (v1 is
+// NL/BE-only) — gebruikt voor de twee functies hieronder, die allebei om
+// "hoe laat/welke dag is het écht" gaan, niet om serverlokale tijd.
+const DISPLAY_TIME_ZONE = "Europe/Amsterdam";
+
+/** "Goedemorgen"/"Goedemiddag"/"Goedenavond" op basis van het huidige uur — was voorheen altijd "Goedemorgen", ook 's avonds. */
+export function timeOfDayGreeting(now: Date = new Date()): string {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-GB", { timeZone: DISPLAY_TIME_ZONE, hour: "2-digit", hour12: false }).format(now)
+  );
+  if (hour < 12) return "Goedemorgen";
+  if (hour < 18) return "Goedemiddag";
+  return "Goedenavond";
+}
+
+function calendarDayKey(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: DISPLAY_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const lookup = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return `${lookup.year}-${lookup.month}-${lookup.day}`;
+}
+
+/** Is deze dag al begonnen (vandaag of eerder)? Voorkomt dat de app om feedback vraagt over een maaltijd die nog gegeten moet worden. */
+export function isDayStartedOrPast(date: Date, now: Date = new Date()): boolean {
+  return calendarDayKey(date) <= calendarDayKey(now);
+}

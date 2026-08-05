@@ -23,6 +23,8 @@ import {
   DAY_ENUM,
   dateForDay,
   formatDayShort,
+  timeOfDayGreeting,
+  isDayStartedOrPast,
 } from "@/lib/week";
 import {
   CATEGORY_LABELS,
@@ -242,6 +244,7 @@ export default async function Home({
 
   const entryByDay = new Map(mealPlan.entries.map((e) => [e.dayOfWeek, e]));
   const greetingName = household.persons[0]?.name ?? household.name;
+  const greeting = timeOfDayGreeting();
   const todayIndex = new Date().getDay();
   const defaultWishDayKey = DAY_KEYS[(todayIndex + 6) % 7] ?? "monday";
   const nextStep = nextStepCopy({
@@ -282,7 +285,7 @@ export default async function Home({
           </p>
         )}
         <h1 className="mb-1 text-[1.65rem] font-semibold leading-tight text-ink">
-          Goedemorgen, {greetingName}
+          {greeting}, {greetingName}
         </h1>
         <p className="mb-2 text-[15px] text-ink-muted">
           Dit is jullie week. Corrigeer alleen wat niet klopt, dan regel ik de
@@ -414,7 +417,11 @@ export default async function Home({
             entry &&
             recipe &&
             (recipe.status === "FOUND" || recipe.status === "ADAPTED") &&
-            !alreadyAsked.has(entry.recipeVariantId);
+            !alreadyAsked.has(entry.recipeVariantId) &&
+            // Pas vragen "hoe was dit?" zodra de dag echt begonnen is — anders
+            // vroeg de app dit al bij een verse week over maaltijden die nog
+            // moesten komen (bugfix UX-review, punt 5).
+            isDayStartedOrPast(dateForDay(weekStart, dayKey));
           const skipped = entry?.skipped ?? false;
           return (
             <div
