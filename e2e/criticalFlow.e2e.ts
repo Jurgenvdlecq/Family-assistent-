@@ -76,6 +76,48 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       });
     });
 
+    await t.test("1b. Onboarding weigert niet-overeenkomende wachtwoorden", async () => {
+      // UX-bugfix: vóór deze fix was er maar één wachtwoordveld — een
+      // typefout leidde tot een account waar niemand meer in kon, zonder
+      // hersteloptie. Bewijst dat de nieuwe "Bevestig wachtwoord"-check
+      // daadwerkelijk blokkeert (geen huishouden aangemaakt, geen redirect
+      // naar "/") vóórdat er ooit een server-aanroep gebeurt.
+      await page.goto(`${server.baseURL}/onboarding`, { waitUntil: "load" });
+      await page.getByRole("button", { name: "Volgende" }).click();
+      await page.getByPlaceholder("Bijvoorbeeld: Familie Van der Lecq").fill(`${HOUSEHOLD_NAME} (mismatch)`);
+      await page.getByRole("button", { name: "Volgende" }).click();
+      await page.getByPlaceholder("Naam").fill("Testouder");
+      await page.getByRole("button", { name: "Volgende" }).click();
+      await page.getByRole("button", { name: "Volgende" }).click();
+
+      await page.getByPlaceholder("Gebruikersnaam (minimaal 3 tekens)").fill("mismatchtest");
+      await page.getByPlaceholder("Wachtwoord (minimaal 6 tekens)").fill(PASSWORD);
+      await page.getByPlaceholder("Bevestig wachtwoord").fill(`${PASSWORD}-anders`);
+
+      // Zolang de velden niet overeenkomen staat de knop uit — de gebruiker
+      // ziet de fout dus al vóórdat die per ongeluk kan versturen, i.p.v.
+      // pas na een klik een foutmelding te krijgen.
+      const submitButton = page.getByRole("button", { name: "Maak mijn eerste week" });
+      assert.equal(
+        await submitButton.isDisabled(),
+        true,
+        "De submitknop moet uitstaan zolang de wachtwoorden niet overeenkomen"
+      );
+      assert.ok(page.url().includes("/onboarding"), "Bij niet-overeenkomende wachtwoorden mag er geen redirect zijn");
+
+      // Wachtwoord corrigeren maakt de knop weer bruikbaar (en het bewijst
+      // meteen dat de disabled-check niet per ongeluk permanent blokkeert).
+      await page.getByPlaceholder("Bevestig wachtwoord").fill(PASSWORD);
+      assert.equal(
+        await submitButton.isDisabled(),
+        false,
+        "De submitknop moet weer aanstaan zodra de wachtwoorden wél overeenkomen"
+      );
+
+      const household = await prisma.household.findFirst({ where: { name: `${HOUSEHOLD_NAME} (mismatch)` } });
+      assert.equal(household, null, "Er mag geen huishouden zijn aangemaakt vóórdat er daadwerkelijk verzonden is");
+    });
+
     await t.test("2. Weekmenu bekijken", async () => {
       await page.goto(`${server.baseURL}/`, { waitUntil: "load" });
       await page.locator("text=Jullie weekmenu").waitFor({ state: "visible", timeout: 20_000 });

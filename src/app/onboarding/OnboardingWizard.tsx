@@ -56,6 +56,7 @@ export default function OnboardingWizard() {
   const [categories, setCategories] = useState<string[]>([]);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const totalSteps = onboardingMode === "DETAILED" ? 7 : 5;
@@ -102,6 +103,10 @@ export default function OnboardingWizard() {
 
   function handleSubmit() {
     setError(null);
+    if (password !== confirmPassword) {
+      setError("Wachtwoorden komen niet overeen. Controleer beide velden.");
+      return;
+    }
     startTransition(async () => {
       try {
         const result = await completeOnboarding({
@@ -371,8 +376,19 @@ export default function OnboardingWizard() {
             minLength={6}
             autoComplete="new-password"
             placeholder="Wachtwoord (minimaal 6 tekens)"
-            className="mb-4 w-full min-w-0 rounded-lg border border-line bg-surface px-4 py-3 text-base text-ink outline-none focus:border-accent"
+            className="mb-3 w-full min-w-0 rounded-lg border border-line bg-surface px-4 py-3 text-base text-ink outline-none focus:border-accent"
           />
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            autoComplete="new-password"
+            placeholder="Bevestig wachtwoord"
+            className="mb-1 w-full min-w-0 rounded-lg border border-line bg-surface px-4 py-3 text-base text-ink outline-none focus:border-accent"
+          />
+          <p className="mb-4 text-xs text-ink-muted">
+            Bewaar dit wachtwoord goed — er is nog geen manier om het te herstellen als je het kwijtraakt.
+          </p>
           <div className="mb-6 min-w-0 rounded-xl border border-line bg-surface p-4 text-sm">
             <p className="mb-1 text-ink">
               <span className="font-medium">Gezin:</span> {householdName || "—"}
@@ -403,7 +419,7 @@ export default function OnboardingWizard() {
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={isPending}
+              disabled={isPending || (confirmPassword.length > 0 && password !== confirmPassword)}
               className="w-full rounded-lg bg-accent px-4 py-3 font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {isPending ? "Bezig..." : "Maak mijn eerste week"}
