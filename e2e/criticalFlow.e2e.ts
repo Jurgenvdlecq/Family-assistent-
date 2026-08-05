@@ -193,16 +193,27 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       // "Product toevoegen"-zoekbox (#quick-add-product), met de zoekterm
       // alvast ingevuld. Na toevoegen moet je automatisch terug naar
       // #quick-order komen, met deze regel uit het lijstje gestreept.
+      //
+      // Batch van twee regels (i.p.v. één) — bewijst niet alleen dat "zelf
+      // zoeken" voor de gekozen regel werkt, maar ook de kernbelofte dat de
+      // rest van het lijstje ("spruitjes") in beeld blijft i.p.v. te
+      // verdwijnen achter de op-zichzelf-staande zoekbox (code-reviewbevinding
+      // op de eerste versie van deze test, die alleen het triviale
+      // één-regel-geval dekte).
       await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
       const quickOrderInput = page.locator("#quick-order textarea[name=quickOrder]");
-      await quickOrderInput.fill("spruitjes");
+      await quickOrderInput.fill("onbekendproductxyz, spruitjes");
       await page.locator("#quick-order").getByRole("button", { name: "Zoeken" }).click();
-      await page.waitForURL((url) => url.searchParams.get("quickOrder") === "spruitjes", { timeout: 15_000 });
+      await page.waitForURL((url) => url.searchParams.get("quickOrder") === "onbekendproductxyz, spruitjes", {
+        timeout: 15_000,
+      });
 
-      const zelfZoekenLink = page.locator("#quick-order").getByRole("link", { name: "Niet het goede product? Zelf zoeken" });
-      await zelfZoekenLink.waitFor({ state: "visible", timeout: 10_000 });
+      const firstLineRaw = page.locator("#quick-order p.font-semibold", { hasText: "onbekendproductxyz" });
+      await firstLineRaw.waitFor({ state: "visible", timeout: 10_000 });
+      const firstLineBlock = firstLineRaw.locator("..");
+      const zelfZoekenLink = firstLineBlock.getByRole("link", { name: "Niet het goede product? Zelf zoeken" });
       await zelfZoekenLink.click();
-      await page.waitForURL((url) => url.searchParams.get("manualQ") === "spruitjes", { timeout: 15_000 });
+      await page.waitForURL((url) => url.searchParams.get("manualQ") === "onbekendproductxyz", { timeout: 15_000 });
 
       const hint = page.locator("#quick-add-product", { hasText: "Je zoekt zelf een product voor" });
       await hint.first().waitFor({ state: "visible", timeout: 10_000 });
@@ -211,18 +222,33 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       await toevoegenButton.waitFor({ state: "visible", timeout: 10_000 });
       await toevoegenButton.click();
       await page.waitForURL(
-        (url) => url.searchParams.get("status") === "quick-order-added" && !url.searchParams.has("quickOrder"),
+        (url) =>
+          url.searchParams.get("status") === "quick-order-added" && url.searchParams.get("quickOrder") === "spruitjes",
         { timeout: 15_000 }
       );
+
+      // De opgeloste regel is echt weg, de nog niet opgeloste regel staat er
+      // nog steeds, met een eigen zoekresultaat en "Zelf zoeken"-link.
+      await page.locator("#quick-order p.font-semibold", { hasText: "onbekendproductxyz" }).waitFor({ state: "hidden" });
+      const remainingLineRaw = page.locator("#quick-order p.font-semibold", { hasText: "spruitjes" });
+      await remainingLineRaw.waitFor({ state: "visible", timeout: 10_000 });
 
       const selfSearchedLine = await prisma.shoppingListLine.findFirst({
         where: {
           shoppingList: { mealPlan: { householdId } },
           source: "MANUAL",
-          ingredient: { name: "Spruitjes" },
+          ingredient: { name: "Onbekendproductxyz" },
         },
       });
       assert.ok(selfSearchedLine, "De via 'Zelf zoeken' gekozen regel moet als MANUAL-regel zijn opgeslagen");
+
+      const notYetAddedLine = await prisma.shoppingListLine.findFirst({
+        where: {
+          shoppingList: { mealPlan: { householdId } },
+          ingredient: { name: "Spruitjes" },
+        },
+      });
+      assert.equal(notYetAddedLine, null, "De nog niet gekozen regel ('spruitjes') mag nog niet zijn opgeslagen");
     });
 
     await t.test("6. Voorraad aanpassen", async () => {
