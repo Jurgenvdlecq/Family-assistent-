@@ -2,6 +2,7 @@ import { prisma } from "../prisma";
 import { PicnicClient, PicnicAuthError, PicnicNetworkError } from "./client";
 import { describeLinePackaging, isUserChosenPackageCount } from "../shoppingList";
 import { logEvent, createCorrelationId } from "../logger";
+import type { LineSource } from "@/generated/prisma/enums";
 
 export interface PicnicCartResult {
   added: { ingredientName: string; picnicName: string; count: number }[];
@@ -20,9 +21,15 @@ export interface PicnicCartResult {
  * dubbel toe. Bij een auth- of netwerkfout (die voor elke volgende regel
  * hetzelfde resultaat zou geven) stopt de verwerking meteen in plaats van
  * dezelfde storing per regel te herhalen.
+ *
+ * `options.onlySources` beperkt dit tot een deel van de lijst (WP91: "alleen
+ * vaste boodschappen", zonder de weekmenu-regels) — de aanroeper is
+ * verantwoordelijk voor het kiezen van de juiste bronnen en voor het niet
+ * markeren van de hele lijst als overgedragen bij een gedeeltelijke run.
  */
 export async function addShoppingListToPicnicCart(
-  shoppingListId: string
+  shoppingListId: string,
+  options?: { onlySources?: readonly LineSource[] }
 ): Promise<PicnicCartResult> {
   const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
     where: { id: shoppingListId },
@@ -42,11 +49,15 @@ export async function addShoppingListToPicnicCart(
     );
   }
 
+  const linesToTransfer = options?.onlySources
+    ? shoppingList.lines.filter((line) => options.onlySources!.includes(line.source))
+    : shoppingList.lines;
+
   const correlationId = createCorrelationId();
   const client = new PicnicClient(household.picnicAuthToken);
   const result: PicnicCartResult = { added: [], skipped: [], notFound: [], errors: [], stoppedEarly: false };
 
-  for (const line of shoppingList.lines) {
+  for (const line of linesToTransfer) {
     if (line.transferredToPicnicAt) {
       result.skipped.push({ ingredientName: line.ingredient.name });
       continue;

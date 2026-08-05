@@ -487,6 +487,9 @@ export default async function BoodschappenPage({
     status: shoppingList.status,
   };
   const hasTransferredLines = sortedLines.some((line) => line.transferredToPicnicAt !== null);
+  const quickOrderPendingCount = sortedLines.filter(
+    (line) => (line.source === "FIXED" || line.source === "MANUAL") && line.transferredToPicnicAt === null
+  ).length;
   const checklistLines: ChecklistLine[] = sortedLines.map((line) => ({
     id: line.id,
     name: line.product?.name ?? line.ingredient.name,
@@ -1445,6 +1448,7 @@ export default async function BoodschappenPage({
           connected={Boolean(household.picnicAuthToken)}
           hasTransferredLines={hasTransferredLines}
           orderConfirmed={shoppingList.orderConfirmedAt !== null}
+          quickOrderCount={quickOrderPendingCount}
         />
       </div>
 
