@@ -45,7 +45,7 @@ import {
   removeFixedGroceryPermanently,
 } from "./fixedGroceriesActions";
 import { addManualProduct } from "./manualProductActions";
-import { addQuickOrderProduct, addQuickOrderTrustedProducts } from "./quickOrderActions";
+import { addQuickOrderPickedProducts, addQuickOrderTrustedProducts } from "./quickOrderActions";
 import { updateInventoryStatus } from "./inventoryActions";
 import LooseListCard from "./LooseListCard";
 
@@ -922,81 +922,69 @@ export default async function BoodschappenPage({
           )}
 
           {quickOrderPickLines.length > 0 && (
-            <div className="mt-4 grid gap-4">
-              {quickOrderPickLines.map((line, index) => (
-                <div key={`${line.raw}-${index}`} className="rounded-lg border border-line bg-surface-2 p-3">
+            <form action={addQuickOrderPickedProducts} className="mt-4 grid gap-4">
+              <input type="hidden" name="householdId" value={household.id} />
+              <input type="hidden" name="quickOrderText" value={quickOrderText} />
+              {quickOrderPickLines.map((line, lineIndex) => (
+                <div key={`${line.raw}-${lineIndex}`} className="rounded-lg border border-line bg-surface-2 p-3">
                   <p className="mb-2 text-sm font-semibold text-ink">{line.raw}</p>
                   {line.results.length === 0 ? (
                     <p className="text-sm text-ink-muted">Geen Picnic-product gevonden. Probeer een andere zoekterm.</p>
                   ) : (
                     <div className="grid gap-2">
-                      {line.results.map((item) => (
-                        <form
+                      {line.results.map((item, itemIndex) => (
+                        <label
                           key={item.externalRef}
-                          action={addQuickOrderProduct}
-                          className="rounded-lg border border-line bg-surface p-3"
+                          className="flex min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-line bg-surface p-3 has-[:checked]:border-accent has-[:checked]:bg-accent-soft"
                         >
-                          <input type="hidden" name="shoppingListId" value={shoppingList.id} />
-                          <input type="hidden" name="searchTerm" value={line.searchTerm} />
-                          <input type="hidden" name="externalRef" value={item.externalRef} />
-                          <input type="hidden" name="productName" value={item.name ?? ""} />
-                          <input type="hidden" name="packageSize" value={item.unit_quantity ?? ""} />
-                          <input type="hidden" name="picnicImageId" value={item.image_id ?? ""} />
                           <input
-                            type="hidden"
-                            name="price"
-                            value={picnicPriceToEuros(item.display_price ?? item.price) ?? ""}
+                            type="radio"
+                            name={`choice-${lineIndex}`}
+                            defaultChecked={itemIndex === 0}
+                            value={JSON.stringify({
+                              householdId: household.id,
+                              shoppingListId: shoppingList.id,
+                              raw: line.raw,
+                              searchTerm: line.searchTerm,
+                              productName: item.name ?? "",
+                              externalRef: item.externalRef,
+                              packageSize: item.unit_quantity ?? "",
+                              picnicImageId: item.image_id ?? "",
+                              quantity: line.quantity,
+                              unit: line.unit,
+                              price: picnicPriceToEuros(item.display_price ?? item.price),
+                            })}
+                            className="h-4 w-4 shrink-0 accent-accent"
                           />
-                          <input type="hidden" name="quickOrderText" value={quickOrderText} />
-                          <input type="hidden" name="quickOrderRaw" value={line.raw} />
-                          <div className="flex min-w-0 gap-3">
-                            <FixedProductImage item={item} />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex min-w-0 items-start justify-between gap-2">
-                                <div className="min-w-0">
-                                  <p className="line-clamp-2 text-sm font-medium text-ink">{item.name}</p>
-                                  <p className="text-xs text-ink-faint">{item.unit_quantity ?? "Geen verpakkingsinfo"}</p>
-                                </div>
-                                <span className="shrink-0 text-sm font-semibold text-ink">
-                                  {picnicPriceToEuros(item.display_price ?? item.price) != null
-                                    ? `€ ${picnicPriceToEuros(item.display_price ?? item.price)!.toFixed(2)}`
-                                    : "Prijs onbekend"}
-                                </span>
+                          <FixedProductImage item={item} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-w-0 items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="line-clamp-2 text-sm font-medium text-ink">{item.name}</p>
+                                <p className="text-xs text-ink-faint">{item.unit_quantity ?? "Geen verpakkingsinfo"}</p>
                               </div>
-                              <div className="mt-3 flex flex-wrap items-center gap-2">
-                                <input
-                                  type="number"
-                                  name="quantity"
-                                  defaultValue={line.quantity}
-                                  min="0.01"
-                                  step="any"
-                                  className="w-24 rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
-                                />
-                                <select
-                                  name="unit"
-                                  defaultValue={line.unit}
-                                  className="rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
-                                >
-                                  <option value="PIECE">stuks</option>
-                                  <option value="GRAM">gram</option>
-                                  <option value="ML">ml</option>
-                                </select>
-                                <button
-                                  type="submit"
-                                  className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
-                                >
-                                  Toevoegen
-                                </button>
-                              </div>
+                              <span className="shrink-0 text-sm font-semibold text-ink">
+                                {picnicPriceToEuros(item.display_price ?? item.price) != null
+                                  ? `€ ${picnicPriceToEuros(item.display_price ?? item.price)!.toFixed(2)}`
+                                  : "Prijs onbekend"}
+                              </span>
                             </div>
                           </div>
-                        </form>
+                        </label>
                       ))}
                     </div>
                   )}
                 </div>
               ))}
-            </div>
+              {quickOrderPickLines.some((line) => line.results.length > 0) && (
+                <PendingSubmitButton
+                  pendingText="Bezig..."
+                  className="w-fit rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
+                >
+                  Voeg toe
+                </PendingSubmitButton>
+              )}
+            </form>
           )}
         </div>
 

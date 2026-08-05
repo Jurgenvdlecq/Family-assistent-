@@ -20,22 +20,6 @@ function parseUnit(raw: FormDataEntryValue | null): Unit {
   return value as Unit;
 }
 
-function parseQuantity(raw: FormDataEntryValue | null): number {
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new Error("Vul een geldige hoeveelheid groter dan 0 in.");
-  }
-  return value;
-}
-
-function parseOptionalPrice(raw: FormDataEntryValue | null) {
-  const value = String(raw ?? "").trim();
-  if (!value) return null;
-  const parsed = Number(value.replace(",", "."));
-  if (!Number.isFinite(parsed) || parsed < 0) return null;
-  return parsed;
-}
-
 interface QuickOrderChoiceInput {
   householdId: string;
   shoppingListId: string;
@@ -71,11 +55,9 @@ function parseQuickOrderChoice(raw: FormDataEntryValue): QuickOrderChoiceInput {
 type SaveQuickOrderLineInput = Omit<QuickOrderChoiceInput, "householdId" | "raw">;
 
 async function saveQuickOrderLine(householdId: string, input: SaveQuickOrderLineInput, matchReason: string) {
-  // De bulk-actie ontvangt quantity/price via een hidden JSON-veld (zie
-  // addQuickOrderTrustedProducts) dat vóór verzenden aan te passen is —
-  // dezelfde validatie die addQuickOrderProduct via parseQuantity/
-  // parseOptionalPrice al voor de single-pick-invoer afdwingt, hier ook
-  // voor het bulk-pad, zodat geen NaN/negatieve hoeveelheid kan wegschrijven.
+  // Beide aanroepers ontvangen quantity/price via een hidden JSON-veld dat
+  // vóór verzenden aan te passen is (devtools) — expliciet valideren zodat
+  // geen NaN/negatieve hoeveelheid kan wegschrijven.
   if (!Number.isFinite(input.quantity) || input.quantity <= 0) {
     throw new Error("Vul een geldige hoeveelheid groter dan 0 in.");
   }
@@ -104,44 +86,53 @@ async function saveQuickOrderLine(householdId: string, input: SaveQuickOrderLine
 }
 
 /**
- * Eén regel uit "snel meerdere producten toevoegen" (WP92) kiezen uit de
- * Picnic-zoekresultaten — voor ingrediënten zonder vertrouwde eerdere keuze.
- * Draagt de rest van de batch (`quickOrderText`/`quickOrderRaw`) door, net
- * als addFixedPicnicProduct dat voor vaste boodschappen doet, zodat de
- * pagina na het kiezen meteen de volgende nog-te-kiezen regel toont in
- * plaats van terug bovenaan de pagina te belanden.
+ * Voegt in één keer alle producten toe die de gebruiker met de radioknoppen
+ * heeft aangewezen voor de regels zonder vertrouwde eerdere keuze (elke
+ * regel is een eigen radiogroep `choice-<index>`, dus per regel precies één
+ * geselecteerd product). Vervangt het oude patroon van één "Toevoegen"-klik
+ * per product (elk een aparte server-actie-aanroep, dus een paginaherlaad
+ * per klik — gebruikersmelding: "dat duurt steeds 5 seconden, dat gaat
+ * tegen het idee van de app in"). Regels zonder resultaat (geen radio's,
+ * dus geen bijbehorende `choice-<index>` in het formulier) blijven na deze
+ * actie gewoon zichtbaar om opnieuw te zoeken — dezelfde
+ * resterende-batchtekst-truc als `addQuickOrderTrustedProducts`.
  */
-export async function addQuickOrderProduct(formData: FormData) {
-  const shoppingListId = String(formData.get("shoppingListId") ?? "");
-  const shoppingList = await assertShoppingListAccess(shoppingListId);
-  const householdId = shoppingList.mealPlan.householdId;
+export async function addQuickOrderPickedProducts(formData: FormData) {
+  const householdId = String(formData.get("householdId"));
+  await assertCurrentHousehold(householdId);
 
-  const searchTerm = String(formData.get("searchTerm") ?? "").trim();
-  const productName = String(formData.get("productName") ?? "").trim();
-  const externalRef = String(formData.get("externalRef") ?? "").trim();
-  const packageSize = String(formData.get("packageSize") ?? "").trim() || null;
-  const picnicImageId = String(formData.get("picnicImageId") ?? "").trim() || null;
-  const quantity = parseQuantity(formData.get("quantity"));
-  const unit = parseUnit(formData.get("unit"));
-  const price = parseOptionalPrice(formData.get("price"));
-  const quickOrderText = String(formData.get("quickOrderText") ?? "").trim();
-  const quickOrderRaw = String(formData.get("quickOrderRaw") ?? "").trim();
-
-  await saveQuickOrderLine(
-    householdId,
-    { shoppingListId, searchTerm, productName, externalRef, packageSize, picnicImageId, quantity, unit, price },
-    "Gekozen bij het snel samenstellen van de boodschappenlijst."
+  const choices = Array.from(formData.entries())
+    .filter(([key]) => key.startsWith("choice-"))
+    .map(([, value]) => parseQuickOrderChoice(value));
+  const validChoices = choices.filter(
+    (choice) => choice.householdId === householdId && choice.productName && choice.externalRef
   );
 
-  revalidatePath("/boodschappen");
-  revalidatePath("/controle");
-
-  if (quickOrderText) {
-    const remaining = quickOrderRaw ? removeBulkFixedGroceryLine(quickOrderText, quickOrderRaw) : quickOrderText;
-    if (remaining) {
-      const params = new URLSearchParams({ quickOrder: remaining, status: "quick-order-added" });
-      redirect(`/boodschappen?${params.toString()}#quick-order`);
+  if (validChoices.length > 0) {
+    const verifiedShoppingListIds = new Set<string>();
+    for (const choice of validChoices) {
+      if (!verifiedShoppingListIds.has(choice.shoppingListId)) {
+        await assertShoppingListAccess(choice.shoppingListId);
+        verifiedShoppingListIds.add(choice.shoppingListId);
+      }
     }
+
+    for (const choice of validChoices) {
+      await saveQuickOrderLine(householdId, choice, "Gekozen bij het snel samenstellen van de boodschappenlijst.");
+    }
+
+    revalidatePath("/boodschappen");
+    revalidatePath("/controle");
+  }
+
+  let remainingQuickOrderText = String(formData.get("quickOrderText") ?? "").trim();
+  for (const choice of validChoices) {
+    if (choice.raw) remainingQuickOrderText = removeBulkFixedGroceryLine(remainingQuickOrderText, choice.raw);
+  }
+
+  if (remainingQuickOrderText) {
+    const params = new URLSearchParams({ quickOrder: remainingQuickOrderText, status: "quick-order-added" });
+    redirect(`/boodschappen?${params.toString()}#quick-order`);
   }
   redirect("/boodschappen?status=quick-order-added#quick-order");
 }
@@ -152,7 +143,7 @@ export async function addQuickOrderProduct(formData: FormData) {
  * "snel in de auto een lijst maken": de gebruiker hoeft niet voor elk
  * bekend product opnieuw door zoekresultaten te bladeren. Onbekende of
  * twijfelachtige ingrediënten komen hier bewust niet doorheen (die lopen
- * via addQuickOrderProduct, met een expliciete keuze) — AGENTS.md:
+ * via addQuickOrderPickedProducts, met een expliciete keuze) — AGENTS.md:
  * "twijfelachtige productmatches — eerst laten controleren, nooit
  * stilzwijgend kiezen".
  */

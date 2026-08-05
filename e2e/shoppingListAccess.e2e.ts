@@ -141,21 +141,25 @@ test("addManualProduct weigert een shoppingListId van een ander huishouden", { t
       const quickOrderInput = pageA.locator("#quick-order textarea[name=quickOrder]");
       await quickOrderInput.waitFor({ state: "visible", timeout: 15_000 });
       // Nieuw ingrediënt zonder eerdere voorkeur voor A — moet dus altijd
-      // via de handmatige-keuze-picker lopen (addQuickOrderProduct), niet
-      // via het automatisch-toevoegen-bulkpad.
+      // via de handmatige-keuze-picker lopen (addQuickOrderPickedProducts),
+      // niet via het automatisch-toevoegen-bulkpad.
       await quickOrderInput.fill("wp92-aanvalstest");
       await pageA.locator("#quick-order").getByRole("button", { name: "Zoeken" }).click();
       await pageA.waitForURL((u) => u.searchParams.has("quickOrder"), { timeout: 15_000 });
 
-      const form = pageA.locator('#quick-order form:has(input[name="shoppingListId"])').first();
-      await form.waitFor({ state: "visible", timeout: 10_000 });
-      // De aanval: het verborgen shoppingListId-veld overschrijven met de
-      // lijst van een ander huishouden vóór het versturen.
-      await form.locator('input[name="shoppingListId"]').evaluate((el, value) => {
-        (el as HTMLInputElement).value = value;
+      // shoppingListId zit sinds de radioknop-rework niet meer in een los
+      // veld, maar in het JSON-value van de (al standaard aangevinkte)
+      // radioknop per regel — de aanval overschrijft dat veld daarin.
+      const radio = pageA.locator('#quick-order input[name="choice-0"]');
+      await radio.waitFor({ state: "attached", timeout: 10_000 });
+      await radio.evaluate((el, value) => {
+        const input = el as HTMLInputElement;
+        const data = JSON.parse(input.value) as Record<string, unknown>;
+        data.shoppingListId = value;
+        input.value = JSON.stringify(data);
       }, shoppingListB.id);
 
-      await form.getByRole("button", { name: "Toevoegen" }).click();
+      await pageA.getByRole("button", { name: "Voeg toe" }).click();
       await pageA.waitForLoadState("load", { timeout: 15_000 }).catch(() => {});
       await contextA.close();
     });
