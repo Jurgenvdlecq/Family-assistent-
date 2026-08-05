@@ -25,6 +25,7 @@ import {
   formatDayShort,
   timeOfDayGreeting,
   isDayStartedOrPast,
+  currentDayKey,
 } from "@/lib/week";
 import {
   CATEGORY_LABELS,
@@ -245,8 +246,7 @@ export default async function Home({
   const entryByDay = new Map(mealPlan.entries.map((e) => [e.dayOfWeek, e]));
   const greetingName = household.persons[0]?.name ?? household.name;
   const greeting = timeOfDayGreeting();
-  const todayIndex = new Date().getDay();
-  const defaultWishDayKey = DAY_KEYS[(todayIndex + 6) % 7] ?? "monday";
+  const defaultWishDayKey = currentDayKey();
   const nextStep = nextStepCopy({
     learningPromptCount: learningPrompts.length,
     attentionItem: attentionItems[0],

@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chromium, type Browser, type Page } from "playwright";
 import { prisma } from "@/lib/prisma";
+import { currentDayKey, DAY_LABELS, DAY_ENUM } from "@/lib/week";
 import { startMockPicnicServer, type MockPicnicServer } from "./fixtures/mockPicnicServer";
 import { startTestServer, type TestServer } from "./fixtures/testServer";
 import { completeOnboardingViaUi, deleteTestHousehold, cleanupMockProducts } from "./fixtures/testHousehold";
@@ -143,7 +144,56 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         .locator("text=Gerecht gewisseld.")
         .or(page.locator("text=Dit gerecht stond al op die dag."));
       await confirmed.first().waitFor({ state: "visible", timeout: 5_000 });
+
+      // UX-bugfix: je blijft op /gerechten (zelfde dag) staan i.p.v. terug
+      // te springen naar de startpagina — belangrijk als je meerdere dagen
+      // achter elkaar wilt aanpassen, dan hoef je niet steeds opnieuw
+      // "Ander gerecht" aan te klikken en je filters kwijt te raken.
+      const url = new URL(page.url());
+      assert.equal(url.pathname, "/gerechten", "Na het kiezen van een gerecht moet je op /gerechten blijven staan");
+      assert.equal(url.searchParams.get("day"), "monday", "De dag-context (maandag) moet behouden blijven");
+
+      // Meteen een tweede keer kiezen kan zonder opnieuw te navigeren — bewijst dat je echt in dezelfde, bruikbare context blijft.
+      const secondKiesButton = page.getByRole("button", { name: "Kies" }).first();
+      await secondKiesButton.waitFor({ state: "visible", timeout: 10_000 });
+      await secondKiesButton.click();
+      await page.waitForURL((url) => url.searchParams.get("status") === "meal-replaced", { timeout: 15_000 });
+      assert.equal(new URL(page.url()).pathname, "/gerechten");
     });
+
+    await t.test("3b. /gerechten zonder ?day= valt terug op vandaag, niet altijd op maandag (UX-bugfix)", async () => {
+      await page.goto(`${server.baseURL}/gerechten`, { waitUntil: "load" });
+      const expectedLabel = DAY_LABELS[currentDayKey()];
+      await page
+        .locator("text=" + `Vervangen voor ${expectedLabel}`)
+        .waitFor({ state: "visible", timeout: 10_000 });
+    });
+
+    await t.test(
+      "3c. Geen 'waarom wil je wisselen?'-stap bij een lege dag (UX-bugfix)",
+      async () => {
+        // Forceer een dag zonder gepland gerecht — in een vers huishouden is
+        // elke dag altijd al ingevuld, dus dat kan alleen via een directe
+        // DB-manipulatie (net als eerdere e2e-testopzetten in dit bestand).
+        const mealPlan = await prisma.mealPlan.findFirstOrThrow({ where: { householdId } });
+        await prisma.mealPlanEntry.deleteMany({ where: { mealPlanId: mealPlan.id, dayOfWeek: DAY_ENUM.sunday } });
+
+        await page.goto(`${server.baseURL}/gerechten?day=sunday`, { waitUntil: "load" });
+        const kiesButton = page.getByRole("button", { name: "Kies" }).first();
+        await kiesButton.waitFor({ state: "visible", timeout: 30_000 });
+
+        const reasonSelect = page.getByLabel("Waarom wil je wisselen?");
+        assert.equal(await reasonSelect.count(), 0, "Bij een lege dag hoort er geen 'waarom wil je wisselen?'-stap te zijn");
+
+        await kiesButton.click();
+        await page.waitForURL((url) => url.searchParams.get("status") === "meal-replaced", { timeout: 15_000 });
+
+        const filledEntry = await prisma.mealPlanEntry.findFirst({
+          where: { mealPlanId: mealPlan.id, dayOfWeek: DAY_ENUM.sunday },
+        });
+        assert.ok(filledEntry, "Kiezen zonder reden-veld moet de dag alsnog gewoon invullen");
+      }
+    );
 
     await t.test("4. Boodschappen opbouwen", async () => {
       await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });

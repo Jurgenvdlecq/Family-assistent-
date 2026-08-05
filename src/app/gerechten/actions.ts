@@ -20,6 +20,26 @@ function redirectToHome(status: string): never {
   redirect(`/?status=${encodeURIComponent(status)}`);
 }
 
+const VALID_GERECHTEN_DIRECTIONS = new Set(["day", "all", "favorites", "quick"]);
+
+/**
+ * Terug naar /gerechten met dezelfde dag/richting/zoekopdracht i.p.v. naar
+ * de startpagina — bugfix UX-review: bij meerdere dagen achter elkaar
+ * aanpassen sprong je voorheen elke keer helemaal terug naar "/" en moest
+ * je opnieuw "Ander gerecht" aanklikken en je filters kwijtraken.
+ */
+function redirectToGerechten(dayKey: DayKey, direction: string, wishText: string, status: string): never {
+  revalidatePath("/gerechten");
+  revalidatePath("/");
+  const params = new URLSearchParams({
+    day: dayKey,
+    direction: VALID_GERECHTEN_DIRECTIONS.has(direction) ? direction : "all",
+    status,
+  });
+  if (wishText) params.set("q", wishText);
+  redirect(`/gerechten?${params.toString()}`);
+}
+
 export async function restoreHiddenRecipeVariant(formData: FormData) {
   const householdId = String(formData.get("householdId"));
   await assertCurrentHousehold(householdId);
@@ -57,6 +77,8 @@ export async function replaceMealPlanEntry(formData: FormData) {
   const recipeVariantId = String(formData.get("recipeVariantId"));
   const weekStart = new Date(String(formData.get("weekStart")));
   const replacementReason = parseFeedbackReason(formData.get("replacementReason")) ?? "ONLY_THIS_TIME";
+  const direction = String(formData.get("direction") ?? "all");
+  const wishText = String(formData.get("q") ?? "");
 
   // Server actions zijn een publiek bereikbaar POST-endpoint (elke
   // aanroeper kan hetzelfde form-veld met een andere id versturen) — de UI
@@ -111,7 +133,7 @@ export async function replaceMealPlanEntry(formData: FormData) {
 
   if (currentEntry) {
     if (currentEntry.recipeVariantId === recipeVariantId) {
-      redirectToHome("meal-unchanged");
+      redirectToGerechten(dayKey, direction, wishText, "meal-unchanged");
     }
     const replacedVariant = await prisma.recipeVariant.findUniqueOrThrow({
       where: { id: currentEntry.recipeVariantId },
@@ -177,7 +199,7 @@ export async function replaceMealPlanEntry(formData: FormData) {
   await invalidateShoppingList(mealPlan.id);
 
   revalidatePath("/boodschappen");
-  redirectToHome("meal-replaced");
+  redirectToGerechten(dayKey, direction, wishText, "meal-replaced");
 }
 
 function defaultQuantityForIngredient(category: IngredientCategory, unit: Unit) {
