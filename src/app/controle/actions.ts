@@ -32,6 +32,41 @@ function refreshControle(lineId?: string, status?: string) {
   redirect("/controle");
 }
 
+/**
+ * Voor acties die een twijfelgeval echt kunnen oplossen (kiezen, alleen deze
+ * week, zonder product doorgaan, verwijderen, of een afwijzing die toevallig
+ * meteen weer een vertrouwde match oplevert): spring door naar de eerstvolgende
+ * regel die nog aandacht vraagt, in plaats van terug te redirecten naar
+ * dezelfde (nu opgeloste) regel — bugfix voor "moet zelf weer scrollen/zoeken
+ * naar het volgende twijfelgeval". Blijft de regel zelf toch nog een
+ * twijfelgeval (bv. afwijzen leverde geen vertrouwde match op), dan blijft de
+ * gebruiker gewoon op die regel — er valt daar nog iets te doen.
+ *
+ * Toont de statusmelding bewust niet meer per-regel (`focus`-param) zoals
+ * `refreshControle` doet: bij het doorspringen zou die anders ten onrechte op
+ * de vólgende (niet-aangeraakte) regel verschijnen. `page.tsx` toont in dit
+ * geval een algemene melding bovenaan, net als op `/boodschappen`.
+ */
+async function redirectToNextReviewLine(shoppingListId: string, resolvedLineId: string, status: string) {
+  revalidatePath("/controle");
+  revalidatePath("/boodschappen");
+
+  const remaining = await prisma.shoppingListLine.findMany({
+    where: { shoppingListId, needsReview: true },
+    include: { ingredient: { select: { name: true } } },
+  });
+  remaining.sort((a, b) => a.ingredient.name.localeCompare(b.ingredient.name));
+
+  if (remaining.some((l) => l.id === resolvedLineId)) {
+    redirect(`/controle?status=${status}#line-${encodeURIComponent(resolvedLineId)}`);
+  }
+  const next = remaining[0];
+  if (next) {
+    redirect(`/controle?status=${status}#line-${encodeURIComponent(next.id)}`);
+  }
+  redirect(`/controle?status=${status}`);
+}
+
 export async function confirmProductChoice(formData: FormData) {
   const lineId = String(formData.get("lineId"));
   const productId = String(formData.get("productId"));
@@ -74,7 +109,7 @@ export async function confirmProductChoice(formData: FormData) {
   // (productkeuze-prioriteitsregel #1 uit sectie 10 van de Blueprint).
   await recordProductChosen(householdId, line.ingredientId, productId, "MANUAL");
 
-  refreshControle(lineId, "remembered");
+  await redirectToNextReviewLine(line.shoppingListId, lineId, "remembered");
 }
 
 /**
@@ -113,7 +148,11 @@ export async function rejectProductChoice(formData: FormData) {
     },
   });
 
-  refreshControle(lineId, "rejected");
+  // Meestal levert een afwijzing weer een nieuw twijfelgeval op (blijft dus
+  // op deze regel staan, zie redirectToNextReviewLine), maar soms is de
+  // eerstvolgende kandidaat toevallig al een vertrouwde match — dan mag de
+  // gebruiker net als bij de andere oplossende acties gewoon doorstromen.
+  await redirectToNextReviewLine(line.shoppingListId, lineId, "rejected");
 }
 
 /**
@@ -159,7 +198,7 @@ export async function useProductThisWeekOnly(formData: FormData) {
     context: { source: "controle_screen", onceOnly: true },
   });
 
-  refreshControle(lineId, "week-only");
+  await redirectToNextReviewLine(line.shoppingListId, lineId, "week-only");
 }
 
 /** Past de hoeveelheid van deze ene regel aan (bv. een twijfelgeval bleek toch meer of minder nodig te hebben). */
@@ -231,18 +270,25 @@ export async function searchPicnicProductsForLine(formData: FormData) {
 
   await persistRefreshedToken(client, householdId, household.picnicAuthToken);
 
-  await prisma.shoppingListLine.update({
-    where: { id: lineId },
-    data: {
-      needsReview: true,
-      matchStatus: "MATCHED_REVIEW_REQUIRED",
-      matchConfidence: 0.5,
-      matchReasons:
-        productsToSave.length > 0
-          ? [`${productsToSave.length} live Picnic-producten gevonden voor "${searchTerm}". Kies het juiste product.`]
-          : [`Geen live Picnic-producten gevonden voor "${searchTerm}". Probeer een andere zoekterm.`],
-    },
-  });
+  // Alleen een al-twijfelend twijfelgeval krijgt hier een bijgewerkte
+  // status/reden — de nieuwe kandidaten staan sowieso al klaar via de
+  // product-upsert hierboven. Bugfix: dit zette voorheen ook een vertrouwde
+  // regel (needsReview: false) altijd terug op "controleren", puur omdat je
+  // even was gaan rondkijken naar alternatieven vanuit "vertrouwde keuzes
+  // bekijken" — zonder dat je daadwerkelijk iets anders had gekozen.
+  if (line.needsReview) {
+    await prisma.shoppingListLine.update({
+      where: { id: lineId },
+      data: {
+        matchStatus: "MATCHED_REVIEW_REQUIRED",
+        matchConfidence: 0.5,
+        matchReasons:
+          productsToSave.length > 0
+            ? [`${productsToSave.length} live Picnic-producten gevonden voor "${searchTerm}". Kies het juiste product.`]
+            : [`Geen live Picnic-producten gevonden voor "${searchTerm}". Probeer een andere zoekterm.`],
+      },
+    });
+  }
 
   refreshControle(lineId, "searched");
 }
@@ -260,19 +306,19 @@ async function persistRefreshedToken(client: PicnicClient, householdId: string, 
 /** Verwijdert een regel volledig van de lijst — voor producten die niet gevonden zijn en niet nodig blijken. */
 export async function removeLineFromList(formData: FormData) {
   const lineId = String(formData.get("lineId"));
-  await loadLineForCurrentHousehold(lineId);
+  const { line } = await loadLineForCurrentHousehold(lineId);
   await prisma.shoppingListLine.delete({ where: { id: lineId } });
-  refreshControle(lineId, "removed");
+  await redirectToNextReviewLine(line.shoppingListId, lineId, "removed");
 }
 
 export async function skipReview(formData: FormData) {
   const lineId = String(formData.get("lineId"));
-  await loadLineForCurrentHousehold(lineId);
+  const { line } = await loadLineForCurrentHousehold(lineId);
   await prisma.shoppingListLine.update({
     where: { id: lineId },
     data: { needsReview: false },
   });
-  refreshControle(lineId, "skipped");
+  await redirectToNextReviewLine(line.shoppingListId, lineId, "skipped");
 }
 
 export async function confirmShoppingList(formData: FormData) {

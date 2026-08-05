@@ -330,6 +330,85 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       assert.ok(reviewCountAfter < reviewCountBefore, "Het aantal te controleren regels moet afnemen na een bevestigde keuze");
     });
 
+    await t.test("7b. Doorstroom naar het volgende twijfelgeval na een keuze (UX-bugfix)", async () => {
+      // Vóór deze fix redirectte elke oplossende actie terug naar dezelfde
+      // (nu opgeloste) regel — de gebruiker moest daarna zelf naar het
+      // volgende twijfelgeval scrollen/zoeken. Forceer hier een
+      // deterministisch scenario met twee twijfelgevallen (onafhankelijk
+      // van hoeveel er toevallig nog open staan op dit punt in de flow) en
+      // bewijs dat bevestigen op de eerste regel automatisch naar de
+      // tweede (alfabetisch eerstvolgende) regel doorspringt.
+      const candidateLines = await prisma.shoppingListLine.findMany({
+        where: { shoppingList: { mealPlan: { householdId } }, source: "MEAL", productId: { not: null } },
+        include: { ingredient: { select: { name: true } } },
+      });
+      assert.ok(
+        candidateLines.length >= 2,
+        "Testopzet: er moeten minstens 2 MEAL-regels met een product zijn om dit scenario te bouwen"
+      );
+      const [first, second] = [...candidateLines]
+        .sort((a, b) => a.ingredient.name.localeCompare(b.ingredient.name))
+        .slice(0, 2);
+      await prisma.shoppingListLine.updateMany({
+        where: { id: { in: [first.id, second.id] } },
+        data: { needsReview: true },
+      });
+
+      await page.goto(`${server.baseURL}/controle`, { waitUntil: "load" });
+      const firstCard = page.locator(`#line-${first.id}`);
+      await firstCard.waitFor({ state: "visible", timeout: 10_000 });
+      // Deze regel had al een product (zie de "productId: { not: null }"-
+      // filter hierboven), dus de bevestigknop op die kaart heet "Goed,
+      // onthouden" i.p.v. "Kies en onthoud" (dat label is voor een nog
+      // niet eerder gekozen alternatief) — zelfde actie, andere tekst.
+      await firstCard.getByRole("button", { name: "Goed, onthouden" }).first().click();
+      await page.waitForURL((url) => url.searchParams.get("status") === "remembered", { timeout: 15_000 });
+
+      assert.ok(
+        page.url().endsWith(`#line-${second.id}`),
+        "Moet doorspringen naar de eerstvolgende (alfabetisch) twijfelregel, niet terug naar de zojuist opgeloste regel"
+      );
+      // De bevestiging staat nu bovenaan (algemeen) i.p.v. per-regel, want
+      // de zojuist opgeloste regel staat niet meer in beeld.
+      await page
+        .locator("text=Opgeslagen en onthouden voor volgende keer.")
+        .first()
+        .waitFor({ state: "visible", timeout: 5_000 });
+
+      const resolvedLine = await prisma.shoppingListLine.findUniqueOrThrow({ where: { id: first.id } });
+      assert.equal(resolvedLine.needsReview, false, "De zojuist gekozen regel moet niet meer om controle vragen");
+    });
+
+    await t.test(
+      "7c. Zoeken vanuit 'vertrouwde keuzes bekijken' zet een regel niet ongevraagd terug op 'controleren' (UX-bugfix)",
+      async () => {
+        const trustedLine = await prisma.shoppingListLine.findFirst({
+          where: { shoppingList: { mealPlan: { householdId } }, needsReview: false, source: "MEAL" },
+          include: { ingredient: { select: { name: true } } },
+        });
+        assert.ok(trustedLine, "Testopzet: er moet minstens 1 vertrouwde MEAL-regel zijn voor dit scenario");
+
+        await page.goto(`${server.baseURL}/controle`, { waitUntil: "load" });
+        const trustedDetails = page.getByText(/vertrouwde keuzes? bekijken/);
+        await trustedDetails.waitFor({ state: "visible", timeout: 10_000 });
+        await trustedDetails.click();
+
+        const trustedCard = page.locator(`#line-${trustedLine!.id}`);
+        await trustedCard.waitFor({ state: "visible", timeout: 10_000 });
+        const searchInput = trustedCard.getByPlaceholder(/Zoek Picnic-product/);
+        await searchInput.fill(trustedLine!.ingredient.name);
+        await trustedCard.getByRole("button", { name: "Zoeken bij Picnic" }).click();
+        await page.waitForURL((url) => url.searchParams.get("status") === "searched", { timeout: 15_000 });
+
+        const afterSearch = await prisma.shoppingListLine.findUniqueOrThrow({ where: { id: trustedLine!.id } });
+        assert.equal(
+          afterSearch.needsReview,
+          false,
+          "Even rondkijken naar alternatieven vanuit 'vertrouwde keuzes' mag een regel niet terugzetten op 'controleren'"
+        );
+      }
+    );
+
     await t.test("8. Mandje vullen", async () => {
       await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
 

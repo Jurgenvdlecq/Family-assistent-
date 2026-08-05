@@ -162,46 +162,68 @@ function ProductChoiceCard({
 
           <PackagingLine line={line} product={product} />
 
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             {selected && !line.needsReview ? (
-              <span className="rounded-md bg-tag-green-bg px-2.5 py-1.5 text-xs font-medium text-tag-green-ink">
-                Opgeslagen
-              </span>
+              // Dit product is al de actieve, bevestigde keuze voor deze
+              // regel — "Alleen deze week" hieronder gaat dan niet over dit
+              // product en zou een tegenstrijdige suggestie naast de net
+              // bevestigde keuze zetten (bugfix UX-review). "Nooit" blijft
+              // wél beschikbaar (kleiner, naast de badge): je moet dit
+              // product ook vanaf hier kunnen afwijzen zonder eerst zelf
+              // een alternatief te moeten zoeken (code-review-bevinding).
+              <>
+                <span className="rounded-md bg-tag-green-bg px-2.5 py-1.5 text-xs font-medium text-tag-green-ink">
+                  Opgeslagen
+                </span>
+                <form action={rejectProductChoice}>
+                  <input type="hidden" name="lineId" value={line.id} />
+                  <input type="hidden" name="productId" value={product.id} />
+                  <input type="hidden" name="householdId" value={householdId} />
+                  <PendingSubmitButton
+                    pendingText="Wegzetten..."
+                    className={`rounded-md px-2 py-1 text-xs font-medium text-ink-faint hover:text-red-600 ${ACTION_BUTTON_FOCUS}`}
+                  >
+                    Toch nooit meer
+                  </PendingSubmitButton>
+                </form>
+              </>
             ) : (
-              <form action={confirmProductChoice}>
-                <input type="hidden" name="lineId" value={line.id} />
-                <input type="hidden" name="productId" value={product.id} />
-                <input type="hidden" name="householdId" value={householdId} />
-                <PendingSubmitButton
-                  pendingText="Opslaan..."
-                  className={`rounded-md bg-accent px-2.5 py-1.5 text-xs font-medium text-accent-ink hover:bg-accent/90 ${ACTION_BUTTON_FOCUS}`}
-                >
-                  {selected ? "Goed, onthouden" : "Kies en onthoud"}
-                </PendingSubmitButton>
-              </form>
+              <>
+                <form action={confirmProductChoice}>
+                  <input type="hidden" name="lineId" value={line.id} />
+                  <input type="hidden" name="productId" value={product.id} />
+                  <input type="hidden" name="householdId" value={householdId} />
+                  <PendingSubmitButton
+                    pendingText="Opslaan..."
+                    className={`rounded-md bg-accent px-2.5 py-1.5 text-xs font-medium text-accent-ink hover:bg-accent/90 ${ACTION_BUTTON_FOCUS}`}
+                  >
+                    {selected ? "Goed, onthouden" : "Kies en onthoud"}
+                  </PendingSubmitButton>
+                </form>
+                <form action={useProductThisWeekOnly}>
+                  <input type="hidden" name="lineId" value={line.id} />
+                  <input type="hidden" name="productId" value={product.id} />
+                  <input type="hidden" name="householdId" value={householdId} />
+                  <PendingSubmitButton
+                    pendingText="Kiezen..."
+                    className={`rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink hover:border-accent/70 hover:bg-surface-2 ${ACTION_BUTTON_FOCUS}`}
+                  >
+                    Alleen deze week
+                  </PendingSubmitButton>
+                </form>
+                <form action={rejectProductChoice}>
+                  <input type="hidden" name="lineId" value={line.id} />
+                  <input type="hidden" name="productId" value={product.id} />
+                  <input type="hidden" name="householdId" value={householdId} />
+                  <PendingSubmitButton
+                    pendingText="Wegzetten..."
+                    className={`rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink-faint hover:border-red-300 hover:bg-red-50 hover:text-red-600 ${ACTION_BUTTON_FOCUS}`}
+                  >
+                    Nooit
+                  </PendingSubmitButton>
+                </form>
+              </>
             )}
-            <form action={useProductThisWeekOnly}>
-              <input type="hidden" name="lineId" value={line.id} />
-              <input type="hidden" name="productId" value={product.id} />
-              <input type="hidden" name="householdId" value={householdId} />
-              <PendingSubmitButton
-                pendingText="Kiezen..."
-                className={`rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink hover:border-accent/70 hover:bg-surface-2 ${ACTION_BUTTON_FOCUS}`}
-              >
-                Alleen deze week
-              </PendingSubmitButton>
-            </form>
-            <form action={rejectProductChoice}>
-              <input type="hidden" name="lineId" value={line.id} />
-              <input type="hidden" name="productId" value={product.id} />
-              <input type="hidden" name="householdId" value={householdId} />
-              <PendingSubmitButton
-                pendingText="Wegzetten..."
-                className={`rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink-faint hover:border-red-300 hover:bg-red-50 hover:text-red-600 ${ACTION_BUTTON_FOCUS}`}
-              >
-                Nooit
-              </PendingSubmitButton>
-            </form>
           </div>
         </div>
       </div>
@@ -493,6 +515,16 @@ export default async function ControlePage({
   // twijfelgeval met wél kandidaten.
   const notFoundLines = reviewLines.filter((l) => (candidatesByLine.get(l.id) ?? []).length === 0);
   const attentionLines = reviewLines.filter((l) => (candidatesByLine.get(l.id) ?? []).length > 0);
+  const sortedAttentionLines = [...attentionLines].sort((a, b) => a.ingredient.name.localeCompare(b.ingredient.name));
+  const sortedNotFoundLines = [...notFoundLines].sort((a, b) => a.ingredient.name.localeCompare(b.ingredient.name));
+
+  // Na een oplossende actie (kiezen, alleen deze week, ...) spring je door
+  // naar de volgende regel (zie redirectToNextReviewLine in actions.ts) —
+  // die vólgende regel is niet degene die zojuist iets kreeg bevestigd, dus
+  // de statusmelding hoort dan bovenaan (algemeen), niet per-regel. Bij de
+  // niet-doorspringende acties (hoeveelheid, zoeken) staat `focus` er wél
+  // nog bij en toont de bestaande per-regel-melding zoals voorheen.
+  const generalStatusMessage = params.status && !params.focus ? STATUS_MESSAGES[params.status] : undefined;
 
   return (
     <div className="mx-auto flex min-h-screen w-full min-w-0 max-w-2xl flex-col pb-[calc(6rem+env(safe-area-inset-bottom))]">
@@ -513,6 +545,12 @@ export default async function ControlePage({
           Ik laat vooral zien waar ik onzeker ben. Vertrouwde keuzes staan onderaan rustig bij elkaar.
         </p>
 
+        {generalStatusMessage && (
+          <p className="mb-5 rounded-lg border border-tag-green-ink/20 bg-tag-green-bg px-3 py-2 text-sm font-medium text-tag-green-ink">
+            {generalStatusMessage}
+          </p>
+        )}
+
         <div className="mb-7 flex flex-wrap gap-2">
           <Tag tone="green">{trustedLines.length} vertrouwde keuzes</Tag>
           {attentionLines.length > 0 && <Tag tone="amber">{attentionLines.length} vragen aandacht</Tag>}
@@ -527,16 +565,43 @@ export default async function ControlePage({
         )}
 
         {reviewLines.length > 0 ? (
-          <div className="mb-8 grid gap-4">
-            {sortedReviewLines.map((line) => (
-              <LineControlCard
-                key={line.id}
-                line={line}
-                candidates={candidatesByLine.get(line.id) ?? []}
-                householdId={household.id}
-                statusMessage={line.id === params.focus && params.status ? STATUS_MESSAGES[params.status] : undefined}
-              />
-            ))}
+          <div className="mb-8 grid gap-6">
+            {sortedAttentionLines.length > 0 && (
+              <div className="grid gap-4">
+                {(sortedAttentionLines.length > 0 && sortedNotFoundLines.length > 0) && (
+                  <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                    Vragen aandacht
+                  </h2>
+                )}
+                {sortedAttentionLines.map((line) => (
+                  <LineControlCard
+                    key={line.id}
+                    line={line}
+                    candidates={candidatesByLine.get(line.id) ?? []}
+                    householdId={household.id}
+                    statusMessage={line.id === params.focus && params.status ? STATUS_MESSAGES[params.status] : undefined}
+                  />
+                ))}
+              </div>
+            )}
+            {sortedNotFoundLines.length > 0 && (
+              <div className="grid gap-4">
+                {(sortedAttentionLines.length > 0 && sortedNotFoundLines.length > 0) && (
+                  <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-faint">
+                    Niet gevonden
+                  </h2>
+                )}
+                {sortedNotFoundLines.map((line) => (
+                  <LineControlCard
+                    key={line.id}
+                    line={line}
+                    candidates={candidatesByLine.get(line.id) ?? []}
+                    householdId={household.id}
+                    statusMessage={line.id === params.focus && params.status ? STATUS_MESSAGES[params.status] : undefined}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <div className="mb-6 rounded-xl border border-tag-green-ink/25 bg-tag-green-bg p-4">
