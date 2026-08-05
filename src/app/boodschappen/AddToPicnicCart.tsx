@@ -7,6 +7,7 @@ import type { PicnicCartResult } from "@/lib/picnic/cartService";
 import type { ConfirmationSummary } from "@/lib/picnic/confirmationSummary";
 
 type Stage = "idle" | "confirming" | "done";
+type TransferScope = "all" | "fixed";
 
 function formatPrice(amount: number) {
   return `€ ${amount.toFixed(2)}`;
@@ -17,13 +18,17 @@ export default function AddToPicnicCart({
   connected,
   hasTransferredLines,
   orderConfirmed,
+  quickOrderCount,
 }: {
   shoppingListId: string;
   connected: boolean;
   hasTransferredLines: boolean;
   orderConfirmed: boolean;
+  /** Aantal nog niet overgedragen vaste-boodschappen/losse-toevoegingen — bepaalt of de "alleen vaste boodschappen"-knop zin heeft. */
+  quickOrderCount: number;
 }) {
   const [stage, setStage] = useState<Stage>("idle");
+  const [scope, setScope] = useState<TransferScope>("all");
   const [summary, setSummary] = useState<ConfirmationSummary | null>(null);
   const [result, setResult] = useState<PicnicCartResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,11 +53,12 @@ export default function AddToPicnicCart({
     });
   }
 
-  function handleOpenConfirmation() {
+  function handleOpenConfirmation(nextScope: TransferScope) {
+    setScope(nextScope);
     setError(null);
     startTransition(async () => {
       try {
-        const s = await getPicnicConfirmationSummary(shoppingListId);
+        const s = await getPicnicConfirmationSummary(shoppingListId, nextScope);
         setSummary(s);
         setStage("confirming");
       } catch (e) {
@@ -65,7 +71,7 @@ export default function AddToPicnicCart({
     setError(null);
     startTransition(async () => {
       try {
-        const res = await addToPicnicCart(shoppingListId);
+        const res = await addToPicnicCart(shoppingListId, scope);
         setResult(res);
         setCleared(false);
         setStage("done");
@@ -106,21 +112,42 @@ export default function AddToPicnicCart({
   return (
     <div className="mt-4 min-w-0">
       {stage === "idle" && (
-        <button
-          type="button"
-          onClick={handleOpenConfirmation}
-          disabled={isPending}
-          className="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-50"
-        >
-          {isPending ? "Bezig…" : "Toevoegen aan Picnic-mandje"}
-        </button>
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => handleOpenConfirmation("all")}
+            disabled={isPending}
+            className="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {isPending && scope === "all" ? "Bezig…" : "Toevoegen aan Picnic-mandje"}
+          </button>
+          {quickOrderCount > 0 && (
+            <button
+              type="button"
+              onClick={() => handleOpenConfirmation("fixed")}
+              disabled={isPending}
+              className="w-full rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-surface-2 disabled:opacity-50"
+            >
+              {isPending && scope === "fixed"
+                ? "Bezig…"
+                : `Alleen vaste boodschappen (${quickOrderCount})`}
+            </button>
+          )}
+        </div>
       )}
 
       {stage === "confirming" && summary && (
         <div className="min-w-0 rounded-lg border border-line p-4 text-sm">
           <p className="mb-2 font-medium text-ink">
-            {summary.toTransferCount} product(en) worden toegevoegd aan je Picnic-mandje.
+            {summary.toTransferCount} {scope === "fixed" ? "vaste boodschap(pen)" : "product(en)"} worden toegevoegd
+            aan je Picnic-mandje.
           </p>
+          {scope === "fixed" && (
+            <p className="mb-2 text-xs text-ink-muted">
+              Weekmenu-producten worden hierbij niet meegenomen — gebruik &quot;Toevoegen aan Picnic-mandje&quot; als je
+              ook die wilt bestellen.
+            </p>
+          )}
           {summary.alreadyTransferredCount > 0 && (
             <p className="mb-1 text-xs text-ink-faint">
               {summary.alreadyTransferredCount} product(en) staan al in het mandje en worden overgeslagen.

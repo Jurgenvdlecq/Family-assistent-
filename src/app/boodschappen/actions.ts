@@ -17,6 +17,17 @@ import { describeLinePackaging, findShoppingListShortfalls } from "@/lib/shoppin
 import { getHouseholdPortionScaleByDay } from "@/lib/household";
 import { getInventoryMap } from "@/lib/inventory";
 import { assertShoppingListAccess } from "@/lib/shoppingListAccess";
+import type { LineSource } from "@/generated/prisma/enums";
+
+/**
+ * WP91: "snelle bestelling" — vaste boodschappen en losse toevoegingen zijn
+ * onafhankelijk van het weekmenu (in tegenstelling tot MEAL/INVENTORY-regels,
+ * die uit de geplande maaltijden voortkomen). Bedoeld voor het scenario waar
+ * je alleen even standaard boodschappen wilt bestellen zonder eerst het hele
+ * weekmenu te doorlopen of ongecontroleerde weekmenu-regels mee te sturen.
+ */
+const QUICK_ORDER_SOURCES: LineSource[] = ["FIXED", "MANUAL"];
+type PicnicTransferScope = "all" | "fixed";
 
 export async function confirmTransfer(formData: FormData) {
   const shoppingListId = String(formData.get("shoppingListId"));
@@ -198,16 +209,19 @@ export async function removeBoodschappenLineThisWeek(formData: FormData) {
 
 /** Bevestigingssamenvatting vóór het echt vullen van het Picnic-mandje (Fase 7/8). */
 export async function getPicnicConfirmationSummary(
-  shoppingListId: string
+  shoppingListId: string,
+  scope: PicnicTransferScope = "all"
 ): Promise<ConfirmationSummary> {
   await assertShoppingListAccess(shoppingListId);
   const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
     where: { id: shoppingListId },
     include: { lines: { include: { ingredient: true, product: true } } },
   });
+  const lines =
+    scope === "fixed" ? shoppingList.lines.filter((line) => QUICK_ORDER_SOURCES.includes(line.source)) : shoppingList.lines;
 
   return buildConfirmationSummary(
-    shoppingList.lines.map((line) => ({
+    lines.map((line) => ({
       ingredientName: line.ingredient.name,
       matchStatus: line.matchStatus,
       transferredToPicnicAt: line.transferredToPicnicAt,
@@ -231,10 +245,19 @@ export async function getPicnicConfirmationSummary(
   );
 }
 
-export async function addToPicnicCart(shoppingListId: string): Promise<PicnicCartResult> {
+export async function addToPicnicCart(
+  shoppingListId: string,
+  scope: PicnicTransferScope = "all"
+): Promise<PicnicCartResult> {
   await assertShoppingListAccess(shoppingListId);
-  const result = await addShoppingListToPicnicCart(shoppingListId);
-  if (result.notFound.length === 0 && result.errors.length === 0) {
+  const result = await addShoppingListToPicnicCart(
+    shoppingListId,
+    scope === "fixed" ? { onlySources: QUICK_ORDER_SOURCES } : undefined
+  );
+  // Bij scope "fixed" zijn de weekmenu-regels bewust niet meegestuurd — de
+  // lijst als geheel is dan nooit "overgedragen", dus markTransferred (dat
+  // de hele ShoppingList.status omzet) mag hier niet aangeroepen worden.
+  if (scope === "all" && result.notFound.length === 0 && result.errors.length === 0) {
     await markTransferred(shoppingListId);
   }
   revalidatePath("/boodschappen");

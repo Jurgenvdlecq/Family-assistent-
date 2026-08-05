@@ -198,6 +198,89 @@ test("addShoppingListToPicnicCart: idempotent — een tweede keer slaat de al ov
   }
 });
 
+async function makeHouseholdWithMealAndFixedLine(name: string) {
+  const household = await prisma.household.create({
+    data: {
+      name,
+      picnicAuthToken: "test-token",
+      persons: { create: [{ name: "Test", role: "PARENT" }] },
+    },
+  });
+  const mealIngredient = await prisma.ingredient.findFirstOrThrow({});
+  const mealProduct = await prisma.product.create({
+    data: { name: "Weekmenu-product", externalRef: `picnic-test-meal-${household.id}`, ingredientId: mealIngredient.id },
+  });
+  const fixedIngredient = await prisma.ingredient.create({
+    data: { name: `WP91 vaste boodschap ${household.id}`, unit: "PIECE", category: "OTHER" },
+  });
+  const fixedProduct = await prisma.product.create({
+    data: { name: "Vaste boodschap", externalRef: `picnic-test-fixed-${household.id}`, ingredientId: fixedIngredient.id },
+  });
+  const variant = await prisma.recipeVariant.findFirstOrThrow({});
+  const mealPlan = await prisma.mealPlan.create({
+    data: {
+      householdId: household.id,
+      weekStart: getCurrentWeekStart(),
+      status: "CONFIRMED",
+      entries: { create: [{ dayOfWeek: "MONDAY", recipeVariantId: variant.id }] },
+    },
+  });
+  const shoppingList = await prisma.shoppingList.create({
+    data: {
+      mealPlanId: mealPlan.id,
+      lines: {
+        create: [
+          {
+            ingredientId: mealIngredient.id,
+            productId: mealProduct.id,
+            quantity: 1,
+            unit: "PIECE",
+            source: "MEAL",
+            matchStatus: "MATCHED_TRUSTED",
+            matchConfidence: 1,
+          },
+          {
+            ingredientId: fixedIngredient.id,
+            productId: fixedProduct.id,
+            quantity: 1,
+            unit: "PIECE",
+            source: "FIXED",
+            matchStatus: "MATCHED_TRUSTED",
+            matchConfidence: 1,
+          },
+        ],
+      },
+    },
+  });
+  return { household, shoppingList, fixedProduct };
+}
+
+test("addShoppingListToPicnicCart: onlySources beperkt de overdracht tot vaste boodschappen, weekmenu-regel blijft onaangeroerd (WP91)", async () => {
+  const originalFetch = global.fetch;
+  let household: Awaited<ReturnType<typeof makeHouseholdWithMealAndFixedLine>>["household"] | undefined;
+
+  try {
+    const fixture = await makeHouseholdWithMealAndFixedLine("WP91 integratietest — alleen vaste boodschappen");
+    household = fixture.household;
+    const calls: Array<{ productId: string; count: number }> = [];
+    global.fetch = fakeAddProductFetchCapturingCount(calls);
+
+    const result = await addShoppingListToPicnicCart(fixture.shoppingList.id, { onlySources: ["FIXED"] });
+    assert.equal(result.added.length, 1, "alleen de FIXED-regel wordt toegevoegd");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]!.productId, fixture.fixedProduct.externalRef);
+
+    const lines = await prisma.shoppingListLine.findMany({ where: { shoppingListId: fixture.shoppingList.id } });
+    const mealLine = lines.find((l) => l.source === "MEAL");
+    const fixedLine = lines.find((l) => l.source === "FIXED");
+    assert.equal(mealLine?.transferredToPicnicAt, null, "de weekmenu-regel is niet meegestuurd en dus niet overgedragen");
+    assert.ok(fixedLine?.transferredToPicnicAt, "de vaste-boodschappenregel is wel overgedragen");
+  } finally {
+    global.fetch = originalFetch;
+    if (household) await cleanup(household.id);
+  }
+});
+
 test("clearPicnicCartForShoppingList: zet transferredToPicnicAt terug zodat een volgende add-poging alles opnieuw plaatst", async () => {
   const originalFetch = global.fetch;
   let household: Awaited<ReturnType<typeof makeHouseholdWithShoppingListLine>>["household"] | undefined;
