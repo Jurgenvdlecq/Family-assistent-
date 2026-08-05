@@ -29,6 +29,17 @@ import type { LineSource } from "@/generated/prisma/enums";
 const QUICK_ORDER_SOURCES: LineSource[] = ["FIXED", "MANUAL"];
 type PicnicTransferScope = "all" | "fixed";
 
+/**
+ * Server Actions zijn over het netwerk aanroepbaar met een willekeurige
+ * payload — het TypeScript-type van `scope` is alleen een compileertijd-
+ * garantie. Normaliseer expliciet zodat een vervalste waarde nooit tussen
+ * "fixed" en "all" in valt (dat zou anders alle regels versturen zonder
+ * ShoppingList.status op TRANSFERRED te zetten).
+ */
+function normalizeScope(scope: PicnicTransferScope): PicnicTransferScope {
+  return scope === "fixed" ? "fixed" : "all";
+}
+
 export async function confirmTransfer(formData: FormData) {
   const shoppingListId = String(formData.get("shoppingListId"));
   await assertShoppingListAccess(shoppingListId);
@@ -210,8 +221,9 @@ export async function removeBoodschappenLineThisWeek(formData: FormData) {
 /** Bevestigingssamenvatting vóór het echt vullen van het Picnic-mandje (Fase 7/8). */
 export async function getPicnicConfirmationSummary(
   shoppingListId: string,
-  scope: PicnicTransferScope = "all"
+  rawScope: PicnicTransferScope = "all"
 ): Promise<ConfirmationSummary> {
+  const scope = normalizeScope(rawScope);
   await assertShoppingListAccess(shoppingListId);
   const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
     where: { id: shoppingListId },
@@ -247,8 +259,9 @@ export async function getPicnicConfirmationSummary(
 
 export async function addToPicnicCart(
   shoppingListId: string,
-  scope: PicnicTransferScope = "all"
+  rawScope: PicnicTransferScope = "all"
 ): Promise<PicnicCartResult> {
+  const scope = normalizeScope(rawScope);
   await assertShoppingListAccess(shoppingListId);
   const result = await addShoppingListToPicnicCart(
     shoppingListId,

@@ -130,7 +130,7 @@ export default function AddToPicnicCart({
             >
               {isPending && scope === "fixed"
                 ? "Bezig…"
-                : `Alleen vaste boodschappen (${quickOrderCount})`}
+                : `Vaste boodschappen + losse toevoegingen (${quickOrderCount})`}
             </button>
           )}
         </div>
@@ -139,8 +139,9 @@ export default function AddToPicnicCart({
       {stage === "confirming" && summary && (
         <div className="min-w-0 rounded-lg border border-line p-4 text-sm">
           <p className="mb-2 font-medium text-ink">
-            {summary.toTransferCount} {scope === "fixed" ? "vaste boodschap(pen)" : "product(en)"} worden toegevoegd
-            aan je Picnic-mandje.
+            {summary.toTransferCount}{" "}
+            {scope === "fixed" ? "vaste boodschap(pen) en losse toevoegingen" : "product(en)"} worden toegevoegd aan
+            je Picnic-mandje.
           </p>
           {scope === "fixed" && (
             <p className="mb-2 text-xs text-ink-muted">
