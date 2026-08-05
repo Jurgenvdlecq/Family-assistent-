@@ -525,7 +525,13 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       await confirmButton.waitFor({ state: "visible", timeout: 10_000 });
       await confirmButton.click();
 
-      await page.locator("text=toegevoegd aan je Picnic-mandje.").waitFor({ state: "visible", timeout: 15_000 });
+      // Niet zomaar op "text=...toegevoegd aan je Picnic-mandje." wachten:
+      // die substring staat óók al in de confirming-stage-tekst ("N
+      // product(en) worden toegevoegd aan je Picnic-mandje.") die al zichtbaar
+      // is vóór deze klik — wachten op het verdwijnen van de "Bezig met
+      // toevoegen…"-knop garandeert dat de add-actie echt is afgerond
+      // voordat de mock-server-assert hieronder gecontroleerd wordt.
+      await page.getByRole("button", { name: "Bezig met toevoegen…" }).waitFor({ state: "hidden", timeout: 15_000 });
       assert.ok(mockPicnic.addedProducts.length > 0, "De mock-Picnic-server moet minstens één add_product-aanroep hebben ontvangen");
     });
 
@@ -639,6 +645,96 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         .catch(() => false);
       assert.equal(genericErrorVisible, false, "een ontbrekende meal plan voor de meegestuurde week mag nooit de generieke foutpagina tonen");
     });
+
+    await t.test(
+      "10c. Bestellen rechtstreeks vanaf de startpagina zodra de lijst bevestigd is, zonder naar /boodschappen te hoeven (nieuwe functie)",
+      async () => {
+        // Forceer de "lijst bevestigd, nog niet naar Picnic"-status (net als
+        // 7b/7c: direct via Prisma, i.p.v. leunen op wat eerdere stappen
+        // toevallig hebben achtergelaten) — zodat de startpagina de
+        // "Klaar om naar Picnic te gaan"-tegel toont met de echte
+        // AddToPicnicCart-knop erin, i.p.v. alleen een link naar elders.
+        const shoppingList = await prisma.shoppingList.findFirstOrThrow({
+          where: { mealPlan: { householdId } },
+          include: { lines: true },
+        });
+        assert.ok(shoppingList.lines.length > 0, "Testopzet: er moet minstens 1 regel op de lijst staan");
+        await prisma.shoppingListLine.updateMany({
+          where: { shoppingListId: shoppingList.id },
+          // transferredToPicnicAt ook expliciet resetten: eerdere stappen
+          // (8. Mandje vullen) kunnen deze regel al eens hebben overgedragen
+          // — addToPicnicCart is bewust idempotent en zou 'm dan stilzwijgend
+          // overslaan, wat deze test zou laten denken dat er niks gebeurde.
+          data: { needsReview: false, transferredToPicnicAt: null },
+        });
+        await prisma.shoppingList.update({
+          where: { id: shoppingList.id },
+          data: { status: "REVIEWED", reviewedAt: new Date() },
+        });
+
+        await page.goto(`${server.baseURL}/`, { waitUntil: "load" });
+        await page.locator("text=Klaar om naar Picnic te gaan").waitFor({ state: "visible", timeout: 15_000 });
+
+        const addedBefore = mockPicnic.addedProducts.length;
+        const addButton = page.getByRole("button", { name: "Toevoegen aan Picnic-mandje" });
+        await addButton.waitFor({ state: "visible", timeout: 10_000 });
+        await addButton.click();
+
+        const confirmButton = page.getByRole("button", { name: "Ja, voeg toe aan mandje" });
+        await confirmButton.waitFor({ state: "visible", timeout: 10_000 });
+        await confirmButton.click();
+
+        // Zie de toelichting bij stap "8. Mandje vullen": wachten op het
+        // verdwijnen van "Bezig met toevoegen…" i.p.v. op een tekst-substring
+        // die ook al vóór de klik zichtbaar was.
+        await page.getByRole("button", { name: "Bezig met toevoegen…" }).waitFor({ state: "hidden", timeout: 15_000 });
+        assert.ok(
+          mockPicnic.addedProducts.length > addedBefore,
+          "Vanaf de startpagina bestellen moet ook echt (meer) producten aan het mock-Picnic-mandje toevoegen"
+        );
+        assert.equal(
+          new URL(page.url()).pathname,
+          "/",
+          "Moet op de startpagina blijven — geen navigatie naar /boodschappen nodig voor deze actie"
+        );
+      }
+    );
+
+    await t.test(
+      "10d. Startpagina toont daarna 'Rond je bestelling af in Picnic' met werkende 'Ik heb besteld' (nieuwe functie)",
+      async () => {
+        await page.goto(`${server.baseURL}/`, { waitUntil: "load" });
+        await page.locator("text=Rond je bestelling af in Picnic").waitFor({ state: "visible", timeout: 15_000 });
+
+        const confirmOrderButton = page.getByRole("button", { name: "Ik heb besteld" });
+        await confirmOrderButton.waitFor({ state: "visible", timeout: 10_000 });
+        await confirmOrderButton.click();
+
+        // confirmPicnicOrder is een rechtstreekse server-actie-aanroep vanuit
+        // de client (geen redirect, dus geen navigatie om op te wachten) —
+        // de knop zelf toont lokaal "Bezig..." zolang de transition loopt;
+        // wacht tot die tekst weer weg is (React-transition afgerond)
+        // vóórdat de DB-state gecontroleerd wordt (nooit stilzwijgend een
+        // bestelling "plaatsen" — deze knop zet alleen orderConfirmedAt,
+        // nooit een echte Picnic-bestelling; dat blijft altijd in de
+        // Picnic-app zelf, zoals gevraagd).
+        await page.getByRole("button", { name: "Bezig…" }).waitFor({ state: "hidden", timeout: 10_000 });
+
+        const shoppingList = await prisma.shoppingList.findFirstOrThrow({ where: { mealPlan: { householdId } } });
+        assert.ok(shoppingList.orderConfirmedAt !== null, "orderConfirmedAt moet gezet zijn na 'Ik heb besteld'");
+
+        await page.goto(`${server.baseURL}/`, { waitUntil: "load" });
+        const stillShowingConfirmCard = await page
+          .locator("text=Rond je bestelling af in Picnic")
+          .isVisible()
+          .catch(() => false);
+        assert.equal(
+          stillShowingConfirmCard,
+          false,
+          "Na 'Ik heb besteld' moet de bevestigingstegel niet opnieuw verschijnen bij een vers bezoek"
+        );
+      }
+    );
   } finally {
     await browser.close();
     await server.close();

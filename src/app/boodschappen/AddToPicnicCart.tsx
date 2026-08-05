@@ -39,18 +39,25 @@ export default function AddToPicnicCart({
   const [cleared, setCleared] = useState(false);
   const [isClearPending, startClearTransition] = useTransition();
 
-  const [isConfirmOrderPending, startConfirmOrderTransition] = useTransition();
+  const [isConfirmOrderPending, setIsConfirmOrderPending] = useState(false);
   const [orderConfirmError, setOrderConfirmError] = useState<string | null>(null);
+  const [orderConfirmedLocally, setOrderConfirmedLocally] = useState(false);
 
+  // Bewust GEEN useTransition hier (in tegenstelling tot de andere acties in
+  // dit component): confirmPicnicOrder revalideert zowel "/boodschappen" als
+  // "/", en sinds dit component ook rechtstreeks op "/" zelf gerenderd wordt
+  // (bestel-nu vanaf de startpagina), zorgde de transition-gebonden "patch de
+  // huidige route direct bij" van Next ervoor dat de knop op ~50% van de
+  // kliks voor altijd op "Bezig…" bleef staan terwijl de database-update wel
+  // gewoon lukte — reproduceerbaar bevestigd via onafhankelijke review. Los
+  // bijgehouden pending-state + lokale bevestiging omzeilt dat pad volledig.
   function handleConfirmOrder() {
     setOrderConfirmError(null);
-    startConfirmOrderTransition(async () => {
-      try {
-        await confirmPicnicOrder(shoppingListId);
-      } catch (e) {
-        setOrderConfirmError(e instanceof Error ? e.message : "Er ging iets mis.");
-      }
-    });
+    setIsConfirmOrderPending(true);
+    confirmPicnicOrder(shoppingListId)
+      .then(() => setOrderConfirmedLocally(true))
+      .catch((e) => setOrderConfirmError(e instanceof Error ? e.message : "Er ging iets mis."))
+      .finally(() => setIsConfirmOrderPending(false));
   }
 
   function handleOpenConfirmation(nextScope: TransferScope) {
@@ -239,7 +246,7 @@ export default function AddToPicnicCart({
         </div>
       )}
 
-      {hasTransferredLines && !orderConfirmed && (
+      {hasTransferredLines && !orderConfirmed && !orderConfirmedLocally && (
         <div className="mt-4 min-w-0 rounded-lg border border-accent/35 bg-accent-soft p-3 text-xs">
           <p className="mb-2 font-medium text-ink">Rond je bestelling af in Picnic.</p>
           <p className="mb-2 text-ink-muted">
