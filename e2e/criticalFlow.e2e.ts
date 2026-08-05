@@ -235,8 +235,38 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       assert.ok(mockPicnic.addedProducts.length > 0, "De mock-Picnic-server moet minstens één add_product-aanroep hebben ontvangen");
     });
 
+    await t.test("8b. Mandje legen toont de echte foutmelding bij een Picnic-fout (bugfix-regressie)", async () => {
+      // Reproduceert het gebruikersgemelde probleem: vóór de bugfix gooide
+      // clearPicnicCartForShoppingList een kale Error, die Next.js in
+      // productie herleidt tot een nietszeggende "An error occurred in the
+      // Server Components render"-pagina i.p.v. de eigen Nederlandse melding.
+      mockPicnic.failClear = true;
+      try {
+        await page.getByRole("button", { name: "Picnic-mandje legen" }).click();
+        const confirmClear = page.getByRole("button", { name: "Ja, mandje legen" });
+        await confirmClear.waitFor({ state: "visible", timeout: 5_000 });
+        await confirmClear.click();
+
+        await page
+          .locator("text=Picnic-sessie verlopen of ongeldig. Koppel je Picnic-account opnieuw bij Ons gezin.")
+          .waitFor({ state: "visible", timeout: 15_000 });
+        const genericErrorVisible = await page
+          .locator("text=An error occurred in the Server Components render")
+          .isVisible()
+          .catch(() => false);
+        assert.equal(
+          genericErrorVisible,
+          false,
+          "de gebruiker moet de eigen Nederlandse foutmelding zien, nooit de generieke Next.js-pagina"
+        );
+      } finally {
+        mockPicnic.failClear = false;
+      }
+    });
+
     await t.test("9. Fout herstellen: mandje legen", async () => {
-      await page.getByRole("button", { name: "Picnic-mandje legen" }).click();
+      // Vervolg op 8b: dezelfde bevestiging (nog open na de mislukte poging
+      // hierboven) opnieuw versturen, nu zonder gesimuleerde Picnic-fout.
       const confirmClear = page.getByRole("button", { name: "Ja, mandje legen" });
       await confirmClear.waitFor({ state: "visible", timeout: 5_000 });
       await confirmClear.click();

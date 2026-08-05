@@ -13,6 +13,8 @@ import type { AddressInfo } from "node:net";
 export interface MockPicnicServer {
   url: string;
   addedProducts: { productId: string; count: number }[];
+  /** Zet op true om de volgende /cart/clear-aanroep een Picnic AUTH_ERROR te laten teruggeven (voor de bugfix-regressietest "mandje legen"). */
+  failClear: boolean;
   close(): Promise<void>;
 }
 
@@ -56,6 +58,12 @@ const DEFAULT_PORT = 4010;
 
 export async function startMockPicnicServer(port = DEFAULT_PORT): Promise<MockPicnicServer> {
   const addedProducts: { productId: string; count: number }[] = [];
+  const mockServer = {
+    url: "",
+    addedProducts,
+    failClear: false,
+    close: async () => {},
+  } as MockPicnicServer;
 
   const server: Server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -86,6 +94,11 @@ export async function startMockPicnicServer(port = DEFAULT_PORT): Promise<MockPi
     }
 
     if (url.pathname === "/cart/clear" && req.method === "POST") {
+      if (mockServer.failClear) {
+        res.writeHead(200);
+        res.end(JSON.stringify({ error: { code: "AUTH_ERROR", message: "Sessie verlopen" } }));
+        return;
+      }
       addedProducts.length = 0;
       res.writeHead(200);
       res.end("{}");
@@ -121,9 +134,7 @@ export async function startMockPicnicServer(port = DEFAULT_PORT): Promise<MockPi
   });
   const { port: boundPort } = server.address() as AddressInfo;
 
-  return {
-    url: `http://127.0.0.1:${boundPort}`,
-    addedProducts,
-    close: () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve()))),
-  };
+  mockServer.url = `http://127.0.0.1:${boundPort}`;
+  mockServer.close = () => new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  return mockServer;
 }
