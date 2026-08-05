@@ -13,6 +13,29 @@ export interface PicnicCartResult {
   stoppedEarly: boolean;
 }
 
+export type PicnicCartClearResult = { ok: true } | { ok: false; message: string };
+
+/**
+ * Vertaalt een Picnic-/verbindingsfout naar een vaste, Nederlandse melding.
+ * Bewust nooit een ruwe Error laten "bubbelen" tot buiten deze module: een
+ * server action die direct als functie vanuit een client component wordt
+ * aangeroepen (zoals clearPicnicCart) gooit z'n `throw` over de Server-
+ * Actions-grens, en Next.js redact in productiebuilds de exacte boodschap
+ * van zo'n throw (zelfde reden als WP89's fix voor recept-import) — de
+ * gebruiker zag daardoor alleen "An error occurred in the Server Components
+ * render", nooit de eigenlijke (uitlegbare) foutmelding.
+ */
+function describePicnicError(error: unknown): string {
+  if (error instanceof PicnicAuthError) {
+    return "Picnic-sessie verlopen of ongeldig. Koppel je Picnic-account opnieuw bij Ons gezin.";
+  }
+  if (error instanceof PicnicNetworkError) {
+    return "Geen verbinding met Picnic — probeer het later opnieuw.";
+  }
+  if (error instanceof Error) return error.message;
+  return "Onbekende fout bij Picnic.";
+}
+
 /**
  * Zoekt elk nog niet overgedragen boodschappenlijst-item bij Picnic en voegt
  * de best passende match toe aan het echte Picnic-mandje. Idempotent
@@ -44,9 +67,13 @@ export async function addShoppingListToPicnicCart(
   });
 
   if (!household.picnicAuthToken) {
-    throw new Error(
-      "Nog geen Picnic-account gekoppeld. Draai eenmalig in de terminal: npm run picnic:login"
-    );
+    return {
+      added: [],
+      skipped: [],
+      notFound: [],
+      errors: [{ ingredientName: "", message: "Nog geen Picnic-account gekoppeld. Koppel je account bij Ons gezin." }],
+      stoppedEarly: true,
+    };
   }
 
   const linesToTransfer = options?.onlySources
@@ -120,8 +147,17 @@ export async function addShoppingListToPicnicCart(
   return result;
 }
 
-/** Leegt het echte Picnic-mandje en zet de overdrachtsstatus van deze lijst terug, zodat "Toevoegen" daarna weer alles opnieuw plaatst. */
-export async function clearPicnicCartForShoppingList(shoppingListId: string): Promise<void> {
+/**
+ * Leegt het echte Picnic-mandje en zet de overdrachtsstatus van deze lijst
+ * terug, zodat "Toevoegen" daarna weer alles opnieuw plaatst. Gooit bewust
+ * nooit — deze functie wordt rechtstreeks als async functie vanuit een
+ * client component aangeroepen (geen formulier/redirect), en elke `throw`
+ * die de Server-Actions-grens over gaat wordt door Next.js in productie
+ * herleid tot een nietszeggende generieke melding (zie describePicnicError
+ * hierboven). Een `{ ok: false, message }`-resultaat komt wél met de echte,
+ * Nederlandse boodschap bij de gebruiker aan.
+ */
+export async function clearPicnicCartForShoppingList(shoppingListId: string): Promise<PicnicCartClearResult> {
   const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
     where: { id: shoppingListId },
     include: { mealPlan: { select: { householdId: true } } },
@@ -132,13 +168,22 @@ export async function clearPicnicCartForShoppingList(shoppingListId: string): Pr
   });
 
   if (!household.picnicAuthToken) {
-    throw new Error(
-      "Nog geen Picnic-account gekoppeld. Draai eenmalig in de terminal: npm run picnic:login"
-    );
+    return { ok: false, message: "Nog geen Picnic-account gekoppeld. Koppel je account bij Ons gezin." };
   }
 
   const client = new PicnicClient(household.picnicAuthToken);
-  await client.clearCart();
+  try {
+    await client.clearCart();
+  } catch (err) {
+    await persistRefreshedToken(client, household.id, household.picnicAuthToken);
+    logEvent({
+      level: "warn",
+      area: "picnic_cart",
+      message: "Mandje legen mislukt",
+      meta: { shoppingListId, error: err instanceof Error ? err.message : String(err) },
+    });
+    return { ok: false, message: describePicnicError(err) };
+  }
   await persistRefreshedToken(client, household.id, household.picnicAuthToken);
 
   logEvent({
@@ -152,6 +197,8 @@ export async function clearPicnicCartForShoppingList(shoppingListId: string): Pr
     where: { shoppingListId, transferredToPicnicAt: { not: null } },
     data: { transferredToPicnicAt: null },
   });
+
+  return { ok: true };
 }
 
 async function persistRefreshedToken(client: PicnicClient, householdId: string, previousToken: string) {
