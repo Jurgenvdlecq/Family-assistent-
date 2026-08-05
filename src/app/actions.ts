@@ -39,10 +39,30 @@ type ParsedLooseMealLine = ReturnType<typeof parseRecipeIngredientText>[number];
  * verse render af én toont een expliciete groene bevestiging (zie
  * STATUS_MESSAGES in page.tsx) — dezelfde aanpak als /boodschappen en
  * /recepten.
+ *
+ * `focusDayKey` (optioneel): voor acties die bij één specifieke dag horen
+ * (voorkeur zetten, losse maaltijd invullen, dag overslaan) — zonder dit
+ * sprong je na elke klik terug naar de bovenkant van de pagina en moest je
+ * opnieuw naar de juiste dag scrollen (bugfix UX-review, punt 6). `page.tsx`
+ * gebruikt dit om terug te scrollen naar `#day-<dayKey>` — zelfde
+ * `focus`+hash-patroon als /boodschappen en /controle.
+ *
+ * `openDayDetails` (optioneel, standaard `true`): of "Meer voor deze dag"
+ * voor die dag ook meteen openklapt. Voor acties die zelf al ín die sectie
+ * gebeuren (voorkeur zetten, losse maaltijd invullen) wil je dat, zodat je
+ * meteen door kunt met de volgende. Voor "Uit eten" (zit niet in die
+ * sectie) zou dat een ongevraagd paneel openklappen — code-review-bevinding,
+ * daarom expliciet `false` bij die ene aanroep.
  */
-function redirectToHome(status: string): never {
+function redirectToHome(status: string, focusDayKey?: DayKey, openDayDetails = true): never {
   revalidatePath("/");
-  redirect(`/?status=${encodeURIComponent(status)}`);
+  const params = new URLSearchParams({ status });
+  if (focusDayKey) {
+    params.set("focusDay", focusDayKey);
+    if (!openDayDetails) params.set("openDetails", "0");
+    redirect(`/?${params.toString()}#day-${focusDayKey}`);
+  }
+  redirect(`/?${params.toString()}`);
 }
 
 function parsePersonalStance(value: FormDataEntryValue | null): (typeof PERSONAL_STANCES)[number] {
@@ -257,7 +277,7 @@ export async function setLooseMealForDay(formData: FormData) {
 
   revalidatePath("/boodschappen");
   revalidatePath("/controle");
-  redirectToHome("loose-meal-set");
+  redirectToHome("loose-meal-set", dayKey);
 }
 
 /**
@@ -352,7 +372,7 @@ export async function setPersonMealPreference(formData: FormData) {
   });
 
   revalidatePath("/gerechten");
-  redirectToHome("preference-saved");
+  redirectToHome("preference-saved", dayKey);
 }
 
 export async function regenerateCurrentWeekPlan(formData: FormData) {
@@ -465,5 +485,5 @@ export async function toggleMealPlanEntrySkipped(formData: FormData) {
   });
   await invalidateShoppingList(mealPlan.id);
 
-  redirectToHome(entry.skipped ? "day-restored" : "day-skipped");
+  redirectToHome(entry.skipped ? "day-restored" : "day-skipped", dayKey, false);
 }

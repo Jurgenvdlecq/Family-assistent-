@@ -26,6 +26,7 @@ import {
   timeOfDayGreeting,
   isDayStartedOrPast,
   currentDayKey,
+  type DayKey,
 } from "@/lib/week";
 import {
   CATEGORY_LABELS,
@@ -175,10 +176,14 @@ function PreferenceButtons({
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; focusDay?: string; openDetails?: string }>;
 }) {
   const params = await searchParams;
   const statusMessage = params.status ? STATUS_MESSAGES[params.status] : undefined;
+  const focusDayKey = (DAY_KEYS as readonly string[]).includes(params.focusDay ?? "")
+    ? (params.focusDay as DayKey)
+    : undefined;
+  const openFocusedDayDetails = params.openDetails !== "0";
   const currentHousehold = await requireCurrentHousehold();
   const household = await prisma.household.findUniqueOrThrow({
     where: { id: currentHousehold.id },
@@ -426,7 +431,8 @@ export default async function Home({
           return (
             <div
               key={dayKey}
-              className={`flex min-w-0 flex-col gap-3 px-6 py-4 ${skipped ? "opacity-60" : ""}`}
+              id={`day-${dayKey}`}
+              className={`scroll-mt-6 flex min-w-0 flex-col gap-3 px-6 py-4 ${skipped ? "opacity-60" : ""}`}
             >
               <div className="flex min-w-0 items-center gap-3">
                 <div className="w-11 shrink-0 text-center">
@@ -570,7 +576,10 @@ export default async function Home({
                 </div>
               )}
 
-              <details className="ml-14 rounded-lg border border-line bg-surface-2 px-3 py-2">
+              <details
+                className="ml-14 rounded-lg border border-line bg-surface-2 px-3 py-2"
+                open={(focusDayKey === dayKey && openFocusedDayDetails) || undefined}
+              >
                 <summary className="cursor-pointer text-xs font-medium text-ink-muted">
                   Meer voor deze dag
                 </summary>

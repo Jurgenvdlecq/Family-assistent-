@@ -127,6 +127,61 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       assert.equal(await replaceLinks.count(), 7, "Elke dag van de week moet een 'Vervang'-actie hebben");
     });
 
+    await t.test("2b. Voorkeur zetten blijft op dezelfde dag i.p.v. terug naar boven springen (UX-bugfix)", async () => {
+      await page.goto(`${server.baseURL}/`, { waitUntil: "load" });
+      const tuesdayBlock = page.locator("#day-tuesday");
+      await tuesdayBlock.waitFor({ state: "visible", timeout: 15_000 });
+      await tuesdayBlock.getByText("Meer voor deze dag").click();
+
+      const stanceButton = tuesdayBlock.getByRole("button", { name: "Oké" }).first();
+      await stanceButton.waitFor({ state: "visible", timeout: 10_000 });
+      await stanceButton.click();
+
+      await page.waitForURL((url) => url.searchParams.get("focusDay") === "tuesday", { timeout: 15_000 });
+      assert.ok(
+        page.url().endsWith("#day-tuesday"),
+        "Moet teruggaan naar dezelfde dag i.p.v. bovenaan de startpagina te belanden"
+      );
+
+      // "Meer voor deze dag" moet nog open staan, zodat je meteen door kunt
+      // met de volgende voorkeur i.p.v. 'm opnieuw te moeten openklappen.
+      const detailsOpen = await tuesdayBlock
+        .locator("details", { hasText: "Meer voor deze dag" })
+        .evaluate((el) => (el as HTMLDetailsElement).open);
+      assert.equal(detailsOpen, true, "'Meer voor deze dag' moet open blijven staan na het zetten van een voorkeur");
+    });
+
+    await t.test("2c. 'Uit eten' scrollt terug naar de dag zonder ongevraagd 'Meer voor deze dag' te openen (UX-bugfix)", async () => {
+      await page.goto(`${server.baseURL}/`, { waitUntil: "load" });
+      const wednesdayBlock = page.locator("#day-wednesday");
+      await wednesdayBlock.waitFor({ state: "visible", timeout: 15_000 });
+
+      // De knop heeft een aria-label ("We eten woensdag niet thuis") dat de
+      // zichtbare tekst ("Uit eten") overschrijft als toegankelijke naam.
+      const skipButton = wednesdayBlock.getByRole("button", { name: "We eten woensdag niet thuis" });
+      await skipButton.waitFor({ state: "visible", timeout: 10_000 });
+      await skipButton.click();
+
+      await page.waitForURL((url) => url.searchParams.get("focusDay") === "wednesday", { timeout: 15_000 });
+      assert.ok(page.url().endsWith("#day-wednesday"), "Moet teruggaan naar dezelfde dag");
+
+      const detailsOpen = await wednesdayBlock
+        .locator("details", { hasText: "Meer voor deze dag" })
+        .evaluate((el) => (el as HTMLDetailsElement).open);
+      assert.equal(
+        detailsOpen,
+        false,
+        "'Uit eten' hoort niet ongevraagd 'Meer voor deze dag' open te klappen (code-review-bevinding)"
+      );
+
+      // Weer terugzetten, zodat latere stappen (bv. boodschappenlijst
+      // opbouwen) een normale, niet-overgeslagen week aantreffen.
+      const restoreButton = wednesdayBlock.getByRole("button", { name: "Zet woensdag terug in de planning" });
+      await restoreButton.waitFor({ state: "visible", timeout: 10_000 });
+      await restoreButton.click();
+      await page.waitForURL((url) => url.searchParams.get("status") === "day-restored", { timeout: 15_000 });
+    });
+
     await t.test("3. Gerecht vervangen", async () => {
       await page.getByRole("link", { name: "Vervang maandag" }).click();
       await page.waitForURL(/\/gerechten\?/, { timeout: 15_000 });
