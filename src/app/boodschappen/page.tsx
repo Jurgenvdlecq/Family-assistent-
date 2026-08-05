@@ -21,7 +21,7 @@ import { picnicImageUrl, picnicPriceToEuros, picnicProductRef } from "@/lib/picn
 import { PicnicClient } from "@/lib/picnic/client";
 import type { PicnicSearchResultItem } from "@/lib/picnic/searchResults";
 import { inferFixedProductOrderQuantity, parseBulkFixedGroceryInput, titleCaseSearchTerm } from "@/lib/fixedGroceryProductChoice";
-import { matchProductForIngredient } from "@/domain/product-matching/matchIngredient";
+import { getTrustedPreferences } from "@/domain/product-matching/repository";
 import NavBar from "@/components/NavBar";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import PicnicTransfer from "./PicnicTransfer";
@@ -408,10 +408,21 @@ type QuickOrderPreviewLine = {
 
 /**
  * WP92: "snel meerdere producten toevoegen" — voor elke regel eerst kijken
- * of het ingrediënt al een vertrouwde eerdere Picnic-keuze heeft
- * (MATCHED_TRUSTED, dezelfde matcher als de weekmenu-lijst gebruikt) vóórdat
- * er live bij Picnic gezocht wordt. Dat is zowel sneller (geen netwerkcall
- * nodig) als precies "volgens onze wensen en voorkeuren" zoals gevraagd.
+ * of DIT huishouden al zelf bewust een Picnic-product voor dit ingrediënt
+ * heeft gekozen (een echte `HouseholdProductPreference`-rij) vóórdat er live
+ * bij Picnic gezocht wordt. Dat is zowel sneller (geen netwerkcall nodig)
+ * als precies "volgens onze wensen en voorkeuren" zoals gevraagd.
+ *
+ * Bewust `getTrustedPreferences` rechtstreeks, niet `matchProductForIngredient`
+ * — die laatste geeft óók MATCHED_TRUSTED terug wanneer er wereldwijd maar
+ * één Product-kandidaat voor een ingrediënt bestaat (Product is een gedeelde
+ * catalogus, niet per huishouden), ook als dít huishouden dat product nooit
+ * zelf gekozen heeft. Voor de weekmenu-lijst is dat acceptabel (blijft een
+ * concept-regel die nog gecontroleerd wordt), maar hier belooft de knop
+ * expliciet "jullie eerdere keuze" en voegt 'm toe zonder enige preview —
+ * dat mag nooit op een toevallige wereldwijde coïncidentie berusten
+ * (AGENTS.md: "nooit stilzwijgend of ongecontroleerd").
+ *
  * Onbekende/twijfelachtige ingrediënten krijgen gewoon de bestaande
  * zoekresultaten-picker, net als bij vaste boodschappen.
  */
@@ -426,15 +437,16 @@ async function searchQuickOrderPreview(
   let client: PicnicClient | null = null;
   const lines: QuickOrderPreviewLine[] = [];
 
-  for (const parsed of parsedLines) {
-    const inferred = inferFixedProductOrderQuantity(parsed.multiplier);
-    const ingredientName = titleCaseSearchTerm(parsed.searchTerm);
-    const existingIngredient = await prisma.ingredient.findUnique({ where: { name: ingredientName } });
+  try {
+    for (const parsed of parsedLines) {
+      const inferred = inferFixedProductOrderQuantity(parsed.multiplier);
+      const ingredientName = titleCaseSearchTerm(parsed.searchTerm);
+      const existingIngredient = await prisma.ingredient.findUnique({ where: { name: ingredientName } });
 
-    if (existingIngredient) {
-      const match = await matchProductForIngredient(householdId, existingIngredient.id);
-      if (match.status === "MATCHED_TRUSTED" && match.productId) {
-        const product = await prisma.product.findUnique({ where: { id: match.productId } });
+      if (existingIngredient) {
+        const trustedMap = await getTrustedPreferences(householdId, [existingIngredient.id]);
+        const trusted = trustedMap.get(existingIngredient.id);
+        const product = trusted ? await prisma.product.findUnique({ where: { id: trusted.productId } }) : null;
         if (product && product.externalRef) {
           lines.push({
             raw: parsed.raw,
@@ -454,56 +466,56 @@ async function searchQuickOrderPreview(
           continue;
         }
       }
-    }
 
-    if (!token) {
+      if (!token) {
+        lines.push({
+          raw: parsed.raw,
+          searchTerm: parsed.searchTerm,
+          quantity: inferred.quantity,
+          unit: inferred.unit,
+          trustedChoice: null,
+          results: [],
+        });
+        continue;
+      }
+
+      client ??= new PicnicClient(token);
+      const results = await client.search(parsed.searchTerm);
+      const seenRefs = new Set<string>();
+      const productResults = results
+        .map((item): BulkFixedProductResult | null => {
+          const externalRef = picnicProductRef(item);
+          if (!externalRef || !item.name || seenRefs.has(externalRef)) return null;
+          seenRefs.add(externalRef);
+          return {
+            ...item,
+            externalRef,
+            fixedQuantity: inferred.quantity,
+            fixedUnit: inferred.unit,
+            suggestedQuantity: inferred.quantity,
+          };
+        })
+        .filter((item) => item !== null)
+        .slice(0, 3);
+
       lines.push({
         raw: parsed.raw,
         searchTerm: parsed.searchTerm,
         quantity: inferred.quantity,
         unit: inferred.unit,
         trustedChoice: null,
-        results: [],
+        results: productResults,
       });
-      continue;
     }
-
-    client ??= new PicnicClient(token);
-    const results = await client.search(parsed.searchTerm);
-    const seenRefs = new Set<string>();
-    const productResults = results
-      .map((item): BulkFixedProductResult | null => {
-        const externalRef = picnicProductRef(item);
-        if (!externalRef || !item.name || seenRefs.has(externalRef)) return null;
-        seenRefs.add(externalRef);
-        return {
-          ...item,
-          externalRef,
-          fixedQuantity: inferred.quantity,
-          fixedUnit: inferred.unit,
-          suggestedQuantity: inferred.quantity,
-        };
-      })
-      .filter((item) => item !== null)
-      .slice(0, 3);
-
-    lines.push({
-      raw: parsed.raw,
-      searchTerm: parsed.searchTerm,
-      quantity: inferred.quantity,
-      unit: inferred.unit,
-      trustedChoice: null,
-      results: productResults,
-    });
-  }
-
-  if (client) {
-    const refreshedToken = client.getAuthToken();
-    if (refreshedToken && refreshedToken !== token) {
-      await prisma.household.update({
-        where: { id: householdId },
-        data: { picnicAuthToken: refreshedToken, picnicTokenUpdatedAt: new Date() },
-      });
+  } finally {
+    if (client) {
+      const refreshedToken = client.getAuthToken();
+      if (refreshedToken && refreshedToken !== token) {
+        await prisma.household.update({
+          where: { id: householdId },
+          data: { picnicAuthToken: refreshedToken, picnicTokenUpdatedAt: new Date() },
+        });
+      }
     }
   }
 
@@ -856,9 +868,9 @@ export default async function BoodschappenPage({
             >
               <input type="hidden" name="householdId" value={household.id} />
               <input type="hidden" name="quickOrderText" value={quickOrderText} />
-              {quickOrderAutoLines.map((line) => (
+              {quickOrderAutoLines.map((line, index) => (
                 <input
-                  key={line.raw}
+                  key={`${line.raw}-${index}`}
                   type="hidden"
                   name="choice"
                   value={JSON.stringify({
@@ -880,8 +892,8 @@ export default async function BoodschappenPage({
                 {quickOrderAutoLines.length} herkend als jullie eerdere keuze:
               </p>
               <ul className="mb-3 grid gap-1 text-xs text-ink-muted">
-                {quickOrderAutoLines.map((line) => (
-                  <li key={line.raw}>
+                {quickOrderAutoLines.map((line, index) => (
+                  <li key={`${line.raw}-${index}`}>
                     {line.raw} → {line.trustedChoice!.productName}
                   </li>
                 ))}
@@ -897,8 +909,8 @@ export default async function BoodschappenPage({
 
           {quickOrderPickLines.length > 0 && (
             <div className="mt-4 grid gap-4">
-              {quickOrderPickLines.map((line) => (
-                <div key={line.raw} className="rounded-lg border border-line bg-surface-2 p-3">
+              {quickOrderPickLines.map((line, index) => (
+                <div key={`${line.raw}-${index}`} className="rounded-lg border border-line bg-surface-2 p-3">
                   <p className="mb-2 text-sm font-semibold text-ink">{line.raw}</p>
                   {line.results.length === 0 ? (
                     <p className="text-sm text-ink-muted">Geen Picnic-product gevonden. Probeer een andere zoekterm.</p>

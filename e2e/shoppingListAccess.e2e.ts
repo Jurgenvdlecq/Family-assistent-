@@ -126,6 +126,47 @@ test("addManualProduct weigert een shoppingListId van een ander huishouden", { t
       "huishouden A mag nooit een regel in huishouden B's boodschappenlijst kunnen aanmaken"
     );
 
+    const linesBBeforeQuickOrderAttack = await prisma.shoppingListLine.count({ where: { shoppingListId: shoppingListB.id } });
+
+    await t.test("A probeert via quick-order (WP92) een regel in B's boodschappenlijst te schrijven", async () => {
+      const contextA = await browser.newContext();
+      const pageA = await contextA.newPage();
+      await pageA.goto(`${server.baseURL}/login`, { waitUntil: "load" });
+      await pageA.getByPlaceholder("Gebruikersnaam").fill("wp82a");
+      await pageA.getByPlaceholder("Wachtwoord").fill("wp82awachtwoord");
+      await pageA.getByRole("button", { name: "Openen" }).click();
+      await pageA.waitForURL(`${server.baseURL}/`, { timeout: 15_000 });
+
+      await pageA.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load", timeout: 90_000 });
+      const quickOrderInput = pageA.locator("#quick-order textarea[name=quickOrder]");
+      await quickOrderInput.waitFor({ state: "visible", timeout: 15_000 });
+      // Nieuw ingrediënt zonder eerdere voorkeur voor A — moet dus altijd
+      // via de handmatige-keuze-picker lopen (addQuickOrderProduct), niet
+      // via het automatisch-toevoegen-bulkpad.
+      await quickOrderInput.fill("wp92-aanvalstest");
+      await pageA.locator("#quick-order").getByRole("button", { name: "Zoeken" }).click();
+      await pageA.waitForURL((u) => u.searchParams.has("quickOrder"), { timeout: 15_000 });
+
+      const form = pageA.locator('#quick-order form:has(input[name="shoppingListId"])').first();
+      await form.waitFor({ state: "visible", timeout: 10_000 });
+      // De aanval: het verborgen shoppingListId-veld overschrijven met de
+      // lijst van een ander huishouden vóór het versturen.
+      await form.locator('input[name="shoppingListId"]').evaluate((el, value) => {
+        (el as HTMLInputElement).value = value;
+      }, shoppingListB.id);
+
+      await form.getByRole("button", { name: "Toevoegen" }).click();
+      await pageA.waitForLoadState("load", { timeout: 15_000 }).catch(() => {});
+      await contextA.close();
+    });
+
+    const linesBAfterQuickOrderAttack = await prisma.shoppingListLine.count({ where: { shoppingListId: shoppingListB.id } });
+    assert.equal(
+      linesBAfterQuickOrderAttack,
+      linesBBeforeQuickOrderAttack,
+      "huishouden A mag via addQuickOrderProduct nooit een regel in huishouden B's boodschappenlijst kunnen aanmaken"
+    );
+
     let fixedLineAId = "";
     let fixedLineBId = "";
     let mealLineAId = "";

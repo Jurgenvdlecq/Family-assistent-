@@ -71,6 +71,18 @@ function parseQuickOrderChoice(raw: FormDataEntryValue): QuickOrderChoiceInput {
 type SaveQuickOrderLineInput = Omit<QuickOrderChoiceInput, "householdId" | "raw">;
 
 async function saveQuickOrderLine(householdId: string, input: SaveQuickOrderLineInput, matchReason: string) {
+  // De bulk-actie ontvangt quantity/price via een hidden JSON-veld (zie
+  // addQuickOrderTrustedProducts) dat vóór verzenden aan te passen is —
+  // dezelfde validatie die addQuickOrderProduct via parseQuantity/
+  // parseOptionalPrice al voor de single-pick-invoer afdwingt, hier ook
+  // voor het bulk-pad, zodat geen NaN/negatieve hoeveelheid kan wegschrijven.
+  if (!Number.isFinite(input.quantity) || input.quantity <= 0) {
+    throw new Error("Vul een geldige hoeveelheid groter dan 0 in.");
+  }
+  if (input.price != null && !Number.isFinite(input.price)) {
+    throw new Error("Ongeldige prijs.");
+  }
+
   const { ingredient, product } = await resolvePicnicProductChoice(input);
   await recordProductChosen(householdId, ingredient.id, product.id);
 
