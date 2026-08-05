@@ -85,7 +85,11 @@ export default function AddToPicnicCart({
     setClearError(null);
     startClearTransition(async () => {
       try {
-        await clearPicnicCart(shoppingListId);
+        const result = await clearPicnicCart(shoppingListId);
+        if (!result.ok) {
+          setClearError(result.message);
+          return;
+        }
         setCleared(true);
         setConfirmingClear(false);
         setStage("idle");
@@ -200,9 +204,11 @@ export default function AddToPicnicCart({
 
       {stage === "done" && result && (
         <div className="mt-3 min-w-0 rounded-lg border border-line p-3 text-xs">
-          <p className="font-medium text-tag-green-ink">
-            {result.added.reduce((sum, item) => sum + item.count, 0)} verpakking(en) toegevoegd aan je Picnic-mandje.
-          </p>
+          {result.added.length > 0 && (
+            <p className="font-medium text-tag-green-ink">
+              {result.added.reduce((sum, item) => sum + item.count, 0)} verpakking(en) toegevoegd aan je Picnic-mandje.
+            </p>
+          )}
           {result.skipped.length > 0 && (
             <p className="mt-1 text-ink-faint">
               {result.skipped.length} product(en) stonden al in het mandje.
@@ -215,7 +221,9 @@ export default function AddToPicnicCart({
           )}
           {result.errors.length > 0 && (
             <p className="mt-1 text-red-600">
-              Fout bij: {result.errors.map((e) => e.ingredientName).join(", ")}.
+              {result.errors
+                .map((e) => (e.ingredientName ? `${e.ingredientName}: ${e.message}` : e.message))
+                .join(" ")}
               {result.stoppedEarly && " De rest is niet geprobeerd — probeer het later opnieuw."}
             </p>
           )}

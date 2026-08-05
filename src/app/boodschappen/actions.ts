@@ -10,6 +10,7 @@ import { recordProductChosen } from "@/domain/product-matching/repository";
 import {
   addShoppingListToPicnicCart,
   clearPicnicCartForShoppingList,
+  type PicnicCartClearResult,
   type PicnicCartResult,
 } from "@/lib/picnic/cartService";
 import { buildConfirmationSummary, type ConfirmationSummary } from "@/lib/picnic/confirmationSummary";
@@ -277,13 +278,16 @@ export async function addToPicnicCart(
   return result;
 }
 
-export async function clearPicnicCart(shoppingListId: string): Promise<void> {
+export async function clearPicnicCart(shoppingListId: string): Promise<PicnicCartClearResult> {
   await assertShoppingListAccess(shoppingListId);
-  await clearPicnicCartForShoppingList(shoppingListId);
+  const result = await clearPicnicCartForShoppingList(shoppingListId);
+  if (!result.ok) return result;
+
   // Een geleegd mandje is per definitie niet meer besteld — een oude
   // bevestiging zou anders blijven staan terwijl de situatie niet meer klopt.
   await prisma.shoppingList.update({ where: { id: shoppingListId }, data: { orderConfirmedAt: null } });
   revalidatePath("/boodschappen");
+  return result;
 }
 
 /**

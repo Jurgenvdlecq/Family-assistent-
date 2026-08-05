@@ -296,7 +296,8 @@ test("clearPicnicCartForShoppingList: zet transferredToPicnicAt terug zodat een 
     let line = await prisma.shoppingListLine.findFirstOrThrow({ where: { shoppingListId: shoppingList.id } });
     assert.ok(line.transferredToPicnicAt);
 
-    await clearPicnicCartForShoppingList(shoppingList.id);
+    const clearResult = await clearPicnicCartForShoppingList(shoppingList.id);
+    assert.equal(clearResult.ok, true);
     line = await prisma.shoppingListLine.findFirstOrThrow({ where: { shoppingListId: shoppingList.id } });
     assert.equal(line.transferredToPicnicAt, null);
 
@@ -305,5 +306,123 @@ test("clearPicnicCartForShoppingList: zet transferredToPicnicAt terug zodat een 
   } finally {
     global.fetch = originalFetch;
     if (household) await cleanup(household.id);
+  }
+});
+
+/**
+ * Bugfix (gebruikersmelding: "ik kan mn boodschappenlijst niet legen"):
+ * clearPicnicCartForShoppingList gooide voorheen een kale Error zodra Picnic
+ * een auth-fout teruggaf — clearPicnicCart wordt rechtstreeks als functie
+ * vanuit een client component aangeroepen (geen formulier/redirect), dus
+ * die throw ging over de Server-Actions-grens en werd door Next.js in
+ * productie herleid tot de nietszeggende "An error occurred in the Server
+ * Components render"-melding. Nu een resultaat i.p.v. een throw.
+ */
+test("clearPicnicCartForShoppingList: geeft een Nederlandse foutmelding terug i.p.v. te gooien bij een Picnic-authfout", async () => {
+  const originalFetch = global.fetch;
+  let household: Awaited<ReturnType<typeof makeHouseholdWithShoppingListLine>>["household"] | undefined;
+
+  try {
+    const fixture = await makeHouseholdWithShoppingListLine("Bugfix-test — mandje legen met verlopen sessie");
+    household = fixture.household;
+
+    global.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/cart/clear")) {
+        return new Response(
+          JSON.stringify({ error: { code: "AUTH_ERROR", message: "Sessie verlopen" } }),
+          { headers: { "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(JSON.stringify({ error: { code: "UNKNOWN", message: "onverwacht endpoint" } }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const result = await clearPicnicCartForShoppingList(fixture.shoppingList.id);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.message, /Picnic-sessie verlopen/, "moet een uitlegbare Nederlandse melding teruggeven, geen kale Picnic-foutcode");
+    }
+  } finally {
+    global.fetch = originalFetch;
+    if (household) await cleanup(household.id);
+  }
+});
+
+test("addShoppingListToPicnicCart: geeft een resultaat terug i.p.v. te gooien zonder gekoppeld Picnic-account", async () => {
+  const household = await prisma.household.create({
+    data: {
+      name: "Bugfix-test — mandje vullen zonder Picnic-koppeling",
+      persons: { create: [{ name: "Test", role: "PARENT" }] },
+    },
+  });
+  try {
+    const ingredient = await prisma.ingredient.findFirstOrThrow({});
+    const variant = await prisma.recipeVariant.findFirstOrThrow({});
+    const mealPlan = await prisma.mealPlan.create({
+      data: {
+        householdId: household.id,
+        weekStart: getCurrentWeekStart(),
+        status: "CONFIRMED",
+        entries: { create: [{ dayOfWeek: "MONDAY", recipeVariantId: variant.id }] },
+      },
+    });
+    const shoppingList = await prisma.shoppingList.create({
+      data: {
+        mealPlanId: mealPlan.id,
+        lines: {
+          create: [
+            { ingredientId: ingredient.id, quantity: 1, unit: "PIECE", source: "MEAL", matchStatus: "NOT_FOUND", matchConfidence: 0 },
+          ],
+        },
+      },
+    });
+
+    const result = await addShoppingListToPicnicCart(shoppingList.id);
+    assert.equal(result.added.length, 0);
+    assert.equal(result.stoppedEarly, true);
+    assert.match(result.errors[0]?.message ?? "", /Nog geen Picnic-account gekoppeld/);
+  } finally {
+    await cleanup(household.id);
+  }
+});
+
+test("clearPicnicCartForShoppingList: geeft een resultaat terug i.p.v. te gooien zonder gekoppeld Picnic-account", async () => {
+  const household = await prisma.household.create({
+    data: {
+      name: "Bugfix-test — mandje legen zonder Picnic-koppeling",
+      persons: { create: [{ name: "Test", role: "PARENT" }] },
+    },
+  });
+  try {
+    const ingredient = await prisma.ingredient.findFirstOrThrow({});
+    const variant = await prisma.recipeVariant.findFirstOrThrow({});
+    const mealPlan = await prisma.mealPlan.create({
+      data: {
+        householdId: household.id,
+        weekStart: getCurrentWeekStart(),
+        status: "CONFIRMED",
+        entries: { create: [{ dayOfWeek: "MONDAY", recipeVariantId: variant.id }] },
+      },
+    });
+    const shoppingList = await prisma.shoppingList.create({
+      data: {
+        mealPlanId: mealPlan.id,
+        lines: {
+          create: [
+            { ingredientId: ingredient.id, quantity: 1, unit: "PIECE", source: "MEAL", matchStatus: "NOT_FOUND", matchConfidence: 0 },
+          ],
+        },
+      },
+    });
+
+    const result = await clearPicnicCartForShoppingList(shoppingList.id);
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.message, /Nog geen Picnic-account gekoppeld/);
+    }
+  } finally {
+    await cleanup(household.id);
   }
 });
