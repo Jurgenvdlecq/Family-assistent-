@@ -130,3 +130,29 @@ function calendarDayKey(date: Date): string {
 export function isDayStartedOrPast(date: Date, now: Date = new Date()): boolean {
   return calendarDayKey(date) <= calendarDayKey(now);
 }
+
+const WEEKDAY_TO_DAY_KEY: Record<string, DayKey> = {
+  Mon: "monday",
+  Tue: "tuesday",
+  Wed: "wednesday",
+  Thu: "thursday",
+  Fri: "friday",
+  Sat: "saturday",
+  Sun: "sunday",
+};
+
+/**
+ * DayKey van vandaag in Europe/Amsterdam — voor een standaardwaarde als een
+ * dag niet expliciet is meegegeven (bv. `/gerechten` zonder `?day=`,
+ * rechtstreeks via de navbar). Was voorheen alleen op de startpagina
+ * uitgerekend (voor het "toch ergens anders zin in?"-daginvulveld) via
+ * serverlokale tijd (`getDay()`), en stond op `/gerechten` zelf hardcoded op
+ * "monday" — nu één plek, en expliciet Amsterdam-tijd i.p.v. serverlokale
+ * tijd (die op deze sandbox/Vercel UTC is): anders geeft dit vlak na
+ * middernacht lokale tijd nog de vorige dag terug, precies de bug die deze
+ * functie moet oplossen.
+ */
+export function currentDayKey(now: Date = new Date()): DayKey {
+  const weekday = new Intl.DateTimeFormat("en-US", { timeZone: DISPLAY_TIME_ZONE, weekday: "short" }).format(now);
+  return WEEKDAY_TO_DAY_KEY[weekday] ?? "monday";
+}

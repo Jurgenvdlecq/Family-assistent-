@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { timeOfDayGreeting, isDayStartedOrPast } from "./week";
+import { timeOfDayGreeting, isDayStartedOrPast, currentDayKey } from "./week";
 
 // Januari gekozen i.p.v. een zomermaand om DST-onzekerheid te vermijden:
 // Europe/Amsterdam staat dan vast op UTC+1.
@@ -33,4 +33,19 @@ test("isDayStartedOrPast: een dag verderop deze week is nog niet begonnen — pr
   const donderdag = new Date("2026-01-15T00:00:00Z");
   const maandagOchtend = new Date("2026-01-12T08:00:00Z");
   assert.equal(isDayStartedOrPast(donderdag, maandagOchtend), false);
+});
+
+test("currentDayKey: bekende dagen (12, 15, 18 januari 2026 zijn resp. maandag/donderdag/zondag)", () => {
+  assert.equal(currentDayKey(new Date("2026-01-12T10:00:00Z")), "monday");
+  assert.equal(currentDayKey(new Date("2026-01-15T10:00:00Z")), "thursday");
+  assert.equal(currentDayKey(new Date("2026-01-18T10:00:00Z")), "sunday");
+});
+
+test("currentDayKey: gebruikt Europe/Amsterdam, niet serverlokale/UTC-tijd (code-review-bevinding)", () => {
+  // 2026-01-15T23:30:00Z is in UTC nog donderdag, maar in Amsterdam
+  // (UTC+1 in januari) al 00:30 vrijdagochtend — een naïeve
+  // now.getDay()-implementatie zou hier "donderdag" teruggeven, precies de
+  // "verkeerde standaarddag rond middernacht"-bug die deze functie moet
+  // voorkomen.
+  assert.equal(currentDayKey(new Date("2026-01-15T23:30:00Z")), "friday");
 });

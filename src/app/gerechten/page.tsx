@@ -6,7 +6,7 @@ import { getMealPlanForWeek } from "@/lib/mealPlan";
 import { getHouseholdHardRestrictionsAndParticipantsByDay } from "@/lib/household";
 import { recipeConflictsWithRestrictions } from "@/lib/dietaryRestrictions";
 import { accessibleRecipeWhere } from "@/lib/recipeScope";
-import { DAY_KEYS, DAY_ENUM, DAY_LABELS, getCurrentWeekStart, type DayKey } from "@/lib/week";
+import { DAY_KEYS, DAY_ENUM, DAY_LABELS, getCurrentWeekStart, currentDayKey, type DayKey } from "@/lib/week";
 import { STATUS_LABELS, statusTone } from "@/lib/categoryStyle";
 import { normalizeMealText, parseMealWish, scoreMealWish } from "@/domain/meal-tags/mealTags";
 import { MEAL_REPLACEMENT_REASONS } from "@/domain/learning/feedbackReasons";
@@ -20,6 +20,8 @@ export const dynamic = "force-dynamic";
 
 const STATUS_MESSAGES: Record<string, string> = {
   "recipe-restored": "Dit gerecht kan weer voorgesteld worden.",
+  "meal-replaced": "Gerecht gewisseld.",
+  "meal-unchanged": "Dit gerecht stond al op die dag.",
 };
 
 const DIRECTIONS = [
@@ -86,7 +88,7 @@ export default async function GerechtenPage({
 
   const dayKey: DayKey = (DAY_KEYS as readonly string[]).includes(params.day ?? "")
     ? (params.day as DayKey)
-    : "monday";
+    : currentDayKey();
   const direction = DIRECTION_KEYS.includes(params.direction as (typeof DIRECTION_KEYS)[number])
     ? params.direction!
     : "all";
@@ -400,6 +402,9 @@ export default async function GerechtenPage({
             household={household.id}
             dayKey={dayKey}
             weekStart={weekStart}
+            hasCurrentEntry={Boolean(currentEntry)}
+            direction={direction}
+            wishText={wishText}
           />
         )}
 
@@ -414,6 +419,9 @@ export default async function GerechtenPage({
             household={household.id}
             dayKey={dayKey}
             weekStart={weekStart}
+            hasCurrentEntry={Boolean(currentEntry)}
+            direction={direction}
+            wishText={wishText}
           />
         )}
 
@@ -428,6 +436,9 @@ export default async function GerechtenPage({
             household={household.id}
             dayKey={dayKey}
             weekStart={weekStart}
+            hasCurrentEntry={Boolean(currentEntry)}
+            direction={direction}
+            wishText={wishText}
           />
         )}
 
@@ -480,6 +491,9 @@ function RecipeSection({
   household,
   dayKey,
   weekStart,
+  hasCurrentEntry,
+  direction,
+  wishText,
 }: {
   title: string;
   icon?: React.ReactNode;
@@ -490,6 +504,11 @@ function RecipeSection({
   household: string;
   dayKey: DayKey;
   weekStart: Date;
+  /** Is er voor deze dag al een gerecht gepland? Zo niet, is "waarom wil je wisselen?" een vraag zonder object — die stap dan overslaan. */
+  hasCurrentEntry: boolean;
+  /** Meegegeven zodat de bevestiging terug kan naar dezelfde /gerechten-context (dag/richting/zoekopdracht) i.p.v. naar de startpagina. */
+  direction: string;
+  wishText: string;
 }) {
   if (variants.length === 0) return null;
   return (
@@ -510,6 +529,8 @@ function RecipeSection({
               <input type="hidden" name="dayKey" value={dayKey} />
               <input type="hidden" name="recipeVariantId" value={variant.id} />
               <input type="hidden" name="weekStart" value={weekStart.toISOString()} />
+              <input type="hidden" name="direction" value={direction} />
+              <input type="hidden" name="q" value={wishText} />
               <div className="rounded-xl border border-line bg-surface p-3 transition-colors hover:border-accent/50">
                 <div className="min-w-0">
                   <p className="line-clamp-2 font-medium text-ink">{variant.recipe.title}</p>
@@ -537,19 +558,21 @@ function RecipeSection({
                     </p>
                   )}
                 </div>
-                <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
-                  <select
-                    name="replacementReason"
-                    defaultValue="ONLY_THIS_TIME"
-                    aria-label="Waarom wil je wisselen?"
-                    className="min-w-0 rounded-lg border border-line bg-surface px-2 py-2 text-xs text-ink-muted"
-                  >
-                    {MEAL_REPLACEMENT_REASONS.map((reason) => (
-                      <option key={reason.value} value={reason.value}>
-                        {reason.label}
-                      </option>
-                    ))}
-                  </select>
+                <div className={`mt-3 grid gap-2 ${hasCurrentEntry ? "grid-cols-[1fr_auto]" : ""}`}>
+                  {hasCurrentEntry && (
+                    <select
+                      name="replacementReason"
+                      defaultValue="ONLY_THIS_TIME"
+                      aria-label="Waarom wil je wisselen?"
+                      className="min-w-0 rounded-lg border border-line bg-surface px-2 py-2 text-xs text-ink-muted"
+                    >
+                      {MEAL_REPLACEMENT_REASONS.map((reason) => (
+                        <option key={reason.value} value={reason.value}>
+                          {reason.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   <button
                     type="submit"
                     className="rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-ink transition-all duration-150 hover:-translate-y-0.5 hover:bg-accent/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:translate-y-0 active:scale-[0.98]"
