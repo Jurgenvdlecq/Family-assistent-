@@ -4,7 +4,17 @@ import { useState } from "react";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import { startLooseShoppingList } from "./looseListActions";
 
-export default function LooseListCard({ householdId }: { householdId: string }) {
+export default function LooseListCard({
+  householdId,
+  weekStart,
+  hasTransferredLines,
+}: {
+  householdId: string;
+  /** ISO-datum van de week zoals de pagina 'm nu toont — voorkomt dat de actie bij een aanvraag rond middernacht een andere (nog niet bestaande) week pakt dan de gebruiker zag. */
+  weekStart: string;
+  /** Staat er al iets van deze week in het echte Picnic-mandje? Dan verliest deze actie de idempotentie-vlag die dubbel toevoegen voorkomt — expliciet waarschuwen. */
+  hasTransferredLines: boolean;
+}) {
   const [confirming, setConfirming] = useState(false);
 
   return (
@@ -36,9 +46,18 @@ export default function LooseListCard({ householdId }: { householdId: string }) 
             Dit verandert alleen de lijst in Family Assistant. Staat er al iets in je echte
             Picnic-mandje? Dat blijft gewoon staan — leeg dat apart met &ldquo;Picnic-mandje legen&rdquo;.
           </p>
+          {hasTransferredLines && (
+            <p className="mb-3 rounded-md bg-tag-amber-bg px-2.5 py-2 text-tag-amber-ink">
+              Let op: je hebt deze week al producten naar je Picnic-mandje overgedragen. Die blijven
+              gewoon in je mandje staan, maar Family Assistant onthoudt na deze actie niet meer welke —
+              controleer zelf even in Picnic voordat je straks opnieuw &ldquo;Toevoegen aan
+              Picnic-mandje&rdquo; gebruikt, anders kun je iets dubbel bestellen.
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
             <form action={startLooseShoppingList}>
               <input type="hidden" name="householdId" value={householdId} />
+              <input type="hidden" name="weekStart" value={weekStart} />
               <PendingSubmitButton
                 pendingText="Bezig..."
                 className="rounded-md bg-red-600 px-3 py-1.5 font-medium text-white hover:opacity-90"

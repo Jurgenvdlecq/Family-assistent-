@@ -72,6 +72,7 @@ const STATUS_MESSAGES: Record<string, string> = {
   "quick-order-added": "Toegevoegd aan de lijst van deze week.",
   "quick-order-bulk-added": "Herkende producten toegevoegd aan de lijst van deze week.",
   "loose-list-started": "Losse boodschappenlijst gestart — het weekmenu van deze week staat op \"uit eten\".",
+  "loose-list-week-changed": "De week is inmiddels doorgesprongen naar een nieuwe — herlaad de pagina en probeer het opnieuw.",
 };
 
 const INVENTORY_STATUS_OPTIONS = [
@@ -730,7 +731,12 @@ export default async function BoodschappenPage({
           <span>{sortedLines.length} producten</span>
         </div>
 
-        {generalStatusMessage && (
+        {generalStatusMessage && params.status === "loose-list-week-changed" && (
+          <p className="mb-6 rounded-lg border border-tag-amber-ink/20 bg-tag-amber-bg px-3 py-2 text-sm font-medium text-tag-amber-ink">
+            {generalStatusMessage}
+          </p>
+        )}
+        {generalStatusMessage && params.status !== "loose-list-week-changed" && (
           <p className="mb-6 rounded-lg border border-tag-green-ink/20 bg-tag-green-bg px-3 py-2 text-sm font-medium text-tag-green-ink">
             {generalStatusMessage}
           </p>
@@ -748,7 +754,11 @@ export default async function BoodschappenPage({
       </div>
 
       <div className="min-w-0 px-6">
-        <LooseListCard householdId={household.id} />
+        <LooseListCard
+          householdId={household.id}
+          weekStart={weekStart.toISOString()}
+          hasTransferredLines={hasTransferredLines}
+        />
 
         <div id="quick-add-product" className="mb-6 scroll-mt-6 rounded-xl border border-line bg-surface p-4">
           <h2 className="mb-1 text-sm font-semibold text-ink">Product toevoegen</h2>

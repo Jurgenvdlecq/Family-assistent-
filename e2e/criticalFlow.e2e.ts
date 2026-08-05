@@ -317,6 +317,34 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         "vaste boodschappen moeten vanzelf terugkomen op de opnieuw opgebouwde lijst"
       );
     });
+
+    await t.test("10b. Losse boodschappenlijst starten voor een week zonder meal plan toont een nette melding", async () => {
+      // Reproduceert het scenario uit de codereview: een aanvraag met een
+      // weekStart die niet (meer) bij een bestaande MealPlan hoort (bv. een
+      // aanvraag die net na middernacht zondag/maandag binnenkomt) mag nooit
+      // een kale throw + generieke Next.js-foutpagina opleveren.
+      await page.getByRole("button", { name: "Losse boodschappenlijst starten" }).click();
+      const confirmButton = page.getByRole("button", { name: "Ja, losse lijst starten" });
+      await confirmButton.waitFor({ state: "visible", timeout: 5_000 });
+
+      const weekStartInput = page.locator('form:has(button:has-text("Ja, losse lijst starten")) input[name="weekStart"]');
+      await weekStartInput.evaluate((el) => {
+        (el as HTMLInputElement).value = "2099-01-05T00:00:00.000Z";
+      });
+
+      await confirmButton.click();
+      await page.waitForURL((url) => url.searchParams.get("status") === "loose-list-week-changed", {
+        timeout: 15_000,
+      });
+      await page
+        .locator("text=De week is inmiddels doorgesprongen naar een nieuwe")
+        .waitFor({ state: "visible", timeout: 5_000 });
+      const genericErrorVisible = await page
+        .locator("text=An error occurred in the Server Components render")
+        .isVisible()
+        .catch(() => false);
+      assert.equal(genericErrorVisible, false, "een ontbrekende meal plan voor de meegestuurde week mag nooit de generieke foutpagina tonen");
+    });
   } finally {
     await browser.close();
     await server.close();

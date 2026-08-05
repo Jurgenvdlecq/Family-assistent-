@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { assertCurrentHousehold } from "@/lib/auth";
-import { getCurrentWeekStart } from "@/lib/week";
 import { invalidateShoppingList } from "@/lib/shoppingList";
 
 /**
@@ -19,15 +18,28 @@ import { invalidateShoppingList } from "@/lib/shoppingList";
  * meerdere producten toevoegen").
  *
  * Raakt nooit het echte Picnic-mandje — alleen de lijst in deze app.
+ *
+ * `weekStart` komt uit een hidden formuliervveld (net als
+ * `toggleMealPlanEntrySkipped`), niet uit een eigen `getCurrentWeekStart()`-
+ * aanroep hier: anders zou een aanvraag die net ná middernacht
+ * zondag/maandag binnenkomt een `weekStart` van de nieuwe week berekenen,
+ * terwijl de pagina die de gebruiker zag (en de bevestiging die hij las) nog
+ * de vorige week toonde — dan bestaat er nog geen MealPlan-rij voor die
+ * "nieuwe" week en zou een kale throw de generieke Next.js-foutpagina tonen
+ * (hetzelfde patroon als de eerder gefixte Picnic-bugs). Bij een ontbrekende
+ * meal plan daarom een nette statusmelding i.p.v. een throw.
  */
 export async function startLooseShoppingList(formData: FormData) {
   const householdId = String(formData.get("householdId"));
   await assertCurrentHousehold(householdId);
 
-  const weekStart = getCurrentWeekStart();
-  const mealPlan = await prisma.mealPlan.findUniqueOrThrow({
+  const weekStart = new Date(String(formData.get("weekStart")));
+  const mealPlan = await prisma.mealPlan.findUnique({
     where: { householdId_weekStart: { householdId, weekStart } },
   });
+  if (!mealPlan) {
+    redirect("/boodschappen?status=loose-list-week-changed#loose-list");
+  }
 
   await prisma.mealPlanEntry.updateMany({
     where: { mealPlanId: mealPlan.id },
