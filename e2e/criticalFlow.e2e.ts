@@ -167,10 +167,14 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       assert.ok(autoAddedLine, "De automatisch herkende regel moet als MANUAL-regel zijn opgeslagen");
 
       // Na de bulk-toevoeging moet de nog-niet-gekozen regel ("bloemkool")
-      // gewoon in beeld blijven, met haar eigen zoekresultaat.
-      const pickButton = page.locator("#quick-order").getByRole("button", { name: "Toevoegen" }).first();
-      await pickButton.waitFor({ state: "visible", timeout: 10_000 });
-      await pickButton.click();
+      // gewoon in beeld blijven, met haar eigen zoekresultaat. Het eerste
+      // (enige) resultaat staat al aangevinkt (radioknop, standaard-keuze);
+      // "Voeg toe" bevestigt in één keer i.p.v. een losse klik per product
+      // (bugfix: gebruikersmelding dat elke losse "Toevoegen"-klik een volle
+      // paginaherlaad kostte).
+      const voegToeButton = page.locator("#quick-order").getByRole("button", { name: "Voeg toe" });
+      await voegToeButton.waitFor({ state: "visible", timeout: 10_000 });
+      await voegToeButton.click();
       await page.waitForURL((url) => url.searchParams.get("status") === "quick-order-added", { timeout: 15_000 });
 
       const pickedLine = await prisma.shoppingListLine.findFirst({
