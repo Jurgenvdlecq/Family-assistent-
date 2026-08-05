@@ -168,7 +168,7 @@ test("addManualProduct weigert een shoppingListId van een ander huishouden", { t
     assert.equal(
       linesBAfterQuickOrderAttack,
       linesBBeforeQuickOrderAttack,
-      "huishouden A mag via addQuickOrderProduct nooit een regel in huishouden B's boodschappenlijst kunnen aanmaken"
+      "huishouden A mag via addQuickOrderPickedProducts nooit een regel in huishouden B's boodschappenlijst kunnen aanmaken"
     );
 
     let fixedLineAId = "";
