@@ -274,6 +274,49 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       await page.locator("text=Mandje geleegd.").waitFor({ state: "visible", timeout: 15_000 });
       assert.equal(mockPicnic.addedProducts.length, 0, "Het mock-mandje moet leeg zijn nadat het geleegd is");
     });
+
+    await t.test("10. Losse boodschappenlijst starten (vanaf de startpagina)", async () => {
+      // Verandert het weekmenu voor de rest van de testrun (alle dagen op
+      // "uit eten") — bewust als laatste stap, zodat dit geen eerdere
+      // stappen kan beïnvloeden.
+      await page.goto(`${server.baseURL}/`, { waitUntil: "load" });
+      await page.getByRole("link", { name: "Alleen boodschappen nodig? Start een losse lijst" }).click();
+      await page.waitForURL((url) => url.pathname === "/boodschappen", { timeout: 15_000 });
+
+      await page.getByRole("button", { name: "Losse boodschappenlijst starten" }).click();
+      const confirmButton = page.getByRole("button", { name: "Ja, losse lijst starten" });
+      await confirmButton.waitFor({ state: "visible", timeout: 5_000 });
+      await confirmButton.click();
+
+      await page.waitForURL((url) => url.searchParams.get("status") === "loose-list-started", {
+        timeout: 15_000,
+      });
+      await page
+        .locator('text=Losse boodschappenlijst gestart — het weekmenu van deze week staat op "uit eten".')
+        .waitFor({ state: "visible", timeout: 5_000 });
+
+      const skippedEntryCount = await prisma.mealPlanEntry.count({
+        where: { mealPlan: { householdId }, skipped: false },
+      });
+      assert.equal(skippedEntryCount, 0, "alle dagen van deze week moeten nu op 'uit eten' staan");
+
+      // ensureShoppingList bouwt de lijst nu opnieuw op — zonder weekmenu-
+      // regels (alle dagen overgeslagen), maar mét de vaste boodschap
+      // (Aardappelen) die in stap 5 is toegevoegd.
+      await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
+      const lines = await prisma.shoppingListLine.findMany({
+        where: { shoppingList: { mealPlan: { householdId } } },
+        include: { ingredient: true },
+      });
+      assert.ok(
+        lines.every((line) => line.source !== "MEAL"),
+        "de opnieuw opgebouwde lijst mag geen weekmenu-regels meer bevatten"
+      );
+      assert.ok(
+        lines.some((line) => line.source === "FIXED" && line.ingredient.name === "Aardappelen"),
+        "vaste boodschappen moeten vanzelf terugkomen op de opnieuw opgebouwde lijst"
+      );
+    });
   } finally {
     await browser.close();
     await server.close();

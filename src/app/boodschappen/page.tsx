@@ -47,6 +47,7 @@ import {
 import { addManualProduct } from "./manualProductActions";
 import { addQuickOrderProduct, addQuickOrderTrustedProducts } from "./quickOrderActions";
 import { updateInventoryStatus } from "./inventoryActions";
+import LooseListCard from "./LooseListCard";
 
 const UNIT_LABELS: Record<string, string> = { GRAM: "gram", ML: "ml", PIECE: "stuks" };
 const ACTION_BUTTON_FOCUS =
@@ -70,6 +71,7 @@ const STATUS_MESSAGES: Record<string, string> = {
   "manual-added": "Toegevoegd aan de lijst van deze week.",
   "quick-order-added": "Toegevoegd aan de lijst van deze week.",
   "quick-order-bulk-added": "Herkende producten toegevoegd aan de lijst van deze week.",
+  "loose-list-started": "Losse boodschappenlijst gestart — het weekmenu van deze week staat op \"uit eten\".",
 };
 
 const INVENTORY_STATUS_OPTIONS = [
@@ -746,6 +748,8 @@ export default async function BoodschappenPage({
       </div>
 
       <div className="min-w-0 px-6">
+        <LooseListCard householdId={household.id} />
+
         <div id="quick-add-product" className="mb-6 scroll-mt-6 rounded-xl border border-line bg-surface p-4">
           <h2 className="mb-1 text-sm font-semibold text-ink">Product toevoegen</h2>
           <p className="mb-3 text-xs text-ink-muted">Voor deze week alleen — dit wordt geen vaste gewoonte.</p>
