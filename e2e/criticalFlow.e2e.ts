@@ -76,6 +76,32 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       });
     });
 
+    await t.test("1b. Onboarding weigert niet-overeenkomende wachtwoorden", async () => {
+      // UX-bugfix: vóór deze fix was er maar één wachtwoordveld — een
+      // typefout leidde tot een account waar niemand meer in kon, zonder
+      // hersteloptie. Bewijst dat de nieuwe "Bevestig wachtwoord"-check
+      // daadwerkelijk blokkeert (geen huishouden aangemaakt, geen redirect
+      // naar "/") vóórdat er ooit een server-aanroep gebeurt.
+      await page.goto(`${server.baseURL}/onboarding`, { waitUntil: "load" });
+      await page.getByRole("button", { name: "Volgende" }).click();
+      await page.getByPlaceholder("Bijvoorbeeld: Familie Van der Lecq").fill(`${HOUSEHOLD_NAME} (mismatch)`);
+      await page.getByRole("button", { name: "Volgende" }).click();
+      await page.getByPlaceholder("Naam").fill("Testouder");
+      await page.getByRole("button", { name: "Volgende" }).click();
+      await page.getByRole("button", { name: "Volgende" }).click();
+
+      await page.getByPlaceholder("Gebruikersnaam (minimaal 3 tekens)").fill("mismatchtest");
+      await page.getByPlaceholder("Wachtwoord (minimaal 6 tekens)").fill(PASSWORD);
+      await page.getByPlaceholder("Bevestig wachtwoord").fill(`${PASSWORD}-anders`);
+      await page.getByRole("button", { name: "Maak mijn eerste week" }).click();
+
+      await page.locator("text=Wachtwoorden komen niet overeen").waitFor({ state: "visible", timeout: 5_000 });
+      assert.ok(page.url().includes("/onboarding"), "Bij niet-overeenkomende wachtwoorden mag er geen redirect zijn");
+
+      const household = await prisma.household.findFirst({ where: { name: `${HOUSEHOLD_NAME} (mismatch)` } });
+      assert.equal(household, null, "Er mag geen huishouden zijn aangemaakt bij niet-overeenkomende wachtwoorden");
+    });
+
     await t.test("2. Weekmenu bekijken", async () => {
       await page.goto(`${server.baseURL}/`, { waitUntil: "load" });
       await page.locator("text=Jullie weekmenu").waitFor({ state: "visible", timeout: 20_000 });

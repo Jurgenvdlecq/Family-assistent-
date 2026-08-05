@@ -53,6 +53,7 @@ export async function completeOnboardingViaUi(
   // Stap 5 (laatste stap in QUICK-modus): gebruikersnaam + wachtwoord + versturen.
   await page.getByPlaceholder("Gebruikersnaam (minimaal 3 tekens)").fill(username);
   await page.getByPlaceholder("Wachtwoord (minimaal 6 tekens)").fill(password);
+  await page.getByPlaceholder("Bevestig wachtwoord").fill(password);
   await page.getByRole("button", { name: "Maak mijn eerste week" }).click();
 
   await page.waitForURL(`${baseURL}/`, { timeout: 30_000 });
