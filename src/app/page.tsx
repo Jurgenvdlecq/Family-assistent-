@@ -38,6 +38,7 @@ import {
 } from "@/lib/categoryStyle";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
+import AddToPicnicCart from "./boodschappen/AddToPicnicCart";
 import { getPendingLearningPrompts } from "@/domain/learning/patterns";
 import {
   answerSmartLearningPrompt,
@@ -195,7 +196,7 @@ export default async function Home({
   if (!mealPlan) {
     throw new Error("Weekplanning kon niet worden geladen.");
   }
-  const [participantsByDay, learningPrompts, dayRoutines] = await Promise.all([
+  const [participantsByDay, learningPrompts, dayRoutines, shoppingListForPicnic] = await Promise.all([
     getHouseholdMealParticipantsByDay(household.id),
     getPendingLearningPrompts(
       household.id,
@@ -205,11 +206,26 @@ export default async function Home({
       where: { householdId: household.id },
       include: { recipeVariant: { include: { recipe: true } } },
     }),
+    // Alleen nodig voor de "Bestel nu"-actie hieronder (rechtstreeks vanaf
+    // de startpagina het Picnic-mandje vullen/bestelling bevestigen, zonder
+    // eerst naar /boodschappen te hoeven navigeren) — bewust een losse,
+    // gerichte query i.p.v. ensureShoppingList (die zou een lijst
+    // aanmaken/opbouwen, wat hier niet de bedoeling is: als er nog geen
+    // lijst is, is dat toch een ander scherm se taak).
+    prisma.shoppingList.findUnique({
+      where: { mealPlanId: mealPlan.id },
+      select: {
+        id: true,
+        orderConfirmedAt: true,
+        lines: { select: { source: true, transferredToPicnicAt: true } },
+      },
+    }),
   ]);
   const routineByDay = new Map(
     dayRoutines.map((routine) => [routine.dayOfWeek, routine]),
   );
   const attentionItems = await getAttentionItemsForMealPlan(mealPlan.id, mealPlan.createdAt);
+  const attentionItem = attentionItems[0];
   const mealVariantIds = mealPlan.entries.map((entry) => entry.recipeVariantId);
   const mealCategoryIds = [
     ...new Set(
@@ -254,9 +270,25 @@ export default async function Home({
   const defaultWishDayKey = currentDayKey();
   const nextStep = nextStepCopy({
     learningPromptCount: learningPrompts.length,
-    attentionItem: attentionItems[0],
+    attentionItem,
   });
   const NextStepIcon = nextStep.icon;
+
+  // Vanuit deze twee statussen is "naar Picnic" letterlijk de enige
+  // vervolgstap — reken dan meteen hier af i.p.v. eerst door te sturen naar
+  // /boodschappen, dat daar dezelfde knop nog een keer zou tonen. Nooit
+  // de bestelling zelf plaatsen (dat blijft altijd in de echte Picnic-app,
+  // bewust zo gehouden) — AddToPicnicCart vult alleen het mandje.
+  const showInlinePicnicAction =
+    shoppingListForPicnic &&
+    (attentionItem?.type === "GROCERIES_READY_NOT_SENT_TO_PICNIC" ||
+      attentionItem?.type === "PICNIC_CART_FILLED_NOT_CONFIRMED");
+  const picnicHasTransferredLines =
+    shoppingListForPicnic?.lines.some((line) => line.transferredToPicnicAt !== null) ?? false;
+  const picnicQuickOrderPendingCount =
+    shoppingListForPicnic?.lines.filter(
+      (line) => (line.source === "FIXED" || line.source === "MANUAL") && line.transferredToPicnicAt === null
+    ).length ?? 0;
 
   const priorFeedback = await prisma.feedbackEvent.findMany({
     where: {
@@ -309,14 +341,32 @@ export default async function Home({
               <NextStepIcon size={18} />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="font-semibold text-ink">{nextStep.title}</p>
-              <p className="mt-1 text-sm text-ink-muted">{nextStep.body}</p>
-              <Link
-                href={nextStep.href}
-                className="mt-3 inline-flex rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink hover:opacity-90"
-              >
-                {nextStep.cta}
-              </Link>
+              {/* Bij "bestelling afronden" toont AddToPicnicCart hieronder
+                  zelf al vrijwel dezelfde titel/uitleg ("Rond je bestelling
+                  af in Picnic...") — die dubbel tonen zou verwarrend zijn,
+                  dus laat de kaart hier stil zijn en spreekt de component. */}
+              {attentionItem?.type !== "PICNIC_CART_FILLED_NOT_CONFIRMED" && (
+                <>
+                  <p className="font-semibold text-ink">{nextStep.title}</p>
+                  <p className="mt-1 text-sm text-ink-muted">{nextStep.body}</p>
+                </>
+              )}
+              {showInlinePicnicAction && shoppingListForPicnic ? (
+                <AddToPicnicCart
+                  shoppingListId={shoppingListForPicnic.id}
+                  connected={Boolean(household.picnicAuthToken)}
+                  hasTransferredLines={picnicHasTransferredLines}
+                  orderConfirmed={shoppingListForPicnic.orderConfirmedAt !== null}
+                  quickOrderCount={picnicQuickOrderPendingCount}
+                />
+              ) : (
+                <Link
+                  href={nextStep.href}
+                  className="mt-3 inline-flex rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink hover:opacity-90"
+                >
+                  {nextStep.cta}
+                </Link>
+              )}
             </div>
           </div>
         </section>
