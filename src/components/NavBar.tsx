@@ -3,18 +3,23 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, UtensilsCrossed, BookOpen, ShoppingCart, ClipboardCheck, Users, Loader2 } from "lucide-react";
+import { Home, ShoppingCart, Users, Loader2 } from "lucide-react";
 
 // label is de volledige naam (voor aria-label); shortLabel is wat er
 // echt staat. Op een gewone telefoonbreedte (~375-390px) werden "Jouw
 // week" en "Boodschappen" afgekapt tot onleesbare "Jouw wee…"/"Boodsch…"
 // — de balk staat op elk scherm in beeld, dus dit moet altijd passen.
+//
+// Bewust teruggebracht van 6 naar 3 tegels (UX-review): "Gerechten" is
+// geen bestemming maar een contextuele actie (vervang dít gerecht op déze
+// dag, vereist een dag) — al bereikbaar via links vanaf "/" en
+// "/boodschappen". "Controle" is stap 2 van de boodschappenflow, geen
+// aparte behoefte — al bereikbaar via een link vanaf "/boodschappen".
+// "Recepten" is technisch receptbeheer, laagfrequent — verplaatst naar
+// een link binnen "Ons gezin".
 const ITEMS = [
   { href: "/", label: "Jouw week", shortLabel: "Week", icon: Home },
-  { href: "/gerechten", label: "Gerechten", shortLabel: "Gerechten", icon: UtensilsCrossed },
-  { href: "/recepten", label: "Recepten", shortLabel: "Recepten", icon: BookOpen },
-  { href: "/boodschappen", label: "Boodschappen", shortLabel: "Lijst", icon: ShoppingCart },
-  { href: "/controle", label: "Controle", shortLabel: "Controle", icon: ClipboardCheck },
+  { href: "/boodschappen", label: "Boodschappen", shortLabel: "Boodschappen", icon: ShoppingCart },
   { href: "/ons-gezin", label: "Ons gezin", shortLabel: "Gezin", icon: Users },
 ];
 
