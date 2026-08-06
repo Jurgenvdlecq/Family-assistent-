@@ -207,10 +207,7 @@ export default async function ReceptenPage({
             {errorMessage}
           </p>
         )}
-        <h1 className="mb-1 text-[1.6rem] font-semibold leading-tight text-ink">Recepten</h1>
-        <p className="mb-6 text-[15px] text-ink-muted">
-          Bekijk wat de assistent kan plannen. Bewerken en technisch beheer staan rustig ingeklapt.
-        </p>
+        <h1 className="mb-6 text-[1.6rem] font-semibold leading-tight text-ink">Recepten</h1>
 
         <details className="order-3 mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
           <summary className="cursor-pointer font-medium text-ink">Geavanceerd ingrediënt- en productbeheer</summary>
@@ -441,10 +438,8 @@ export default async function ReceptenPage({
               className="rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
             />
             <p className="text-xs text-ink-muted">
-              Werkt bij de meeste receptensites. Engelse ingrediënten en Amerikaanse maten (cup,
-              tbsp, oz, ...) worden waar herkend automatisch omgezet naar het Nederlands en
-              gram/ml — titel en bereidingswijze blijven in de brontaal. Lukt het niet, plak dan
-              de tekst hieronder bij &quot;Snel toevoegen&quot;.
+              Werkt bij de meeste receptensites (Engelse maten worden automatisch omgezet). Lukt
+              het niet? Plak de tekst hieronder bij &quot;Snel toevoegen&quot;.
             </p>
             <PendingSubmitButton pendingText="Importeren..." className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90">
               Importeren

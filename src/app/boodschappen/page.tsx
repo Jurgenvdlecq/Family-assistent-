@@ -979,10 +979,7 @@ export default async function BoodschappenPage({
 
         <div id="quick-order" className="mb-6 scroll-mt-6 rounded-xl border border-line bg-surface p-4">
           <h2 className="mb-1 text-sm font-semibold text-ink">Snel meerdere producten toevoegen</h2>
-          <p className="mb-3 text-xs text-ink-muted">
-            Typ producten onder elkaar of gescheiden door komma&rsquo;s, bijvoorbeeld &quot;Rijst, Sperziebonen&quot;.
-            Voor deze week alleen.
-          </p>
+          <p className="mb-3 text-xs text-ink-muted">Voor deze week alleen.</p>
           <form action="/boodschappen#quick-order" className="grid gap-2">
             <textarea
               name="quickOrder"
@@ -1468,9 +1465,7 @@ export default async function BoodschappenPage({
                 <ClipboardList size={17} className="mt-0.5 shrink-0 text-accent" />
                 <div className="min-w-0">
                   <h2 className="text-sm font-semibold text-ink">Plak je vaste boodschappenlijst</h2>
-                  <p className="mt-1 text-xs text-ink-muted">
-                    Zet producten onder elkaar of scheid ze met komma&rsquo;s. Ik zoek ze daarna per regel op bij Picnic.
-                  </p>
+                  <p className="mt-1 text-xs text-ink-muted">Ik zoek elke regel op bij Picnic.</p>
                 </div>
               </div>
               <form action="/boodschappen#bulk-fixed-groceries" className="grid gap-2">

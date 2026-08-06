@@ -81,9 +81,11 @@ export default async function LoginPage({
         </form>
       )}
 
-      <Link href="/onboarding" className="mt-6 text-sm font-medium text-accent hover:opacity-80">
-        Nieuw huishouden maken
-      </Link>
+      {hasAnyHousehold && (
+        <Link href="/onboarding" className="mt-6 text-sm font-medium text-accent hover:opacity-80">
+          Nieuw huishouden maken
+        </Link>
+      )}
     </div>
   );
 }

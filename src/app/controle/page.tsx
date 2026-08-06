@@ -5,7 +5,6 @@ import {
   ChevronLeft,
   ClipboardCheck,
   CheckCircle2,
-  AlertCircle,
   Search,
   ShoppingBasket,
 } from "lucide-react";
@@ -556,13 +555,6 @@ export default async function ControlePage({
           {attentionLines.length > 0 && <Tag tone="amber">{attentionLines.length} vragen aandacht</Tag>}
           {notFoundLines.length > 0 && <Tag tone="amber">{notFoundLines.length} niet gevonden</Tag>}
         </div>
-
-        {reviewLines.length > 0 && (
-          <div className="mb-4 flex items-start gap-2 rounded-xl border border-tag-amber-ink/25 bg-tag-amber-bg p-3 text-sm text-ink-muted">
-            <AlertCircle size={16} className="mt-0.5 shrink-0 text-tag-amber-ink" />
-            <p>Controleer de gemarkeerde regels voordat je de lijst bevestigt.</p>
-          </div>
-        )}
 
         {reviewLines.length > 0 ? (
           <div className="mb-8 grid gap-6">
