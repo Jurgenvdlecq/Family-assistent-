@@ -819,9 +819,23 @@ export default async function BoodschappenPage({
       </header>
 
       <div className="min-w-0 px-6 pt-4">
+        {/* De kop mag niet méér vieren dan waar de lijst echt staat (UX-review:
+            voorheen stond hier altijd "staan klaar" mét groen vinkje, ook pal
+            boven een banner "X producten vragen aandacht"). */}
         <h1 className="mb-1 flex items-center gap-2 text-[1.6rem] font-semibold leading-tight text-ink">
-          Jullie boodschappen staan klaar
-          <CheckCircle2 size={22} className="shrink-0 text-tag-green-ink" />
+          {reviewCount > 0 ? (
+            "Jullie boodschappen staan bijna klaar"
+          ) : shoppingList.orderConfirmedAt ? (
+            <>
+              Jullie boodschappen zijn besteld
+              <CheckCircle2 size={22} className="shrink-0 text-tag-green-ink" />
+            </>
+          ) : (
+            <>
+              Jullie boodschappen staan klaar
+              <CheckCircle2 size={22} className="shrink-0 text-tag-green-ink" />
+            </>
+          )}
         </h1>
         <div className="mb-6 flex flex-wrap items-center gap-4 text-sm text-ink-muted">
           <span className="inline-flex items-center gap-1.5">

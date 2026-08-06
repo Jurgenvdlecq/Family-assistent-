@@ -132,15 +132,45 @@ export default function AddToPicnicCart({
     return `Losse toevoegingen (${manualCount})`;
   }
 
+  // Zodra het mandje gevuld is maar de bestelling nog niet is afgerond, ís
+  // "Ik heb besteld" de volgende stap — dat blok komt dan bovenaan en krijgt
+  // de accentknop, en "Toevoegen aan Picnic-mandje" wordt visueel secundair
+  // (UX-review: een haastige tik op de prominente knop riskeerde dubbel
+  // toevoegen, terwijl de eigenlijke vervolgstap een klein randknopje was).
+  const awaitingOrderConfirm = hasTransferredLines && !orderConfirmed && !orderConfirmedLocally;
+
   return (
     <div className="mt-4 min-w-0">
+      {awaitingOrderConfirm && (
+        <div className="mb-4 min-w-0 rounded-lg border border-accent/35 bg-accent-soft p-3 text-xs">
+          <p className="mb-2 font-medium text-ink">Rond je bestelling af in Picnic.</p>
+          <p className="mb-2 text-ink-muted">
+            De producten staan in je Picnic-mandje. Ik weet niet zeker of je al hebt afgerekend —
+            open Picnic om de bestelling te plaatsen.
+          </p>
+          <button
+            type="button"
+            onClick={handleConfirmOrder}
+            disabled={isConfirmOrderPending}
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {isConfirmOrderPending ? "Bezig…" : "Ik heb besteld"}
+          </button>
+          {orderConfirmError && <p className="mt-2 text-red-600">{orderConfirmError}</p>}
+        </div>
+      )}
+
       {stage === "idle" && (
         <div className="flex flex-col gap-2">
           <button
             type="button"
             onClick={() => handleOpenConfirmation("all")}
             disabled={isPending}
-            className="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-50"
+            className={
+              awaitingOrderConfirm
+                ? "w-full rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-surface-2 disabled:opacity-50"
+                : "w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-50"
+            }
           >
             {isPending && scope === "all" ? "Bezig…" : "Toevoegen aan Picnic-mandje"}
           </button>
@@ -265,25 +295,6 @@ export default function AddToPicnicCart({
               Opnieuw proberen
             </button>
           )}
-        </div>
-      )}
-
-      {hasTransferredLines && !orderConfirmed && !orderConfirmedLocally && (
-        <div className="mt-4 min-w-0 rounded-lg border border-accent/35 bg-accent-soft p-3 text-xs">
-          <p className="mb-2 font-medium text-ink">Rond je bestelling af in Picnic.</p>
-          <p className="mb-2 text-ink-muted">
-            De producten staan in je Picnic-mandje. Ik weet niet zeker of je al hebt afgerekend —
-            open Picnic om de bestelling te plaatsen.
-          </p>
-          <button
-            type="button"
-            onClick={handleConfirmOrder}
-            disabled={isConfirmOrderPending}
-            className="rounded-lg border border-line px-3 py-1.5 font-medium text-ink hover:bg-surface-2 disabled:opacity-50"
-          >
-            {isConfirmOrderPending ? "Bezig…" : "Ik heb besteld"}
-          </button>
-          {orderConfirmError && <p className="mt-2 text-red-600">{orderConfirmError}</p>}
         </div>
       )}
 

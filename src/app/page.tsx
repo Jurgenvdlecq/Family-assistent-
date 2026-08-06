@@ -7,6 +7,7 @@ import {
   ShoppingBasket,
   ShoppingCart,
   Sparkles,
+  type LucideIcon,
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
@@ -110,7 +111,11 @@ const ATTENTION_ICONS: Record<AttentionItemType, typeof ClipboardCheck> = {
  * WP69), daarna het belangrijkste attention-item (zelfde bron als de
  * latere pushscheduler, WP69), en anders een neutrale standaardtegel.
  */
-function nextStepCopy(input: { learningPromptCount: number; attentionItem: AttentionItem | undefined }) {
+function nextStepCopy(input: {
+  learningPromptCount: number;
+  attentionItem: AttentionItem | undefined;
+  orderConfirmed: boolean;
+}): { icon: LucideIcon; title: string; body: string; href?: string; cta?: string } {
   if (input.learningPromptCount > 0) {
     return {
       icon: Sparkles,
@@ -128,6 +133,16 @@ function nextStepCopy(input: { learningPromptCount: number; attentionItem: Atten
       body: item.body,
       href: item.href,
       cta: item.cta,
+    };
+  }
+  if (input.orderConfirmed) {
+    // Eindtoestand (UX-review): na "ik heb besteld" is er niets meer te doen
+    // — dat mag de kaart dan ook gewoon zeggen, i.p.v. opnieuw een taak te
+    // suggereren. Bewust zonder knop: geen taak, geen call-to-action.
+    return {
+      icon: CheckCircle2,
+      title: "Alles is geregeld voor deze week",
+      body: "De boodschappen zijn besteld. Wil je toch nog iets aanpassen, dan kan dat gewoon via Boodschappen.",
     };
   }
   return {
@@ -278,6 +293,7 @@ export default async function Home({
   const nextStep = nextStepCopy({
     learningPromptCount: learningPrompts.length,
     attentionItem,
+    orderConfirmed: shoppingListForPicnic?.orderConfirmedAt != null,
   });
   const NextStepIcon = nextStep.icon;
 
@@ -376,14 +392,14 @@ export default async function Home({
                   fixedCount={picnicFixedPendingCount}
                   manualCount={picnicManualPendingCount}
                 />
-              ) : (
+              ) : nextStep.href && nextStep.cta ? (
                 <Link
                   href={nextStep.href}
                   className="mt-3 inline-flex rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink hover:opacity-90"
                 >
                   {nextStep.cta}
                 </Link>
-              )}
+              ) : null}
             </div>
           </div>
         </section>
