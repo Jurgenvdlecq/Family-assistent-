@@ -458,8 +458,7 @@ export default async function OnsGezinPage({
         <h2 className="mb-3 mt-8 text-sm font-semibold text-ink">Meldingen</h2>
         <div className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
           <p className="mb-3 text-sm text-ink-muted">
-            Ik stuur hoogstens één rustige herinnering per dag, alleen tussen 08:00 en 21:00, en
-            nooit twee keer over hetzelfde.
+            Hoogstens één rustige herinnering per dag, tussen 08:00 en 21:00.
           </p>
           <PushNotificationSettings
             householdId={household.id}
