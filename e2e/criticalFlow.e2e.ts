@@ -311,6 +311,32 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       assert.ok(shoppingList!.lines.length > 0, "De boodschappenlijst moet regels bevatten op basis van het weekmenu");
     });
 
+    await t.test(
+      "4b. Een weekmenu-regel kan direct van de boodschappenlijst worden verwijderd (nieuwe functie)",
+      async () => {
+        // De regel-verwijderknop stond voorheen alleen bij handmatig
+        // toegevoegde producten (source MANUAL); gebruikersverzoek: ook
+        // weekmenu-regels (source MEAL) moeten van de lijst kunnen. Kiest
+        // bewust de alfabetisch laatste MEAL-regel — de latere stappen
+        // voegen hun eigen producten toe via zoeken (Aardappelen, Bloemkool,
+        // Spruitjes, ...) en raken dus nooit een al bestaande MEAL-regel.
+        const mealLine = await prisma.shoppingListLine.findFirstOrThrow({
+          where: { shoppingList: { mealPlan: { householdId } }, source: "MEAL" },
+          include: { ingredient: true },
+          orderBy: { ingredient: { name: "desc" } },
+        });
+
+        await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
+        const lineBlock = page.locator(`#meal-line-${mealLine.id}`);
+        await lineBlock.waitFor({ state: "visible", timeout: 10_000 });
+        await lineBlock.getByRole("button", { name: "Verwijderen" }).click();
+        await lineBlock.waitFor({ state: "detached", timeout: 15_000 });
+
+        const stillExists = await prisma.shoppingListLine.findUnique({ where: { id: mealLine.id } });
+        assert.equal(stillExists, null, "De regel moet daadwerkelijk verwijderd zijn uit de boodschappenlijst");
+      }
+    );
+
     await t.test("5. Vaste boodschap / extra product toevoegen (via Picnic-zoeken)", async () => {
       await page.locator("#add-fixed-grocery summary").click();
       const searchInput = page.getByPlaceholder("Zoek Picnic-product, bv. appels");
