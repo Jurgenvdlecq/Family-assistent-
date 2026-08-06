@@ -75,10 +75,15 @@ const STATUS_MESSAGES: Record<string, string> = {
   "day-restored": "Deze dag telt weer gewoon mee.",
 };
 
-/** Meldingen die geen bevestiging zijn maar een blokkade — amber i.p.v. groen. */
+/** Meldingen die geen bevestiging zijn maar een blokkade/fout — amber i.p.v. groen. */
 const WARNING_STATUS_MESSAGES: Record<string, string> = {
   "week-regenerate-blocked":
     "Er liggen al producten van deze week in je Picnic-mandje. Opnieuw plannen zou ze dubbel kunnen bestellen — leeg eerst je Picnic-mandje op de boodschappenpagina.",
+  "loose-meal-missing-title": "Geef de losse maaltijd eerst een naam.",
+  "loose-meal-missing-lines": "Vul minimaal één productregel in voor de losse maaltijd.",
+  "loose-meal-unrecognized":
+    "Ik kon geen producten herkennen in je losse maaltijd. Gebruik bijvoorbeeld: patatjes, Kai: frikandel.",
+  "day-has-no-meal": "Voor deze dag staat geen maaltijd meer gepland — herlaad de pagina voor de actuele week.",
 };
 
 const PERSONAL_STANCE_LABELS = {

@@ -107,8 +107,12 @@ export async function replaceMealPlanEntry(formData: FormData) {
       stance: "NEVER",
     },
   });
+  // Verwachte, via de UI bereikbare situaties (bv. een verouderd tabblad
+  // waarin de suggesties nog niet gefilterd waren op een net toegevoegde
+  // beperking): terug naar de pagina met een leesbare melding. Een `throw`
+  // zou in productie door Next.js geredact worden tot een generieke fout.
   if (neverPreference) {
-    throw new Error("Dit gerecht botst met een persoonlijke 'nooit'-voorkeur van iemand die deze dag mee-eet.");
+    redirectToGerechten(dayKey, direction, wishText, "meal-conflicts-never");
   }
   const conflicts = recipeConflictsWithRestrictions(
     variant.recipe.ingredients.map((ri) => ({
@@ -118,9 +122,7 @@ export async function replaceMealPlanEntry(formData: FormData) {
     hardRestrictions
   );
   if (conflicts) {
-    throw new Error(
-      "Dit gerecht botst met een harde beperking van jullie huishouden en kan niet worden ingepland."
-    );
+    redirectToGerechten(dayKey, direction, wishText, "meal-conflicts-restrictions");
   }
 
   const mealPlan = await prisma.mealPlan.findUniqueOrThrow({
@@ -244,6 +246,8 @@ export async function chooseLiteralMealPlanEntry(formData: FormData) {
     throw new Error("Onbekende dag.");
   }
   const weekStart = new Date(String(formData.get("weekStart")));
+  const direction = String(formData.get("direction") ?? "all");
+  const wishText = String(formData.get("q") ?? "");
   const ingredientIds = String(formData.get("ingredientIds") ?? "")
     .split(",")
     .map((id) => id.trim())
@@ -257,9 +261,13 @@ export async function chooseLiteralMealPlanEntry(formData: FormData) {
     select: { id: true, name: true, unit: true, category: true, restrictionTags: true },
   });
   if (ingredients.length !== new Set(ingredientIds).size) {
-    throw new Error("Ik herkende niet alle ingrediënten.");
+    redirectToGerechten(dayKey, direction, wishText, "wish-unknown-ingredients");
   }
 
+  // Anders dan bij de gewone suggesties filtert de pagina de letterlijke
+  // wens níét vooraf op beperkingen — deze twee zijn dus gewoon via typen
+  // bereikbaar en verdienen een leesbare melding i.p.v. een (in productie
+  // geredacte) throw.
   const { hardRestrictionsByDay, participantsByDay } = await getHouseholdHardRestrictionsAndParticipantsByDay(householdId);
   const hardRestrictions = hardRestrictionsByDay[dayKey];
   const conflicts = recipeConflictsWithRestrictions(
@@ -270,7 +278,7 @@ export async function chooseLiteralMealPlanEntry(formData: FormData) {
     hardRestrictions
   );
   if (conflicts) {
-    throw new Error("Deze combinatie botst met een harde beperking van jullie huishouden.");
+    redirectToGerechten(dayKey, direction, wishText, "meal-conflicts-restrictions");
   }
   const neverPreference = await prisma.preference.findFirst({
     where: {
@@ -282,7 +290,7 @@ export async function chooseLiteralMealPlanEntry(formData: FormData) {
     },
   });
   if (neverPreference) {
-    throw new Error("Deze combinatie botst met een persoonlijke 'nooit'-voorkeur van iemand die deze dag mee-eet.");
+    redirectToGerechten(dayKey, direction, wishText, "meal-conflicts-never");
   }
 
   const orderedIngredients = ingredientIds
