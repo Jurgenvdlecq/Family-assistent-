@@ -18,15 +18,19 @@ export default function AddToPicnicCart({
   connected,
   hasTransferredLines,
   orderConfirmed,
-  quickOrderCount,
+  fixedCount,
+  manualCount,
 }: {
   shoppingListId: string;
   connected: boolean;
   hasTransferredLines: boolean;
   orderConfirmed: boolean;
-  /** Aantal nog niet overgedragen vaste-boodschappen/losse-toevoegingen — bepaalt of de "alleen vaste boodschappen"-knop zin heeft. */
-  quickOrderCount: number;
+  /** Aantal nog niet overgedragen vaste boodschappen — apart van manualCount zodat de knoptekst niet één dubbelzinnig totaal toont. */
+  fixedCount: number;
+  /** Aantal nog niet overgedragen losse toevoegingen. */
+  manualCount: number;
 }) {
+  const quickOrderCount = fixedCount + manualCount;
   const [stage, setStage] = useState<Stage>("idle");
   const [scope, setScope] = useState<TransferScope>("all");
   const [summary, setSummary] = useState<ConfirmationSummary | null>(null);
@@ -120,6 +124,14 @@ export default function AddToPicnicCart({
     );
   }
 
+  function quickOrderButtonLabel() {
+    if (fixedCount > 0 && manualCount > 0) {
+      return `Vaste boodschappen (${fixedCount}) + losse toevoegingen (${manualCount})`;
+    }
+    if (fixedCount > 0) return `Vaste boodschappen (${fixedCount})`;
+    return `Losse toevoegingen (${manualCount})`;
+  }
+
   return (
     <div className="mt-4 min-w-0">
       {stage === "idle" && (
@@ -139,11 +151,15 @@ export default function AddToPicnicCart({
               disabled={isPending}
               className="w-full rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-surface-2 disabled:opacity-50"
             >
-              {isPending && scope === "fixed"
-                ? "Bezig…"
-                : `Vaste boodschappen + losse toevoegingen (${quickOrderCount})`}
+              {isPending && scope === "fixed" ? "Bezig…" : quickOrderButtonLabel()}
             </button>
           )}
+          <Link
+            href="/boodschappen#jullie-boodschappenlijst"
+            className="text-center text-xs font-medium text-ink-faint underline decoration-dotted hover:text-ink"
+          >
+            Bekijk de volledige lijst
+          </Link>
         </div>
       )}
 
@@ -186,7 +202,7 @@ export default function AddToPicnicCart({
               Niet gevonden bij Picnic (worden overgeslagen): {summary.unavailable.join(", ")}.
             </p>
           )}
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={handleConfirmAdd}
@@ -203,6 +219,12 @@ export default function AddToPicnicCart({
             >
               Annuleren
             </button>
+            <Link
+              href="/boodschappen#jullie-boodschappenlijst"
+              className="text-xs font-medium text-ink-faint underline decoration-dotted hover:text-ink"
+            >
+              Eerst de lijst bekijken/wijzigen
+            </Link>
           </div>
         </div>
       )}

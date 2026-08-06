@@ -285,9 +285,13 @@ export default async function Home({
       attentionItem?.type === "PICNIC_CART_FILLED_NOT_CONFIRMED");
   const picnicHasTransferredLines =
     shoppingListForPicnic?.lines.some((line) => line.transferredToPicnicAt !== null) ?? false;
-  const picnicQuickOrderPendingCount =
+  const picnicFixedPendingCount =
     shoppingListForPicnic?.lines.filter(
-      (line) => (line.source === "FIXED" || line.source === "MANUAL") && line.transferredToPicnicAt === null
+      (line) => line.source === "FIXED" && line.transferredToPicnicAt === null
+    ).length ?? 0;
+  const picnicManualPendingCount =
+    shoppingListForPicnic?.lines.filter(
+      (line) => line.source === "MANUAL" && line.transferredToPicnicAt === null
     ).length ?? 0;
 
   const priorFeedback = await prisma.feedbackEvent.findMany({
@@ -357,7 +361,8 @@ export default async function Home({
                   connected={Boolean(household.picnicAuthToken)}
                   hasTransferredLines={picnicHasTransferredLines}
                   orderConfirmed={shoppingListForPicnic.orderConfirmedAt !== null}
-                  quickOrderCount={picnicQuickOrderPendingCount}
+                  fixedCount={picnicFixedPendingCount}
+                  manualCount={picnicManualPendingCount}
                 />
               ) : (
                 <Link
