@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, LogOut, Heart, ShoppingBag, Trash2 } from "lucide-react";
+import { BookOpen, ChevronLeft, ChevronRight, LogOut, Heart, ShoppingBag, Trash2 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
 import type { DayKey } from "@/lib/week";
@@ -311,6 +311,17 @@ export default async function OnsGezinPage({
             </button>
           </form>
         </details>
+
+        <Link
+          href="/recepten"
+          className="mb-8 flex min-w-0 items-center justify-between gap-3 rounded-xl border border-line bg-surface p-4 text-sm font-medium text-ink transition-colors hover:border-ink-faint"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <BookOpen size={16} className="shrink-0 text-ink-faint" />
+            Receptenbeheer
+          </span>
+          <ChevronRight size={16} className="shrink-0 text-ink-faint" />
+        </Link>
 
         <LearnedPatternsPanel
           householdId={household.id}
