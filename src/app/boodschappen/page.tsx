@@ -745,6 +745,9 @@ export default async function BoodschappenPage({
               {line.needsReview && (
                 <p className="mt-0.5 text-xs font-medium text-tag-amber-ink">Nog te bevestigen</p>
               )}
+              {line.transferredToPicnicAt && (
+                <p className="mt-0.5 text-xs font-medium text-tag-green-ink">Staat al in je Picnic-mandje</p>
+              )}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">

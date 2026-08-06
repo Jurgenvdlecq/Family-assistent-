@@ -111,6 +111,52 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
   });
   if (existing) return existing;
 
+  const { lines: allLines, reviewCount } = await buildShoppingListLines(mealPlanId, householdId);
+
+  try {
+    return await prisma.shoppingList.create({
+      data: {
+        mealPlanId,
+        status: "PREPARED",
+        // WP69: betrouwbaar "sinds wanneer staat controle open" voor de
+        // attention-laag — meteen gezet bij aanmaken, niet pas later afgeleid.
+        reviewFlaggedAt: reviewCount > 0 ? new Date() : null,
+        lines: { create: allLines },
+      },
+      include: {
+        lines: { include: { ingredient: true, product: true } },
+      },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      // Twee bijna-gelijktijdige aanvragen voor dezelfde weekplanning: een
+      // andere aanvraag heeft de lijst net aangemaakt. Die teruggeven i.p.v.
+      // crashen op de unique constraint (meal_plan_id).
+      logEvent({
+        level: "info",
+        area: "product_matching",
+        message: "Boodschappenlijst samenstellen: race met gelijktijdige aanvraag, bestaande lijst gebruikt",
+        correlationId: createCorrelationId(),
+        meta: { householdId, mealPlanId },
+      });
+      const winner = await prisma.shoppingList.findUnique({
+        where: { mealPlanId },
+        include: { lines: { include: { ingredient: true, product: true } } },
+      });
+      if (winner) return winner;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Stelt de regels van een boodschappenlijst samen uit het weekmenu, de vaste
+ * boodschappen en de voorraadaanvulling — zonder ze op te slaan. Los van
+ * `ensureShoppingList` zodat ook `invalidateShoppingList` de lijst opnieuw
+ * kan samenstellen wanneer er al regels naar Picnic zijn overgedragen (die
+ * mogen dan niet zomaar verdwijnen, zie daar).
+ */
+async function buildShoppingListLines(mealPlanId: string, householdId: string) {
   const [mealPlan, fixedGroceries, inventory, likelyInStockIngredients, portionScaleByDay, household] = await Promise.all([
     prisma.mealPlan.findUniqueOrThrow({
       where: { id: mealPlanId },
@@ -227,45 +273,72 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
     meta: { householdId, mealPlanId, totalLines: allLines.length, notFoundCount, reviewCount },
   });
 
-  try {
-    return await prisma.shoppingList.create({
-      data: {
-        mealPlanId,
-        status: "PREPARED",
-        // WP69: betrouwbaar "sinds wanneer staat controle open" voor de
-        // attention-laag — meteen gezet bij aanmaken, niet pas later afgeleid.
-        reviewFlaggedAt: reviewCount > 0 ? new Date() : null,
-        lines: { create: allLines },
-      },
-      include: {
-        lines: { include: { ingredient: true, product: true } },
-      },
-    });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      // Twee bijna-gelijktijdige aanvragen voor dezelfde weekplanning: een
-      // andere aanvraag heeft de lijst net aangemaakt. Die teruggeven i.p.v.
-      // crashen op de unique constraint (meal_plan_id).
-      logEvent({
-        level: "info",
-        area: "product_matching",
-        message: "Boodschappenlijst samenstellen: race met gelijktijdige aanvraag, bestaande lijst gebruikt",
-        correlationId: createCorrelationId(),
-        meta: { householdId, mealPlanId },
-      });
-      const winner = await prisma.shoppingList.findUnique({
-        where: { mealPlanId },
-        include: { lines: { include: { ingredient: true, product: true } } },
-      });
-      if (winner) return winner;
-    }
-    throw error;
-  }
+  return { lines: allLines, reviewCount };
 }
 
-/** Wordt aangeroepen als de weekplanning wijzigt — de lijst moet dan opnieuw berekend worden. */
+/**
+ * Wordt aangeroepen als de weekplanning wijzigt — de lijst moet dan opnieuw
+ * berekend worden.
+ *
+ * Belangrijk: regels die al naar het Picnic-mandje zijn overgedragen
+ * (`transferredToPicnicAt`) worden hierbij **nooit** weggegooid. Die staan
+ * echt in het mandje van de gebruiker; zou de app ze vergeten, dan zou een
+ * volgende "Toevoegen aan Picnic-mandje" ze doodleuk nog een keer bestellen
+ * (de idempotentie in `cartService` leunt volledig op deze markering). Zolang
+ * er nog niets is overgedragen kan de lijst gewoon weg en wordt hij bij het
+ * volgende bezoek lui opnieuw opgebouwd — dat is het normale, goedkope geval.
+ */
 export async function invalidateShoppingList(mealPlanId: string) {
-  await prisma.shoppingList.deleteMany({ where: { mealPlanId } });
+  const existing = await prisma.shoppingList.findUnique({
+    where: { mealPlanId },
+    include: { lines: { where: { transferredToPicnicAt: { not: null } } } },
+  });
+
+  if (!existing || existing.lines.length === 0) {
+    await prisma.shoppingList.deleteMany({ where: { mealPlanId } });
+    return;
+  }
+
+  const mealPlan = await prisma.mealPlan.findUniqueOrThrow({
+    where: { id: mealPlanId },
+    select: { householdId: true },
+  });
+  const { lines: rebuiltLines } = await buildShoppingListLines(mealPlanId, mealPlan.householdId);
+
+  // Alleen de nog niet overgedragen regels vervangen. Een al overgedragen
+  // regel blijft ongemoeid staan — ook als het weekmenu 'm niet meer nodig
+  // heeft: hij ligt al in het mandje, dus de gebruiker moet 'm zien staan en
+  // zelf kunnen beslissen (verwijderen uit de lijst of in Picnic laten).
+  const keptIngredientIds = new Set(existing.lines.map((line) => line.ingredientId));
+  const newLines = rebuiltLines.filter((line) => !keptIngredientIds.has(line.ingredientId));
+
+  // Levert de herbouw nieuwe twijfelgevallen op, dan is een eerder gegeven
+  // "bevestigd" niet meer geldig: de lijst bevat nu producten die de
+  // gebruiker nooit heeft gezien. Terugzetten naar PREPARED zodat de app
+  // niet "klaar om naar Picnic te gaan" zegt over ongecontroleerde regels
+  // (AGENTS.md: nooit stilzwijgend of ongecontroleerd bestellen).
+  const hasNewReviewLines = newLines.some((line) => line.needsReview);
+
+  await prisma.$transaction([
+    prisma.shoppingListLine.deleteMany({
+      where: { shoppingListId: existing.id, transferredToPicnicAt: null },
+    }),
+    prisma.shoppingListLine.createMany({
+      data: newLines.map((line) => ({ ...line, shoppingListId: existing.id })),
+    }),
+    ...(hasNewReviewLines
+      ? [
+          prisma.shoppingList.update({
+            where: { id: existing.id },
+            data: {
+              status: "PREPARED" as const,
+              reviewedAt: null,
+              reviewFlaggedAt: existing.reviewFlaggedAt ?? new Date(),
+            },
+          }),
+        ]
+      : []),
+  ]);
 }
 
 /**

@@ -48,10 +48,8 @@ export default function LooseListCard({
           </p>
           {hasTransferredLines && (
             <p className="mb-3 rounded-md bg-tag-amber-bg px-2.5 py-2 text-tag-amber-ink">
-              Let op: je hebt deze week al producten naar je Picnic-mandje overgedragen. Die blijven
-              gewoon in je mandje staan, maar Family Assistant onthoudt na deze actie niet meer welke —
-              controleer zelf even in Picnic voordat je straks opnieuw &ldquo;Toevoegen aan
-              Picnic-mandje&rdquo; gebruikt, anders kun je iets dubbel bestellen.
+              Je hebt deze week al producten naar je Picnic-mandje overgedragen. Die blijven op de
+              lijst staan — ze liggen immers al in je mandje — en worden niet nog een keer besteld.
             </p>
           )}
           <div className="flex flex-wrap gap-2">
