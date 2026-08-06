@@ -633,8 +633,11 @@ export default async function BoodschappenPage({
     status: shoppingList.status,
   };
   const hasTransferredLines = sortedLines.some((line) => line.transferredToPicnicAt !== null);
-  const quickOrderPendingCount = sortedLines.filter(
-    (line) => (line.source === "FIXED" || line.source === "MANUAL") && line.transferredToPicnicAt === null
+  const fixedPendingCount = sortedLines.filter(
+    (line) => line.source === "FIXED" && line.transferredToPicnicAt === null
+  ).length;
+  const manualPendingCount = sortedLines.filter(
+    (line) => line.source === "MANUAL" && line.transferredToPicnicAt === null
   ).length;
   const checklistLines: ChecklistLine[] = sortedLines.map((line) => ({
     id: line.id,
@@ -879,7 +882,8 @@ export default async function BoodschappenPage({
           connected={Boolean(household.picnicAuthToken)}
           hasTransferredLines={hasTransferredLines}
           orderConfirmed={shoppingList.orderConfirmedAt !== null}
-          quickOrderCount={quickOrderPendingCount}
+          fixedCount={fixedPendingCount}
+          manualCount={manualPendingCount}
         />
 
         <LooseListCard
