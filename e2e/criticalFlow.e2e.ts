@@ -243,26 +243,29 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       await kiesButton.waitFor({ state: "visible", timeout: 30_000 });
       await kiesButton.click();
 
-      await page.waitForURL((url) => url.searchParams.has("status"), { timeout: 15_000 });
+      // Gebruikersverzoek: een voltooide gerechtwissel gaat terug naar het
+      // weekmenu i.p.v. op /gerechten te blijven staan — en landt meteen op
+      // de juiste dag (focusDay + #day-<dag>), niet bovenaan de pagina.
+      await page.waitForURL((url) => url.pathname === "/" && url.searchParams.get("focusDay") === "monday", {
+        timeout: 15_000,
+      });
+      assert.ok(page.url().endsWith("#day-monday"), "Moet landen op de aangepaste dag, niet bovenaan de pagina");
       const confirmed = page
         .locator("text=Gerecht gewisseld.")
         .or(page.locator("text=Dit gerecht stond al op die dag."));
       await confirmed.first().waitFor({ state: "visible", timeout: 5_000 });
 
-      // UX-bugfix: je blijft op /gerechten (zelfde dag) staan i.p.v. terug
-      // te springen naar de startpagina — belangrijk als je meerdere dagen
-      // achter elkaar wilt aanpassen, dan hoef je niet steeds opnieuw
-      // "Ander gerecht" aan te klikken en je filters kwijt te raken.
-      const url = new URL(page.url());
-      assert.equal(url.pathname, "/gerechten", "Na het kiezen van een gerecht moet je op /gerechten blijven staan");
-      assert.equal(url.searchParams.get("day"), "monday", "De dag-context (maandag) moet behouden blijven");
-
-      // Meteen een tweede keer kiezen kan zonder opnieuw te navigeren — bewijst dat je echt in dezelfde, bruikbare context blijft.
+      // Nog een dag aanpassen kost nog steeds maar één klik — bewijst dat de
+      // volledige heen-en-terug-flow ook een tweede keer gewoon werkt.
+      await page.getByRole("link", { name: "Vervang dinsdag" }).click();
+      await page.waitForURL(/\/gerechten\?/, { timeout: 15_000 });
       const secondKiesButton = page.getByRole("button", { name: "Kies" }).first();
-      await secondKiesButton.waitFor({ state: "visible", timeout: 10_000 });
+      await secondKiesButton.waitFor({ state: "visible", timeout: 30_000 });
       await secondKiesButton.click();
-      await page.waitForURL((url) => url.searchParams.get("status") === "meal-replaced", { timeout: 15_000 });
-      assert.equal(new URL(page.url()).pathname, "/gerechten");
+      await page.waitForURL((url) => url.pathname === "/" && url.searchParams.get("focusDay") === "tuesday", {
+        timeout: 15_000,
+      });
+      assert.ok(page.url().endsWith("#day-tuesday"), "Moet ook de tweede keer op de juiste dag landen");
     });
 
     await t.test("3b. /gerechten zonder ?day= valt terug op vandaag, niet altijd op maandag (UX-bugfix)", async () => {

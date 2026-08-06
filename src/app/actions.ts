@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { redirectToHome } from "@/lib/homeRedirect";
 import { prisma } from "@/lib/prisma";
 import { assertCurrentHousehold } from "@/lib/auth";
 import { logFeedbackEvent } from "@/lib/feedback";
@@ -32,38 +32,9 @@ const RECIPE_CATEGORIES = [
 
 type ParsedLooseMealLine = ReturnType<typeof parseRecipeIngredientText>[number];
 
-/**
- * `revalidatePath` alleen is niet genoeg om de gebruiker te laten zien dat
- * een actie is gelukt: zonder een echte navigatie blijft de al open
- * homepage soms de oude staat tonen. Een redirect terug naar `/` dwingt een
- * verse render af én toont een expliciete groene bevestiging (zie
- * STATUS_MESSAGES in page.tsx) — dezelfde aanpak als /boodschappen en
- * /recepten.
- *
- * `focusDayKey` (optioneel): voor acties die bij één specifieke dag horen
- * (voorkeur zetten, losse maaltijd invullen, dag overslaan) — zonder dit
- * sprong je na elke klik terug naar de bovenkant van de pagina en moest je
- * opnieuw naar de juiste dag scrollen (bugfix UX-review, punt 6). `page.tsx`
- * gebruikt dit om terug te scrollen naar `#day-<dayKey>` — zelfde
- * `focus`+hash-patroon als /boodschappen en /controle.
- *
- * `openDayDetails` (optioneel, standaard `true`): of "Meer voor deze dag"
- * voor die dag ook meteen openklapt. Voor acties die zelf al ín die sectie
- * gebeuren (voorkeur zetten, losse maaltijd invullen) wil je dat, zodat je
- * meteen door kunt met de volgende. Voor "Uit eten" (zit niet in die
- * sectie) zou dat een ongevraagd paneel openklappen — code-review-bevinding,
- * daarom expliciet `false` bij die ene aanroep.
- */
-function redirectToHome(status: string, focusDayKey?: DayKey, openDayDetails = true): never {
-  revalidatePath("/");
-  const params = new URLSearchParams({ status });
-  if (focusDayKey) {
-    params.set("focusDay", focusDayKey);
-    if (!openDayDetails) params.set("openDetails", "0");
-    redirect(`/?${params.toString()}#day-${focusDayKey}`);
-  }
-  redirect(`/?${params.toString()}`);
-}
+// `redirectToHome` staat in `@/lib/homeRedirect.ts` — gedeeld met
+// `src/app/gerechten/actions.ts`, los gehouden omdat een `"use server"`-
+// bestand alleen async functies mag exporteren.
 
 function parsePersonalStance(value: FormDataEntryValue | null): (typeof PERSONAL_STANCES)[number] {
   const stance = String(value ?? "SOMETIMES");
