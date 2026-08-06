@@ -212,7 +212,10 @@ export async function chooseBoodschappenProduct(formData: FormData) {
 export async function removeBoodschappenLineThisWeek(formData: FormData) {
   const lineId = String(formData.get("lineId"));
   const { line } = await loadEditableShoppingLine(lineId);
-  if (line.source === "FIXED") throw new Error("Gebruik de vaste-boodschappenregel om vaste boodschappen aan te passen.");
+  // Ook bruikbaar voor vaste boodschappen (source FIXED): dit verwijdert
+  // alleen de regel van déze week, de vaste-boodschap-sjabloon zelf blijft
+  // ongewijzigd bestaan — exact dezelfde bewerking als removeFixedLineThisWeek
+  // in fixedGroceriesActions.ts, alleen met een andere redirect-anker.
   await prisma.shoppingListLine.delete({ where: { id: line.id } });
   revalidatePath("/boodschappen");
   revalidatePath("/controle");

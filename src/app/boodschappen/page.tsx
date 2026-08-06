@@ -710,6 +710,92 @@ export default async function BoodschappenPage({
     ])
   );
 
+  // Gedeeld tussen "Jullie boodschappenlijst" (weekmenu/voorraad/handmatig)
+  // en de uitklaplijst met vaste boodschappen hieronder — zelfde rij-opmaak
+  // en dezelfde verwijderknop, zodat "wat wordt er deze week besteld" één
+  // consistent geheel is i.p.v. twee losse stijlen. Shortfalls bestaan
+  // alleen voor weekmenu-/voorraadregels; voor vaste boodschappen levert
+  // shortfallByLineId vanzelf niets op, dus dat blok blijft dan gewoon weg.
+  function renderShoppingLineRow(line: (typeof sortedLines)[number]) {
+    const shortfall = shortfallByLineId.get(line.id);
+    const statusMessage =
+      line.id === focusedShortfallLineId && params.status ? STATUS_MESSAGES[params.status] : undefined;
+    return (
+      <div
+        key={line.id}
+        id={`meal-line-${line.id}`}
+        className={`scroll-mt-6 p-4 transition-colors ${
+          line.id === focusedShortfallLineId ? "bg-accent-soft" : ""
+        }`}
+      >
+        <div className="flex min-w-0 items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <ProductThumb line={line} />
+            <div className="min-w-0">
+              <p className="truncate text-ink">{line.product?.name ?? line.ingredient.name}</p>
+              {line.product?.brand && (
+                <p className="truncate text-xs text-ink-faint">
+                  {line.product.brand}
+                  {line.product.packageSize ? ` · ${line.product.packageSize}` : ""}
+                </p>
+              )}
+              {line.needsReview && (
+                <p className="mt-0.5 text-xs font-medium text-tag-amber-ink">Nog te bevestigen</p>
+              )}
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="text-sm text-ink-muted">{formatOrderQuantity(line)}</span>
+            <form action={removeBoodschappenLineThisWeek}>
+              <input type="hidden" name="lineId" value={line.id} />
+              <PendingSubmitButton
+                pendingText="..."
+                ariaLabel="Verwijderen"
+                title="Verwijderen"
+                className={`flex h-7 w-7 items-center justify-center rounded-md text-ink-faint hover:bg-red-50 hover:text-red-600 ${ACTION_BUTTON_FOCUS}`}
+              >
+                <X size={14} />
+              </PendingSubmitButton>
+            </form>
+          </div>
+        </div>
+        {statusMessage && (
+          <p className="mt-2 rounded-md border border-tag-green-ink/20 bg-tag-green-bg px-2.5 py-1.5 text-xs font-medium text-tag-green-ink">
+            {statusMessage}
+          </p>
+        )}
+        {shortfall && (
+          <div className="mt-3 rounded-lg border border-tag-amber-ink/25 bg-tag-amber-bg p-3">
+            <p className="text-xs font-medium text-tag-amber-ink">
+              Dit is {formatQuantity(shortfall.shortBy, shortfall.unit)} minder dan nodig voor de geplande
+              maaltijden deze week.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <form action={fillShoppingListShortfall}>
+                <input type="hidden" name="lineId" value={line.id} />
+                <PendingSubmitButton
+                  pendingText="Aanvullen..."
+                  className={`rounded-md bg-tag-amber-ink px-3 py-1.5 text-xs font-semibold text-white ${ACTION_BUTTON_FOCUS}`}
+                >
+                  Aanvullen
+                </PendingSubmitButton>
+              </form>
+              <form action={acknowledgeShoppingListShortfall}>
+                <input type="hidden" name="lineId" value={line.id} />
+                <PendingSubmitButton
+                  pendingText="..."
+                  className={`rounded-md border border-tag-amber-ink/40 bg-transparent px-3 py-1.5 text-xs font-medium text-tag-amber-ink ${ACTION_BUTTON_FOCUS}`}
+                >
+                  Toch doorgaan
+                </PendingSubmitButton>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto flex min-h-screen w-full min-w-0 max-w-2xl flex-col pb-[calc(6rem+env(safe-area-inset-bottom))]">
       <header className="flex items-center justify-between px-6 pt-6 pb-2">
@@ -763,86 +849,20 @@ export default async function BoodschappenPage({
           </span>
         </div>
         <div className="flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
-          {mealLines.map((line) => {
-            const shortfall = shortfallByLineId.get(line.id);
-            const statusMessage =
-              line.id === focusedShortfallLineId && params.status ? STATUS_MESSAGES[params.status] : undefined;
-            return (
-              <div
-                key={line.id}
-                id={`meal-line-${line.id}`}
-                className={`scroll-mt-6 p-4 transition-colors ${
-                  line.id === focusedShortfallLineId ? "bg-accent-soft" : ""
-                }`}
-              >
-                <div className="flex min-w-0 items-center justify-between gap-4">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <ProductThumb line={line} />
-                    <div className="min-w-0">
-                      <p className="truncate text-ink">{line.product?.name ?? line.ingredient.name}</p>
-                      {line.product?.brand && (
-                        <p className="truncate text-xs text-ink-faint">
-                          {line.product.brand}
-                          {line.product.packageSize ? ` · ${line.product.packageSize}` : ""}
-                        </p>
-                      )}
-                      {line.needsReview && (
-                        <p className="mt-0.5 text-xs font-medium text-tag-amber-ink">Nog te bevestigen</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <span className="text-sm text-ink-muted">{formatOrderQuantity(line)}</span>
-                    <form action={removeBoodschappenLineThisWeek}>
-                      <input type="hidden" name="lineId" value={line.id} />
-                      <PendingSubmitButton
-                        pendingText="..."
-                        ariaLabel="Verwijderen"
-                        title="Verwijderen"
-                        className={`flex h-7 w-7 items-center justify-center rounded-md text-ink-faint hover:bg-red-50 hover:text-red-600 ${ACTION_BUTTON_FOCUS}`}
-                      >
-                        <X size={14} />
-                      </PendingSubmitButton>
-                    </form>
-                  </div>
-                </div>
-                {statusMessage && (
-                  <p className="mt-2 rounded-md border border-tag-green-ink/20 bg-tag-green-bg px-2.5 py-1.5 text-xs font-medium text-tag-green-ink">
-                    {statusMessage}
-                  </p>
-                )}
-                {shortfall && (
-                  <div className="mt-3 rounded-lg border border-tag-amber-ink/25 bg-tag-amber-bg p-3">
-                    <p className="text-xs font-medium text-tag-amber-ink">
-                      Dit is {formatQuantity(shortfall.shortBy, shortfall.unit)} minder dan nodig voor de geplande
-                      maaltijden deze week.
-                    </p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <form action={fillShoppingListShortfall}>
-                        <input type="hidden" name="lineId" value={line.id} />
-                        <PendingSubmitButton
-                          pendingText="Aanvullen..."
-                          className={`rounded-md bg-tag-amber-ink px-3 py-1.5 text-xs font-semibold text-white ${ACTION_BUTTON_FOCUS}`}
-                        >
-                          Aanvullen
-                        </PendingSubmitButton>
-                      </form>
-                      <form action={acknowledgeShoppingListShortfall}>
-                        <input type="hidden" name="lineId" value={line.id} />
-                        <PendingSubmitButton
-                          pendingText="..."
-                          className={`rounded-md border border-tag-amber-ink/40 bg-transparent px-3 py-1.5 text-xs font-medium text-tag-amber-ink ${ACTION_BUTTON_FOCUS}`}
-                        >
-                          Toch doorgaan
-                        </PendingSubmitButton>
-                      </form>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {mealLines.map(renderShoppingLineRow)}
         </div>
+
+        {activeFixedLines.length > 0 && (
+          <details id="alle-te-bestellen-producten" className="mt-3 scroll-mt-6">
+            <summary className="cursor-pointer text-xs font-medium text-ink-muted hover:text-ink">
+              + {activeFixedLines.length} vaste boodschap{activeFixedLines.length === 1 ? "" : "pen"} worden ook
+              besteld — toon volledige lijst
+            </summary>
+            <div className="mt-3 flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
+              {activeFixedLines.map(renderShoppingLineRow)}
+            </div>
+          </details>
+        )}
 
         <PicnicDeliveryStatusCard householdId={household.id} picnicAuthToken={household.picnicAuthToken} />
 
