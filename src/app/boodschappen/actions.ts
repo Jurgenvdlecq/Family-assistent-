@@ -57,7 +57,7 @@ async function loadEditableShoppingLine(lineId: string) {
   return { line, householdId: line.shoppingList.mealPlan.householdId };
 }
 
-function redirectToBoodschappenLine(lineId: string, status?: string) {
+function redirectToBoodschappenLine(lineId: string, status?: string): never {
   revalidatePath("/boodschappen");
   revalidatePath("/controle");
   const params = new URLSearchParams({ focusLine: lineId });
@@ -95,7 +95,8 @@ export async function setBoodschappenLinePackageCount(formData: FormData) {
   const { line } = await loadEditableShoppingLine(lineId);
   if (line.source === "FIXED") throw new Error("Gebruik de vaste-boodschappenregel om vaste boodschappen aan te passen.");
   if (!Number.isFinite(packageCount) || packageCount <= 0) {
-    throw new Error("Vul een geldig aantal groter dan 0 in.");
+    // Gewone typfout, geen tamper: leesbare melding op dezelfde regel.
+    redirectToBoodschappenLine(lineId, "invalid-quantity");
   }
 
   const nextQuantity =

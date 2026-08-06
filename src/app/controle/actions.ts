@@ -8,7 +8,7 @@ import { logFeedbackEvent } from "@/lib/feedback";
 import { acceptProposedMealPlanEntries } from "@/lib/mealPlan";
 import { recordProductChosen, recordProductRejected } from "@/domain/product-matching/repository";
 import { matchProductForIngredient } from "@/domain/product-matching/matchIngredient";
-import { PicnicClient } from "@/lib/picnic/client";
+import { PicnicClient, PicnicAuthError } from "@/lib/picnic/client";
 import { picnicPriceToEuros, picnicProductRef } from "@/lib/picnic/products";
 import { parsePackageQuantity } from "@/lib/quantity/parsePackageSize";
 
@@ -21,7 +21,7 @@ async function loadLineForCurrentHousehold(lineId: string) {
   return { line, householdId: line.shoppingList.mealPlan.householdId };
 }
 
-function refreshControle(lineId?: string, status?: string) {
+function refreshControle(lineId?: string, status?: string): never {
   revalidatePath("/controle");
   revalidatePath("/boodschappen");
   if (lineId) {
@@ -207,7 +207,8 @@ export async function adjustLineQuantity(formData: FormData) {
   await loadLineForCurrentHousehold(lineId);
   const quantity = Number(formData.get("quantity"));
   if (!Number.isFinite(quantity) || quantity <= 0) {
-    throw new Error("Vul een geldige hoeveelheid groter dan 0 in.");
+    // Gewone typfout, geen tamper: leesbare melding op dezelfde regel.
+    refreshControle(lineId, "invalid-quantity");
   }
 
   await prisma.shoppingListLine.update({ where: { id: lineId }, data: { quantity } });
@@ -221,7 +222,9 @@ export async function searchPicnicProductsForLine(formData: FormData) {
 
   const household = await prisma.household.findUniqueOrThrow({ where: { id: householdId } });
   if (!household.picnicAuthToken) {
-    throw new Error("Koppel eerst je Picnic-account voordat ik live Picnic-producten kan zoeken.");
+    // Bereikbaar voor iedereen die Picnic (nog) niet gekoppeld heeft — nette
+    // uitleg op de regel zelf i.p.v. een in productie geredacte throw.
+    refreshControle(lineId, "picnic-not-connected");
   }
 
   const ingredient = await prisma.ingredient.findUniqueOrThrow({
@@ -230,7 +233,14 @@ export async function searchPicnicProductsForLine(formData: FormData) {
   });
   const searchTerm = query || ingredient.name;
   const client = new PicnicClient(household.picnicAuthToken);
-  const results = await client.search(searchTerm);
+  let results;
+  try {
+    results = await client.search(searchTerm);
+  } catch (err) {
+    // Een verlopen sessie of Picnic-storing mag geen doodlopende generieke
+    // foutpagina worden — terug naar de regel met een duidelijke vervolgstap.
+    refreshControle(lineId, err instanceof PicnicAuthError ? "picnic-session-expired" : "picnic-unreachable");
+  }
 
   const seenRefs = new Set<string>();
   const productsToSave = results.slice(0, 12).flatMap((item) => {

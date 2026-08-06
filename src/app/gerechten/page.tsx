@@ -24,6 +24,16 @@ const STATUS_MESSAGES: Record<string, string> = {
   "meal-unchanged": "Dit gerecht stond al op die dag.",
 };
 
+/** Verwachte fouten — amber i.p.v. groen, met een leesbare uitleg. */
+const ERROR_STATUS_MESSAGES: Record<string, string> = {
+  "meal-conflicts-restrictions":
+    "Dit botst met een harde beperking van jullie huishouden en kan niet worden ingepland.",
+  "meal-conflicts-never":
+    "Dit botst met een persoonlijke 'nooit'-voorkeur van iemand die deze dag mee-eet.",
+  "wish-unknown-ingredients":
+    "Ik herkende niet alle ingrediënten uit je wens — pas de tekst aan en probeer het opnieuw.",
+};
+
 const DIRECTIONS = [
   { key: "day", label: "Deze dag" },
   { key: "all", label: "Alle suggesties" },
@@ -85,6 +95,7 @@ export default async function GerechtenPage({
 
   const household = await requireCurrentHousehold();
   const statusMessage = params.status ? STATUS_MESSAGES[params.status] : undefined;
+  const errorStatusMessage = params.status ? ERROR_STATUS_MESSAGES[params.status] : undefined;
 
   const dayKey: DayKey = (DAY_KEYS as readonly string[]).includes(params.day ?? "")
     ? (params.day as DayKey)
@@ -306,6 +317,11 @@ export default async function GerechtenPage({
             {statusMessage}
           </p>
         )}
+        {errorStatusMessage && (
+          <p className="mb-5 rounded-lg border border-tag-amber-ink/25 bg-tag-amber-bg px-3 py-2 text-sm font-medium text-tag-amber-ink">
+            {errorStatusMessage}
+          </p>
+        )}
 
         <form action="/gerechten" className="mb-4 grid gap-2">
           <input type="hidden" name="day" value={dayKey} />
@@ -365,6 +381,8 @@ export default async function GerechtenPage({
             <input type="hidden" name="householdId" value={household.id} />
             <input type="hidden" name="dayKey" value={dayKey} />
             <input type="hidden" name="weekStart" value={weekStart.toISOString()} />
+            <input type="hidden" name="direction" value={direction} />
+            <input type="hidden" name="q" value={wishText} />
             <input type="hidden" name="ingredientIds" value={literalWishIngredients.map((ingredient) => ingredient.id).join(",")} />
             <div className="rounded-xl border border-accent/35 bg-accent-soft p-4">
               <div className="mb-3 flex items-start gap-2">

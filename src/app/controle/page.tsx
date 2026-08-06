@@ -240,7 +240,22 @@ const STATUS_MESSAGES: Record<string, string> = {
   removed: "Regel van de lijst verwijderd.",
   "line-in-picnic-cart":
     "Dit product ligt al in je Picnic-mandje, dus ik kan het hier niet van de lijst halen. Leeg je Picnic-mandje op de boodschappenpagina als je het toch niet wilt bestellen.",
+  "invalid-quantity": "Vul een geldige hoeveelheid groter dan 0 in.",
+  "picnic-not-connected":
+    "Koppel eerst je Picnic-account bij Ons gezin, dan kan ik live Picnic-producten zoeken.",
+  "picnic-session-expired":
+    "Je Picnic-sessie is verlopen. Koppel je account opnieuw bij Ons gezin en probeer het daarna nog eens.",
+  "picnic-unreachable": "Picnic is op dit moment niet bereikbaar — probeer het zoeken over een paar minuten opnieuw.",
 };
+
+/** Meldingen die geen bevestiging zijn maar een fout/blokkade — amber i.p.v. groen. */
+const WARNING_STATUSES = new Set([
+  "line-in-picnic-cart",
+  "invalid-quantity",
+  "picnic-not-connected",
+  "picnic-session-expired",
+  "picnic-unreachable",
+]);
 
 async function ensureMinimumCandidatesForLines({
   householdId,
@@ -332,6 +347,7 @@ function LineControlCard({
   candidates,
   householdId,
   statusMessage,
+  statusIsWarning = false,
 }: {
   line: {
     id: string;
@@ -347,6 +363,7 @@ function LineControlCard({
   candidates: ProductCardProduct[];
   householdId: string;
   statusMessage?: string;
+  statusIsWarning?: boolean;
 }) {
   const alternatives = candidates.filter((candidate) => candidate.id !== line.product?.id);
 
@@ -372,7 +389,13 @@ function LineControlCard({
       )}
 
       {statusMessage && (
-        <p className="mb-3 rounded-lg border border-tag-green-ink/20 bg-tag-green-bg px-3 py-2 text-xs font-medium text-tag-green-ink">
+        <p
+          className={`mb-3 rounded-lg border px-3 py-2 text-xs font-medium ${
+            statusIsWarning
+              ? "border-tag-amber-ink/25 bg-tag-amber-bg text-tag-amber-ink"
+              : "border-tag-green-ink/20 bg-tag-green-bg text-tag-green-ink"
+          }`}
+        >
           {statusMessage}
         </p>
       )}
@@ -553,6 +576,16 @@ export default async function ControlePage({
           </p>
         )}
 
+        {!household.picnicAuthToken && reviewLines.length > 0 && (
+          <p className="mb-5 rounded-lg border border-tag-amber-ink/25 bg-tag-amber-bg px-3 py-2 text-sm font-medium text-tag-amber-ink">
+            Nog geen Picnic-account gekoppeld — zoeken naar producten werkt daardoor nog niet.{" "}
+            <Link href="/ons-gezin" className="underline decoration-dotted">
+              Koppel je account bij Ons gezin
+            </Link>
+            , of ga per regel verder met &quot;Zonder product doorgaan&quot;.
+          </p>
+        )}
+
         <div className="mb-7 flex flex-wrap gap-2">
           <Tag tone="green">{trustedLines.length} vertrouwde keuzes</Tag>
           {attentionLines.length > 0 && <Tag tone="amber">{attentionLines.length} vragen aandacht</Tag>}
@@ -575,6 +608,7 @@ export default async function ControlePage({
                     candidates={candidatesByLine.get(line.id) ?? []}
                     householdId={household.id}
                     statusMessage={line.id === params.focus && params.status ? STATUS_MESSAGES[params.status] : undefined}
+                    statusIsWarning={WARNING_STATUSES.has(params.status ?? "")}
                   />
                 ))}
               </div>
@@ -593,6 +627,7 @@ export default async function ControlePage({
                     candidates={candidatesByLine.get(line.id) ?? []}
                     householdId={household.id}
                     statusMessage={line.id === params.focus && params.status ? STATUS_MESSAGES[params.status] : undefined}
+                    statusIsWarning={WARNING_STATUSES.has(params.status ?? "")}
                   />
                 ))}
               </div>
@@ -620,6 +655,7 @@ export default async function ControlePage({
                   candidates={candidatesByLine.get(line.id) ?? []}
                   householdId={household.id}
                   statusMessage={line.id === params.focus && params.status ? STATUS_MESSAGES[params.status] : undefined}
+                    statusIsWarning={WARNING_STATUSES.has(params.status ?? "")}
                 />
               ))}
             </div>

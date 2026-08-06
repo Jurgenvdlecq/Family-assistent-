@@ -18,7 +18,8 @@ import { getFixedGroceries } from "@/lib/fixedGroceries";
 import { getInventoryChecklist, getInventoryMap } from "@/lib/inventory";
 import { enrichShoppingListProductImages } from "@/lib/picnic/productEnrichment";
 import { picnicImageUrl, picnicPriceToEuros, picnicProductRef } from "@/lib/picnic/products";
-import { PicnicClient } from "@/lib/picnic/client";
+import { PicnicClient, PicnicAuthError } from "@/lib/picnic/client";
+import { logEvent, errorMessage } from "@/lib/logger";
 import type { PicnicSearchResultItem } from "@/lib/picnic/searchResults";
 import { inferFixedProductOrderQuantity, parseBulkFixedGroceryInput, titleCaseSearchTerm } from "@/lib/fixedGroceryProductChoice";
 import { getTrustedPreferences } from "@/domain/product-matching/repository";
@@ -76,10 +77,11 @@ const STATUS_MESSAGES: Record<string, string> = {
   "shopping-reviewed": "Lijst bevestigd — klaar om naar Picnic te gaan.",
   "line-in-picnic-cart":
     "Dit product ligt al in je Picnic-mandje, dus ik kan het hier niet van de lijst halen. Leeg je Picnic-mandje hieronder als je het toch niet wilt bestellen.",
+  "invalid-quantity": "Vul een geldig aantal groter dan 0 in.",
 };
 
 /** Meldingen die geen bevestiging zijn maar een blokkade/waarschuwing — amber i.p.v. groen. */
-const WARNING_STATUSES = new Set(["loose-list-week-changed", "line-in-picnic-cart"]);
+const WARNING_STATUSES = new Set(["loose-list-week-changed", "line-in-picnic-cart", "invalid-quantity"]);
 
 const INVENTORY_STATUS_OPTIONS = [
   { value: "SUFFICIENT", label: "Genoeg" },
@@ -655,13 +657,33 @@ export default async function BoodschappenPage({
   }));
   const checklistPickedUpCount = checklistLines.filter((line) => line.pickedUp).length;
 
+  // Een mislukte Picnic-zoekopdracht (verlopen sessie, netwerkstoring) mag
+  // nooit de hele pagina laten crashen — dan zie je alleen een generieke
+  // foutpagina zonder route naar herstel (UX-review). In plaats daarvan:
+  // lege resultaten + een duidelijke banner met de vervolgstap.
+  type SafeSearchResult<T> = { value: T; error: "auth" | "other" | null };
+  async function safePicnicSearch<T>(run: () => Promise<T>, empty: T): Promise<SafeSearchResult<T>> {
+    try {
+      return { value: await run(), error: null };
+    } catch (err) {
+      logEvent({
+        level: "warn",
+        area: "picnic_search",
+        message: "Picnic-zoekopdracht tijdens paginarender mislukt",
+        meta: { householdId: household.id, error: errorMessage(err) },
+      });
+      return { value: empty, error: err instanceof PicnicAuthError ? "auth" : "other" };
+    }
+  }
+  const emptySearch = <T,>(empty: T): Promise<SafeSearchResult<T>> => Promise.resolve({ value: empty, error: null });
+
   const [
     fixedGroceries,
     inventoryChecklist,
-    fixedProductResults,
-    manualProductResults,
-    bulkFixedPreviewLines,
-    quickOrderPreviewLines,
+    fixedSearch,
+    manualSearch,
+    bulkSearch,
+    quickSearch,
     portionScaleByDay,
     candidatesByIngredient,
     inventoryMap,
@@ -670,21 +692,27 @@ export default async function BoodschappenPage({
       getFixedGroceries(household.id),
       getInventoryChecklist(household.id),
       fixedSearchQuery && household.picnicAuthToken
-        ? searchFixedProductResults(household.id, household.picnicAuthToken, fixedSearchQuery)
-        : Promise.resolve([]),
+        ? safePicnicSearch(() => searchFixedProductResults(household.id, household.picnicAuthToken!, fixedSearchQuery), [])
+        : emptySearch<FixedProductResult[]>([]),
       manualSearchQuery && household.picnicAuthToken
-        ? searchFixedProductResults(household.id, household.picnicAuthToken, manualSearchQuery)
-        : Promise.resolve([]),
+        ? safePicnicSearch(() => searchFixedProductResults(household.id, household.picnicAuthToken!, manualSearchQuery), [])
+        : emptySearch<FixedProductResult[]>([]),
       bulkFixedText && household.picnicAuthToken
-        ? searchBulkFixedProductResults(household.id, household.picnicAuthToken, bulkFixedText)
-        : Promise.resolve([]),
+        ? safePicnicSearch(() => searchBulkFixedProductResults(household.id, household.picnicAuthToken!, bulkFixedText), [])
+        : emptySearch<BulkFixedPreviewLine[]>([]),
       quickOrderText
-        ? searchQuickOrderPreview(household.id, household.picnicAuthToken, quickOrderText)
-        : Promise.resolve([]),
+        ? safePicnicSearch(() => searchQuickOrderPreview(household.id, household.picnicAuthToken, quickOrderText), [])
+        : emptySearch<QuickOrderPreviewLine[]>([]),
       getHouseholdPortionScaleByDay(household.id),
       getShoppingListCandidatesByIngredient(household.id, mealLines.map((line) => line.ingredientId)),
       getInventoryMap(household.id),
     ]);
+  const fixedProductResults = fixedSearch.value;
+  const manualProductResults = manualSearch.value;
+  const bulkFixedPreviewLines = bulkSearch.value;
+  const quickOrderPreviewLines = quickSearch.value;
+  const picnicSearchError =
+    fixedSearch.error ?? manualSearch.error ?? bulkSearch.error ?? quickSearch.error ?? null;
   const quickOrderAutoLines = quickOrderPreviewLines.filter((line) => line.trustedChoice);
   const quickOrderPickLines = quickOrderPreviewLines.filter((line) => !line.trustedChoice);
   const inventoryAttentionItems = inventoryChecklist.filter((item) => item.needsAttention);
@@ -845,6 +873,21 @@ export default async function BoodschappenPage({
           <span>{sortedLines.length} producten</span>
         </div>
 
+        {picnicSearchError === "auth" && (
+          <p className="mb-6 rounded-lg border border-tag-amber-ink/20 bg-tag-amber-bg px-3 py-2 text-sm font-medium text-tag-amber-ink">
+            Je Picnic-sessie is verlopen, dus zoeken bij Picnic lukt nu niet.{" "}
+            <Link href="/ons-gezin" className="underline decoration-dotted">
+              Koppel je account opnieuw bij Ons gezin
+            </Link>{" "}
+            en probeer het daarna nog eens.
+          </p>
+        )}
+        {picnicSearchError === "other" && (
+          <p className="mb-6 rounded-lg border border-tag-amber-ink/20 bg-tag-amber-bg px-3 py-2 text-sm font-medium text-tag-amber-ink">
+            Picnic is op dit moment niet bereikbaar — zoekresultaten konden niet worden opgehaald.
+            Je lijst zelf staat er gewoon; probeer het zoeken over een paar minuten opnieuw.
+          </p>
+        )}
         {generalStatusMessage && WARNING_STATUSES.has(params.status ?? "") && (
           <p className="mb-6 rounded-lg border border-tag-amber-ink/20 bg-tag-amber-bg px-3 py-2 text-sm font-medium text-tag-amber-ink">
             {generalStatusMessage}
@@ -1232,7 +1275,13 @@ export default async function BoodschappenPage({
                           }`}
                         >
                           {statusMessage && (
-                            <p className="mb-2 rounded-md border border-tag-green-ink/20 bg-tag-green-bg px-2.5 py-1.5 text-xs font-medium text-tag-green-ink">
+                            <p
+                              className={`mb-2 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
+                                WARNING_STATUSES.has(params.status ?? "")
+                                  ? "border-tag-amber-ink/25 bg-tag-amber-bg text-tag-amber-ink"
+                                  : "border-tag-green-ink/20 bg-tag-green-bg text-tag-green-ink"
+                              }`}
+                            >
                               {statusMessage}
                             </p>
                           )}

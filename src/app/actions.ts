@@ -151,14 +151,17 @@ export async function setLooseMealForDay(formData: FormData) {
   const dayKey = String(formData.get("dayKey")) as DayKey;
   if (!DAY_KEYS.includes(dayKey)) throw new Error("Onbekende dag.");
 
+  // Vrije-tekstinvoer: deze drie zijn gewoon via typen bereikbaar en
+  // verdienen dus een leesbare melding op de juiste dag, geen (in productie
+  // geredacte) throw.
   const title = String(formData.get("title") ?? "").trim();
   const lineText = String(formData.get("lineText") ?? "").trim();
-  if (!title) throw new Error("Geef deze losse maaltijd een naam.");
-  if (!lineText) throw new Error("Vul minimaal één productregel in.");
+  if (!title) redirectToHome("loose-meal-missing-title", dayKey);
+  if (!lineText) redirectToHome("loose-meal-missing-lines", dayKey);
 
   const parsedLines = parseRecipeIngredientText(lineText);
   if (parsedLines.length === 0) {
-    throw new Error("Ik kon geen producten herkennen. Gebruik bijvoorbeeld: patatjes, Kai: frikandel.");
+    redirectToHome("loose-meal-unrecognized", dayKey);
   }
 
   const weekStart = getCurrentWeekStart();
@@ -460,7 +463,9 @@ export async function toggleMealPlanEntrySkipped(formData: FormData) {
     include: { entries: true },
   });
   const entry = mealPlan.entries.find((e) => e.dayOfWeek === DAY_ENUM[dayKey]);
-  if (!entry) throw new Error("Voor deze dag staat nog geen maaltijd gepland.");
+  // Bereikbaar via een verouderd tabblad (dag inmiddels leeggemaakt) — nette
+  // melding op de juiste dag i.p.v. een geredacte throw.
+  if (!entry) redirectToHome("day-has-no-meal", dayKey, false);
 
   await prisma.mealPlanEntry.update({
     where: { id: entry.id },
