@@ -793,19 +793,17 @@ export default async function BoodschappenPage({
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <span className="text-sm text-ink-muted">{formatOrderQuantity(line)}</span>
-                    {line.source === "MANUAL" && (
-                      <form action={removeBoodschappenLineThisWeek}>
-                        <input type="hidden" name="lineId" value={line.id} />
-                        <PendingSubmitButton
-                          pendingText="..."
-                          ariaLabel="Verwijderen"
-                          title="Verwijderen"
-                          className={`flex h-7 w-7 items-center justify-center rounded-md text-ink-faint hover:bg-red-50 hover:text-red-600 ${ACTION_BUTTON_FOCUS}`}
-                        >
-                          <X size={14} />
-                        </PendingSubmitButton>
-                      </form>
-                    )}
+                    <form action={removeBoodschappenLineThisWeek}>
+                      <input type="hidden" name="lineId" value={line.id} />
+                      <PendingSubmitButton
+                        pendingText="..."
+                        ariaLabel="Verwijderen"
+                        title="Verwijderen"
+                        className={`flex h-7 w-7 items-center justify-center rounded-md text-ink-faint hover:bg-red-50 hover:text-red-600 ${ACTION_BUTTON_FOCUS}`}
+                      >
+                        <X size={14} />
+                      </PendingSubmitButton>
+                    </form>
                   </div>
                 </div>
                 {statusMessage && (
