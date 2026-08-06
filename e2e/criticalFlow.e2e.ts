@@ -810,6 +810,41 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         );
       }
     );
+
+    await t.test(
+      "11. Een vaste boodschap kan ook via 'toon volledige lijst' verwijderd worden, zonder de sjabloon te raken (nieuwe functie)",
+      async () => {
+        // Bewust als allerlaatste stap: "Aardappelen" (toegevoegd in stap 5)
+        // wordt hier definitief van de lijst van déze week gehaald — geen
+        // enkele stap hierna leunt daar nog op.
+        const fixedGrocery = await prisma.fixedGrocery.findFirstOrThrow({
+          where: { householdId, ingredient: { name: "Aardappelen" } },
+        });
+        const fixedLine = await prisma.shoppingListLine.findFirstOrThrow({
+          where: {
+            shoppingList: { mealPlan: { householdId } },
+            source: "FIXED",
+            ingredientId: fixedGrocery.ingredientId,
+          },
+        });
+
+        await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
+        await page.locator("#alle-te-bestellen-producten summary").click();
+        const lineBlock = page.locator(`#meal-line-${fixedLine.id}`);
+        await lineBlock.waitFor({ state: "visible", timeout: 10_000 });
+        await lineBlock.getByRole("button", { name: "Verwijderen" }).click();
+        await lineBlock.waitFor({ state: "detached", timeout: 15_000 });
+
+        const lineStillExists = await prisma.shoppingListLine.findUnique({ where: { id: fixedLine.id } });
+        assert.equal(lineStillExists, null, "De regel van deze week moet verwijderd zijn");
+
+        const templateStillExists = await prisma.fixedGrocery.findUnique({ where: { id: fixedGrocery.id } });
+        assert.ok(
+          templateStillExists,
+          "De vaste-boodschap-sjabloon zelf moet blijven bestaan — alleen deze week uitgeschakeld"
+        );
+      }
+    );
   } finally {
     await browser.close();
     await server.close();
