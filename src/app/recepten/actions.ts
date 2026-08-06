@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { assertCurrentHousehold } from "@/lib/auth";
 import { parsePackageQuantity } from "@/lib/quantity/parsePackageSize";
+import { invalidateShoppingList } from "@/lib/shoppingList";
 import { accessibleRecipeWhere, editableRecipeWhere } from "@/lib/recipeScope";
 import { recordProductChosen, recordProductRejected } from "@/domain/product-matching/repository";
 import { parseRecipeIngredientText } from "@/lib/recipeIngredientText";
@@ -91,7 +92,10 @@ async function invalidateCurrentShoppingList(householdId: string) {
     select: { id: true },
   });
   if (!currentPlan) return;
-  await prisma.shoppingList.deleteMany({ where: { mealPlanId: currentPlan.id } });
+  // Via invalidateShoppingList i.p.v. een eigen deleteMany: die bewaart
+  // regels die al naar het Picnic-mandje zijn overgedragen, zodat ze niet
+  // dubbel besteld worden (zie de toelichting daar).
+  await invalidateShoppingList(currentPlan.id);
 }
 
 function revalidateRecipeManagementPaths() {

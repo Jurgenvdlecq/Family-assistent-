@@ -73,7 +73,13 @@ const STATUS_MESSAGES: Record<string, string> = {
   "quick-order-bulk-added": "Herkende producten toegevoegd aan de lijst van deze week.",
   "loose-list-started": "Losse boodschappenlijst gestart — het weekmenu van deze week staat op \"uit eten\".",
   "loose-list-week-changed": "De week is inmiddels doorgesprongen naar een nieuwe — herlaad de pagina en probeer het opnieuw.",
+  "shopping-reviewed": "Lijst bevestigd — klaar om naar Picnic te gaan.",
+  "line-in-picnic-cart":
+    "Dit product ligt al in je Picnic-mandje, dus ik kan het hier niet van de lijst halen. Leeg je Picnic-mandje hieronder als je het toch niet wilt bestellen.",
 };
+
+/** Meldingen die geen bevestiging zijn maar een blokkade/waarschuwing — amber i.p.v. groen. */
+const WARNING_STATUSES = new Set(["loose-list-week-changed", "line-in-picnic-cart"]);
 
 const INVENTORY_STATUS_OPTIONS = [
   { value: "SUFFICIENT", label: "Genoeg" },
@@ -825,12 +831,12 @@ export default async function BoodschappenPage({
           <span>{sortedLines.length} producten</span>
         </div>
 
-        {generalStatusMessage && params.status === "loose-list-week-changed" && (
+        {generalStatusMessage && WARNING_STATUSES.has(params.status ?? "") && (
           <p className="mb-6 rounded-lg border border-tag-amber-ink/20 bg-tag-amber-bg px-3 py-2 text-sm font-medium text-tag-amber-ink">
             {generalStatusMessage}
           </p>
         )}
-        {generalStatusMessage && params.status !== "loose-list-week-changed" && (
+        {generalStatusMessage && !WARNING_STATUSES.has(params.status ?? "") && (
           <p className="mb-6 rounded-lg border border-tag-green-ink/20 bg-tag-green-bg px-3 py-2 text-sm font-medium text-tag-green-ink">
             {generalStatusMessage}
           </p>

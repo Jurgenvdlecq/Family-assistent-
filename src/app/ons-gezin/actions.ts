@@ -13,6 +13,7 @@ import {
   isDayRecipePreferenceStance,
 } from "@/domain/meal-planning/dayRecipePreferences";
 import { accessibleRecipeWhere } from "@/lib/recipeScope";
+import { invalidateShoppingList } from "@/lib/shoppingList";
 
 const ROLES = ["PARENT", "CHILD", "OTHER"] as const;
 const STANCES = ["LIKED", "SOMETIMES", "RATHER_NOT", "NEVER", "UNKNOWN"] as const;
@@ -55,7 +56,10 @@ async function invalidateCurrentShoppingList(householdId: string) {
     select: { id: true },
   });
   if (!mealPlan) return;
-  await prisma.shoppingList.deleteMany({ where: { mealPlanId: mealPlan.id } });
+  // Via invalidateShoppingList i.p.v. een eigen deleteMany: die bewaart
+  // regels die al naar het Picnic-mandje zijn overgedragen, zodat ze niet
+  // dubbel besteld worden (zie de toelichting daar).
+  await invalidateShoppingList(mealPlan.id);
 }
 
 /**

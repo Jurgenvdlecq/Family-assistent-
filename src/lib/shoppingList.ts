@@ -309,14 +309,27 @@ export async function invalidateShoppingList(mealPlanId: string) {
   // regel blijft ongemoeid staan — ook als het weekmenu 'm niet meer nodig
   // heeft: hij ligt al in het mandje, dus de gebruiker moet 'm zien staan en
   // zelf kunnen beslissen (verwijderen uit de lijst of in Picnic laten).
-  const keptIngredientIds = new Set(existing.lines.map((line) => line.ingredientId));
-  const newLines = rebuiltLines.filter((line) => !keptIngredientIds.has(line.ingredientId));
+  //
+  // De sleutel is bewust (ingrediënt + bron + eenheid), niet het ingrediënt
+  // alleen: één ingrediënt kan tegelijk een MEAL-regel (receptbehoefte) en
+  // een FIXED-regel (vaste boodschap) hebben, en `aggregateMealNeeds` splitst
+  // MEAL-regels bovendien per eenheid. Zou je alleen op ingrediënt matchen,
+  // dan onderdrukt één overgedragen vaste boodschap stilzwijgend de hele
+  // receptbehoefte van diezelfde week — precies wat er gebeurt na "Vaste
+  // boodschappen (n)", dat alleen FIXED/MANUAL overdraagt (code-review-
+  // bevinding, met een reproductie tegen de database aangetoond).
+  const lineKey = (line: { ingredientId: string; source: string; unit: string }) =>
+    `${line.ingredientId}:${line.source}:${line.unit}`;
+  const keptKeys = new Set(existing.lines.map(lineKey));
+  const newLines = rebuiltLines.filter((line) => !keptKeys.has(lineKey(line)));
 
-  // Levert de herbouw nieuwe twijfelgevallen op, dan is een eerder gegeven
-  // "bevestigd" niet meer geldig: de lijst bevat nu producten die de
-  // gebruiker nooit heeft gezien. Terugzetten naar PREPARED zodat de app
-  // niet "klaar om naar Picnic te gaan" zegt over ongecontroleerde regels
-  // (AGENTS.md: nooit stilzwijgend of ongecontroleerd bestellen).
+  // Levert de herbouw nieuwe regels op, dan dekt een eerder gegeven
+  // "bevestigd"/"ik heb besteld" die niet meer: de lijst bevat nu producten
+  // die de gebruiker nooit heeft gezien en die zeker niet in de al geplaatste
+  // bestelling zaten (AGENTS.md: nooit stilzwijgend of ongecontroleerd
+  // bestellen). `orderConfirmedAt` wissen zorgt bovendien dat de herinnering
+  // "rond je bestelling af in Picnic" weer verschijnt na een tweede
+  // overdracht — zelfde redenering als bij `clearPicnicCart`.
   const hasNewReviewLines = newLines.some((line) => line.needsReview);
 
   await prisma.$transaction([
@@ -326,14 +339,27 @@ export async function invalidateShoppingList(mealPlanId: string) {
     prisma.shoppingListLine.createMany({
       data: newLines.map((line) => ({ ...line, shoppingListId: existing.id })),
     }),
-    ...(hasNewReviewLines
+    // Een bewaarde regel hield z'n "tekort geaccepteerd"-vlag vast, terwijl
+    // het tekort door de weekwijziging juist groter kan zijn geworden. Bij een
+    // verse regel stond die vlak altijd op false; dat gedrag hier gelijktrekken
+    // zodat een groeiend tekort niet stilzwijgend verborgen blijft.
+    prisma.shoppingListLine.updateMany({
+      where: { shoppingListId: existing.id, shortfallAcknowledged: true },
+      data: { shortfallAcknowledged: false },
+    }),
+    ...(newLines.length > 0
       ? [
           prisma.shoppingList.update({
             where: { id: existing.id },
             data: {
-              status: "PREPARED" as const,
-              reviewedAt: null,
-              reviewFlaggedAt: existing.reviewFlaggedAt ?? new Date(),
+              orderConfirmedAt: null,
+              ...(hasNewReviewLines
+                ? {
+                    status: "PREPARED" as const,
+                    reviewedAt: null,
+                    reviewFlaggedAt: existing.reviewFlaggedAt ?? new Date(),
+                  }
+                : {}),
             },
           }),
         ]

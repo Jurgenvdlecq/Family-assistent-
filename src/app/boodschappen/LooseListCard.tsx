@@ -39,8 +39,8 @@ export default function LooseListCard({
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs">
           <p className="mb-2 text-red-700">
             Dit vervangt de boodschappenlijst van deze week door een lege lijst, los van het weekmenu.
-            Vaste boodschappen komen automatisch terug — wat er nu al op de lijst staat (inclusief het
-            weekmenu) verdwijnt. Dit kan niet ongedaan worden gemaakt.
+            Vaste boodschappen komen automatisch terug — de weekmenu-regels verdwijnen. Dit kan niet
+            ongedaan worden gemaakt.
           </p>
           <p className="mb-3 text-ink-muted">
             Dit verandert alleen de lijst in Family Assistant. Staat er al iets in je echte

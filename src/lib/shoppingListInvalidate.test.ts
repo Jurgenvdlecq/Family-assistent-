@@ -76,10 +76,17 @@ test("een al naar Picnic overgedragen regel overleeft een weekmenuwijziging", as
       "de overdrachtsmarkering moet ongewijzigd blijven, anders wordt het product dubbel besteld"
     );
 
-    // Geen dubbele regel voor hetzelfde ingrediënt: de herbouw moet het
-    // bewaarde exemplaar respecteren i.p.v. er eentje naast te zetten.
-    const sameIngredient = after!.lines.filter((line) => line.ingredientId === transferredLine.ingredientId);
-    assert.equal(sameIngredient.length, 1, "het bewaarde ingrediënt mag niet dubbel op de lijst komen");
+    // Geen dubbele regel voor dezelfde behoefte: de herbouw moet het bewaarde
+    // exemplaar respecteren i.p.v. er eentje naast te zetten. Matchen op
+    // (ingrediënt + bron + eenheid), want één ingrediënt mag wél tegelijk een
+    // MEAL- en een FIXED-regel hebben — zie de aparte test hieronder.
+    const sameNeed = after!.lines.filter(
+      (line) =>
+        line.ingredientId === transferredLine.ingredientId &&
+        line.source === transferredLine.source &&
+        line.unit === transferredLine.unit
+    );
+    assert.equal(sameNeed.length, 1, "dezelfde behoefte mag niet dubbel op de lijst komen");
 
     // De rest van de lijst is wél opnieuw opgebouwd (verse regel-ids).
     const rebuilt = after!.lines.filter((line) => line.id !== transferredLine.id);
@@ -88,6 +95,70 @@ test("een al naar Picnic overgedragen regel overleeft een weekmenuwijziging", as
       rebuilt.every((line) => line.transferredToPicnicAt === null),
       "verse regels staan nog niet in het mandje"
     );
+  } finally {
+    await cleanup(household.id);
+  }
+});
+
+test("een overgedragen vaste boodschap onderdrukt de receptbehoefte voor hetzelfde ingrediënt niet", async () => {
+  // Code-review-bevinding: dedupliceren op alleen `ingredientId` liet de
+  // MEAL-regel (bv. 900 gram pasta voor het weekmenu) stilzwijgend verdwijnen
+  // zodra de FIXED-regel voor datzelfde ingrediënt was overgedragen. Dat is
+  // precies de staat na de knop "Vaste boodschappen (n)", die alleen
+  // FIXED/MANUAL overdraagt — en `findShoppingListShortfalls` ziet een
+  // volledig ontbrekende regel niet, dus het zou onopgemerkt blijven.
+  const household = await makeHousehold("Invalidate — FIXED verdringt MEAL niet");
+  try {
+    const mealPlan = await ensureMealPlan(household.id, getCurrentWeekStart());
+    const firstList = await ensureShoppingList(mealPlan!.id, household.id);
+
+    const mealLine = firstList.lines.find((line) => line.source === "MEAL");
+    assert.ok(mealLine, "testopzet: er moet een MEAL-regel zijn om op voort te bouwen");
+
+    // Ditzelfde ingrediënt ook als vaste boodschap instellen en de lijst
+    // opnieuw laten opbouwen, zodat er echt twee regels naast elkaar staan.
+    await prisma.fixedGrocery.create({
+      data: { householdId: household.id, ingredientId: mealLine!.ingredientId, quantity: 1, unit: "PIECE" },
+    });
+    await invalidateShoppingList(mealPlan!.id);
+    const rebuilt = await ensureShoppingList(mealPlan!.id, household.id);
+
+    const mealForIngredient = rebuilt.lines.find(
+      (line) => line.ingredientId === mealLine!.ingredientId && line.source === "MEAL"
+    );
+    const fixedForIngredient = rebuilt.lines.find(
+      (line) => line.ingredientId === mealLine!.ingredientId && line.source === "FIXED"
+    );
+    assert.ok(mealForIngredient, "testopzet: MEAL-regel moet bestaan");
+    assert.ok(fixedForIngredient, "testopzet: FIXED-regel moet bestaan");
+
+    // Alleen de vaste boodschap is overgedragen (zoals na "Vaste boodschappen (n)").
+    await prisma.shoppingListLine.update({
+      where: { id: fixedForIngredient!.id },
+      data: { transferredToPicnicAt: new Date() },
+    });
+
+    await invalidateShoppingList(mealPlan!.id);
+
+    const after = await prisma.shoppingList.findUniqueOrThrow({
+      where: { mealPlanId: mealPlan!.id },
+      include: { lines: true },
+    });
+    const mealAfter = after.lines.filter(
+      (line) => line.ingredientId === mealLine!.ingredientId && line.source === "MEAL"
+    );
+    assert.equal(
+      mealAfter.length,
+      1,
+      "de receptbehoefte moet blijven bestaan, ook al is de vaste boodschap voor hetzelfde ingrediënt al overgedragen"
+    );
+    assert.equal(mealAfter[0].transferredToPicnicAt, null, "die receptbehoefte ligt nog níét in het mandje");
+
+    const fixedAfter = after.lines.filter(
+      (line) => line.ingredientId === mealLine!.ingredientId && line.source === "FIXED"
+    );
+    assert.equal(fixedAfter.length, 1, "de overgedragen vaste boodschap blijft precies één keer staan");
+    assert.ok(fixedAfter[0].transferredToPicnicAt, "en behoudt zijn overdrachtsmarkering");
   } finally {
     await cleanup(household.id);
   }
@@ -104,10 +175,20 @@ test("een bevestigde lijst gaat terug naar 'controleren' als de herbouw nieuwe t
       where: { id: shoppingList.lines[0].id },
       data: { transferredToPicnicAt: new Date() },
     });
+    // De overige regels moeten na herbouw twijfelgevallen opleveren, anders
+    // toetst deze test niets. Expliciet als testopzet vastleggen i.p.v. de
+    // assertions conditioneel maken (code-review-bevinding).
+    const reviewLinesInFixture = shoppingList.lines.filter(
+      (line) => line.needsReview && line.id !== shoppingList.lines[0].id
+    );
+    assert.ok(
+      reviewLinesInFixture.length > 0,
+      "testopzet: de opgebouwde lijst moet twijfelgevallen bevatten om dit gedrag te kunnen toetsen"
+    );
     // En de lijst als bevestigd markeren, zoals /controle dat doet.
     await prisma.shoppingList.update({
       where: { id: shoppingList.id },
-      data: { status: "REVIEWED", reviewedAt: new Date(), reviewFlaggedAt: null },
+      data: { status: "REVIEWED", reviewedAt: new Date(), reviewFlaggedAt: null, orderConfirmedAt: new Date() },
     });
 
     await invalidateShoppingList(mealPlan!.id);
@@ -116,17 +197,15 @@ test("een bevestigde lijst gaat terug naar 'controleren' als de herbouw nieuwe t
       where: { mealPlanId: mealPlan!.id },
       include: { lines: true },
     });
-    const hasReviewLines = after.lines.some((line) => line.needsReview && line.transferredToPicnicAt === null);
 
-    if (hasReviewLines) {
-      assert.equal(after.status, "PREPARED", "met nieuwe twijfelgevallen mag de lijst niet 'bevestigd' blijven");
-      assert.equal(after.reviewedAt, null, "de oude bevestiging dekt de nieuwe regels niet meer");
-      assert.ok(after.reviewFlaggedAt, "de controle-klok moet lopen zodat de app dit als aandachtspunt toont");
-    } else {
-      // Alle herbouwde regels waren vertrouwd: dan blijft de bevestiging
-      // terecht staan — er is niets ongecontroleerds bijgekomen.
-      assert.equal(after.status, "REVIEWED");
-    }
+    assert.equal(after.status, "PREPARED", "met nieuwe twijfelgevallen mag de lijst niet 'bevestigd' blijven");
+    assert.equal(after.reviewedAt, null, "de oude bevestiging dekt de nieuwe regels niet meer");
+    assert.ok(after.reviewFlaggedAt, "de controle-klok moet lopen zodat de app dit als aandachtspunt toont");
+    assert.equal(
+      after.orderConfirmedAt,
+      null,
+      "'ik heb besteld' dekt de nieuwe regels niet — anders verdwijnt de herinnering om af te rekenen"
+    );
   } finally {
     await cleanup(household.id);
   }

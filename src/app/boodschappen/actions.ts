@@ -212,6 +212,13 @@ export async function chooseBoodschappenProduct(formData: FormData) {
 export async function removeBoodschappenLineThisWeek(formData: FormData) {
   const lineId = String(formData.get("lineId"));
   const { line } = await loadEditableShoppingLine(lineId);
+  // Een regel die al in het echte Picnic-mandje ligt kan de app hier niet
+  // wegnemen — hem alleen van de lijst halen zou liegen (het product blijft
+  // gewoon besteld worden) én de "ligt al in je mandje"-markering wissen,
+  // waardoor een volgende overdracht 'm dubbel toevoegt.
+  if (line.transferredToPicnicAt) {
+    redirect("/boodschappen?status=line-in-picnic-cart#jullie-boodschappenlijst");
+  }
   // Ook bruikbaar voor vaste boodschappen (source FIXED): dit verwijdert
   // alleen de regel van déze week, de vaste-boodschap-sjabloon zelf blijft
   // ongewijzigd bestaan — exact dezelfde bewerking als removeFixedLineThisWeek

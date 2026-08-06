@@ -74,6 +74,12 @@ const STATUS_MESSAGES: Record<string, string> = {
   "day-restored": "Deze dag telt weer gewoon mee.",
 };
 
+/** Meldingen die geen bevestiging zijn maar een blokkade — amber i.p.v. groen. */
+const WARNING_STATUS_MESSAGES: Record<string, string> = {
+  "week-regenerate-blocked":
+    "Er liggen al producten van deze week in je Picnic-mandje. Opnieuw plannen zou ze dubbel kunnen bestellen — leeg eerst je Picnic-mandje op de boodschappenpagina.",
+};
+
 const PERSONAL_STANCE_LABELS = {
   LIKED: "Favoriet",
   SOMETIMES: "Oké",
@@ -181,6 +187,7 @@ export default async function Home({
 }) {
   const params = await searchParams;
   const statusMessage = params.status ? STATUS_MESSAGES[params.status] : undefined;
+  const warningMessage = params.status ? WARNING_STATUS_MESSAGES[params.status] : undefined;
   const focusDayKey = (DAY_KEYS as readonly string[]).includes(params.focusDay ?? "")
     ? (params.focusDay as DayKey)
     : undefined;
@@ -323,6 +330,11 @@ export default async function Home({
         {statusMessage && (
           <p className="mb-4 rounded-lg border border-tag-green-ink/20 bg-tag-green-bg px-3 py-2 text-sm font-medium text-tag-green-ink">
             {statusMessage}
+          </p>
+        )}
+        {warningMessage && (
+          <p className="mb-4 rounded-lg border border-tag-amber-ink/25 bg-tag-amber-bg px-3 py-2 text-sm font-medium text-tag-amber-ink">
+            {warningMessage}
           </p>
         )}
         <h1 className="mb-1 text-[1.65rem] font-semibold leading-tight text-ink">

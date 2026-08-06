@@ -237,6 +237,9 @@ const STATUS_MESSAGES: Record<string, string> = {
   quantity: "Hoeveelheid bijgewerkt.",
   searched: "Alternatieven opgehaald. Kies hieronder het juiste product.",
   skipped: "Opgeslagen zonder bevestigd product.",
+  removed: "Regel van de lijst verwijderd.",
+  "line-in-picnic-cart":
+    "Dit product ligt al in je Picnic-mandje, dus ik kan het hier niet van de lijst halen. Leeg je Picnic-mandje op de boodschappenpagina als je het toch niet wilt bestellen.",
 };
 
 async function ensureMinimumCandidatesForLines({
