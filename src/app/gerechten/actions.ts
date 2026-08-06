@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { redirectToHome } from "@/lib/homeRedirect";
 import { prisma } from "@/lib/prisma";
 import { assertCurrentHousehold } from "@/lib/auth";
 import { logFeedbackEvent } from "@/lib/feedback";
@@ -15,18 +16,17 @@ import { parseFeedbackReason, labelFeedbackReason } from "@/domain/learning/feed
 import { recordRepeatedMealReplacement } from "@/domain/learning/patterns";
 import type { IngredientCategory, Unit } from "@/generated/prisma/enums";
 
-function redirectToHome(status: string): never {
-  revalidatePath("/");
-  redirect(`/?status=${encodeURIComponent(status)}`);
-}
-
 const VALID_GERECHTEN_DIRECTIONS = new Set(["day", "all", "favorites", "quick"]);
 
 /**
- * Terug naar /gerechten met dezelfde dag/richting/zoekopdracht i.p.v. naar
- * de startpagina — bugfix UX-review: bij meerdere dagen achter elkaar
- * aanpassen sprong je voorheen elke keer helemaal terug naar "/" en moest
- * je opnieuw "Ander gerecht" aanklikken en je filters kwijtraken.
+ * Terug naar /gerechten met dezelfde dag/richting/zoekopdracht — voor
+ * acties waarbij er niets is voltooid (bv. hetzelfde gerecht opnieuw
+ * gekozen: geen echte wijziging, dus geen reden om weg te navigeren).
+ * Een écht voltooide keuze gaat sinds een gebruikersverzoek terug naar de
+ * startpagina (`redirectToHome`, met focusDayKey) — niet hierheen: /gerechten
+ * heeft geen eigen manier om tussen dagen te wisselen, dus "in context
+ * blijven" hielp hier niet echt en voelde vooral als "blijven hangen" na
+ * een afgeronde stap.
  */
 function redirectToGerechten(dayKey: DayKey, direction: string, wishText: string, status: string): never {
   revalidatePath("/gerechten");
@@ -199,7 +199,10 @@ export async function replaceMealPlanEntry(formData: FormData) {
   await invalidateShoppingList(mealPlan.id);
 
   revalidatePath("/boodschappen");
-  redirectToGerechten(dayKey, direction, wishText, "meal-replaced");
+  // Gebruikersverzoek: een voltooide gerechtwissel gaat terug naar het
+  // weekmenu (niet naar /gerechten zelf blijven staan) — met focusDayKey
+  // land je meteen op de juiste dag i.p.v. bovenaan de pagina.
+  redirectToHome("meal-replaced", dayKey);
 }
 
 function defaultQuantityForIngredient(category: IngredientCategory, unit: Unit) {
@@ -359,5 +362,5 @@ export async function chooseLiteralMealPlanEntry(formData: FormData) {
   await invalidateShoppingList(mealPlan.id);
 
   revalidatePath("/boodschappen");
-  redirectToHome("meal-wish-planned");
+  redirectToHome("meal-wish-planned", dayKey);
 }
