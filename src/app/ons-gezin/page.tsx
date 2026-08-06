@@ -232,55 +232,8 @@ export default async function OnsGezinPage({
           <AddPersonForm householdId={household.id} />
         </div>
 
+        <h2 className="mb-3 mt-8 text-sm font-semibold text-ink">Voorkeuren &amp; smaak</h2>
         <PersonalPreferencesManager householdId={household.id} preferences={personalPreferenceItems} />
-
-        <LearnedPatternsPanel
-          householdId={household.id}
-          learnedRecipes={learnedVariants.map((variant) => ({
-            id: variant.id,
-            title: variant.recipe.title,
-            stanceLabel: STANCE_LABELS[stanceByVariantId.get(variant.id) ?? "UNKNOWN"],
-          }))}
-        />
-
-        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
-          <summary className="cursor-pointer font-medium text-ink">Jullie vaste gerechten per dag</summary>
-          <div className="mt-4">
-            <DayRecipePreferencesManager householdId={household.id} />
-          </div>
-        </details>
-
-        <h2 className="mb-3 text-sm font-semibold text-ink">Picnic</h2>
-        <PicnicConnection
-          householdId={household.id}
-          connected={Boolean(household.picnicAuthToken)}
-          pendingTwoFactor={Boolean(household.picnicPendingAuthToken)}
-          status={params.status}
-        />
-
-        <details className="mb-8 mt-4 min-w-0 rounded-xl border border-line bg-surface p-4">
-          <summary className="cursor-pointer font-medium text-ink">Gewenst bezorgmoment</summary>
-          <div className="mt-4">
-            <PicnicDeliveryPreferenceForm
-              householdId={household.id}
-              preference={household.picnicDeliveryPreference}
-              picnicConnected={Boolean(household.picnicAuthToken)}
-            />
-          </div>
-        </details>
-
-        <h2 className="mb-3 mt-8 text-sm font-semibold text-ink">Meldingen</h2>
-        <div className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
-          <p className="mb-3 text-sm text-ink-muted">
-            Ik stuur hoogstens één rustige herinnering per dag, alleen tussen 08:00 en 21:00, en
-            nooit twee keer over hetzelfde.
-          </p>
-          <PushNotificationSettings
-            householdId={household.id}
-            vapidPublicKey={process.env.WEB_PUSH_PUBLIC_KEY ?? null}
-            initialPreferences={notificationPreferences}
-          />
-        </div>
 
         <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
           <summary className="flex cursor-pointer items-center gap-2 font-medium text-ink">
@@ -321,6 +274,127 @@ export default async function OnsGezinPage({
               })}
             </div>
           </div>
+        </details>
+
+        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <summary className="cursor-pointer font-medium text-ink">Jullie vaste gerechten per dag</summary>
+          <div className="mt-4">
+            <DayRecipePreferencesManager householdId={household.id} />
+          </div>
+        </details>
+
+        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <summary className="cursor-pointer font-medium text-ink">Huishoudbrede beperkingen</summary>
+          <p className="mt-2 text-sm text-ink-muted">
+            Geldt voor iedereen, ongeacht wie er die dag mee-eet — bijvoorbeeld
+            &ldquo;wij eten geen vis&rdquo;. Voor een allergie van één gezinslid: gebruik
+            de harde beperkingen bij die persoon hieronder.
+          </p>
+          <form action={updateHouseholdHardRestrictions} className="mt-4 flex min-w-0 flex-col gap-2">
+            <input type="hidden" name="householdId" value={household.id} />
+            <input
+              type="text"
+              name="hardRestrictions"
+              defaultValue={
+                Array.isArray(household.hardRestrictions)
+                  ? (household.hardRestrictions as string[]).join(", ")
+                  : ""
+              }
+              placeholder="bijv. vis"
+              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+            />
+            <button
+              type="submit"
+              className="w-fit rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-ink"
+            >
+              Opslaan
+            </button>
+          </form>
+        </details>
+
+        <LearnedPatternsPanel
+          householdId={household.id}
+          learnedRecipes={learnedVariants.map((variant) => ({
+            id: variant.id,
+            title: variant.recipe.title,
+            stanceLabel: STANCE_LABELS[stanceByVariantId.get(variant.id) ?? "UNKNOWN"],
+          }))}
+        />
+
+        <h2 className="mb-3 mt-8 text-sm font-semibold text-ink">Planning</h2>
+        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <summary className="cursor-pointer font-medium text-ink">Jullie weekritme</summary>
+          <div className="mt-4">
+            <WeeklyRhythmEditor householdId={household.id} initialRhythm={rhythm} />
+          </div>
+        </details>
+
+        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <summary className="cursor-pointer font-medium text-ink">Planningsstijl</summary>
+          <p className="mt-2 text-sm text-ink-muted">Hoeveel nieuwe gerechten wil je per week zien?</p>
+          <div className="mt-4">
+            <PlanningStyleEditor householdId={household.id} initialPlanningStyle={household.planningStyle} />
+          </div>
+        </details>
+
+        <h2 className="mb-3 mt-8 text-sm font-semibold text-ink">Picnic</h2>
+        <PicnicConnection
+          householdId={household.id}
+          connected={Boolean(household.picnicAuthToken)}
+          pendingTwoFactor={Boolean(household.picnicPendingAuthToken)}
+          status={params.status}
+        />
+
+        <details className="mb-8 mt-4 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <summary className="cursor-pointer font-medium text-ink">Gewenst bezorgmoment</summary>
+          <div className="mt-4">
+            <PicnicDeliveryPreferenceForm
+              householdId={household.id}
+              preference={household.picnicDeliveryPreference}
+              picnicConnected={Boolean(household.picnicAuthToken)}
+            />
+          </div>
+        </details>
+
+        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <summary className="cursor-pointer font-medium text-ink">Productkeuze</summary>
+          <form action={updateProductChoicePreference} className="mt-4">
+            <input type="hidden" name="householdId" value={household.id} />
+            <p className="mb-3 text-sm text-ink-muted">
+              Als er nog geen vaste productvoorkeur is, gebruik ik deze voorkeur om kandidaten te rangschikken.
+            </p>
+            <div className="grid gap-2">
+              {PRODUCT_CHOICE_PREFERENCES.map((preference) => (
+                <label
+                  key={preference}
+                  className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm transition-colors hover:border-accent/70 hover:bg-surface-2 ${
+                    productChoicePreference === preference ? "border-accent bg-accent/10" : "border-line"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="productChoicePreference"
+                    value={preference}
+                    defaultChecked={productChoicePreference === preference}
+                    className="mt-0.5 h-4 w-4 accent-accent"
+                  />
+                  <span className="min-w-0">
+                    <span className="block font-medium text-ink">{PRODUCT_CHOICE_LABELS[preference]}</span>
+                    <span className="block text-xs text-ink-faint">
+                      {preference === "LOW_PRICE"
+                        ? "Bij twijfel liever een voordeliger product."
+                        : preference === "KNOWN_PACKAGE"
+                          ? "Bij twijfel liever een product waarvan de verpakking goed te berekenen is."
+                          : "Eerst eerdere keuzes, daarna beschikbaarheid, verpakking en lichte prijs-tiebreak."}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <button type="submit" className="mt-3 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink hover:bg-accent/90">
+              Productkeuze opslaan
+            </button>
+          </form>
         </details>
 
         <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
@@ -370,91 +444,20 @@ export default async function OnsGezinPage({
           </div>
         </details>
 
-        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
-          <summary className="cursor-pointer font-medium text-ink">Productkeuze</summary>
-          <form action={updateProductChoicePreference} className="mt-4">
-            <input type="hidden" name="householdId" value={household.id} />
-            <p className="mb-3 text-sm text-ink-muted">
-              Als er nog geen vaste productvoorkeur is, gebruik ik deze voorkeur om kandidaten te rangschikken.
-            </p>
-            <div className="grid gap-2">
-              {PRODUCT_CHOICE_PREFERENCES.map((preference) => (
-                <label
-                  key={preference}
-                  className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-sm transition-colors hover:border-accent/70 hover:bg-surface-2 ${
-                    productChoicePreference === preference ? "border-accent bg-accent/10" : "border-line"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="productChoicePreference"
-                    value={preference}
-                    defaultChecked={productChoicePreference === preference}
-                    className="mt-0.5 h-4 w-4 accent-accent"
-                  />
-                  <span className="min-w-0">
-                    <span className="block font-medium text-ink">{PRODUCT_CHOICE_LABELS[preference]}</span>
-                    <span className="block text-xs text-ink-faint">
-                      {preference === "LOW_PRICE"
-                        ? "Bij twijfel liever een voordeliger product."
-                        : preference === "KNOWN_PACKAGE"
-                          ? "Bij twijfel liever een product waarvan de verpakking goed te berekenen is."
-                          : "Eerst eerdere keuzes, daarna beschikbaarheid, verpakking en lichte prijs-tiebreak."}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </div>
-            <button type="submit" className="mt-3 rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink hover:bg-accent/90">
-              Productkeuze opslaan
-            </button>
-          </form>
-        </details>
-
-        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
-          <summary className="cursor-pointer font-medium text-ink">Huishoudbrede beperkingen</summary>
-          <p className="mt-2 text-sm text-ink-muted">
-            Geldt voor iedereen, ongeacht wie er die dag mee-eet — bijvoorbeeld
-            &ldquo;wij eten geen vis&rdquo;. Voor een allergie van één gezinslid: gebruik
-            de harde beperkingen bij die persoon hieronder.
+        <h2 className="mb-3 mt-8 text-sm font-semibold text-ink">Meldingen</h2>
+        <div className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
+          <p className="mb-3 text-sm text-ink-muted">
+            Ik stuur hoogstens één rustige herinnering per dag, alleen tussen 08:00 en 21:00, en
+            nooit twee keer over hetzelfde.
           </p>
-          <form action={updateHouseholdHardRestrictions} className="mt-4 flex min-w-0 flex-col gap-2">
-            <input type="hidden" name="householdId" value={household.id} />
-            <input
-              type="text"
-              name="hardRestrictions"
-              defaultValue={
-                Array.isArray(household.hardRestrictions)
-                  ? (household.hardRestrictions as string[]).join(", ")
-                  : ""
-              }
-              placeholder="bijv. vis"
-              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-            />
-            <button
-              type="submit"
-              className="w-fit rounded-lg bg-accent px-3 py-2 text-xs font-medium text-accent-ink"
-            >
-              Opslaan
-            </button>
-          </form>
-        </details>
+          <PushNotificationSettings
+            householdId={household.id}
+            vapidPublicKey={process.env.WEB_PUSH_PUBLIC_KEY ?? null}
+            initialPreferences={notificationPreferences}
+          />
+        </div>
 
-        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
-          <summary className="cursor-pointer font-medium text-ink">Jullie weekritme</summary>
-          <div className="mt-4">
-            <WeeklyRhythmEditor householdId={household.id} initialRhythm={rhythm} />
-          </div>
-        </details>
-
-        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
-          <summary className="cursor-pointer font-medium text-ink">Planningsstijl</summary>
-          <p className="mt-2 text-sm text-ink-muted">Hoeveel nieuwe gerechten wil je per week zien?</p>
-          <div className="mt-4">
-            <PlanningStyleEditor householdId={household.id} initialPlanningStyle={household.planningStyle} />
-          </div>
-        </details>
-
+        <h2 className="mb-3 mt-8 text-sm font-semibold text-ink">Account</h2>
         <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
           <summary className="cursor-pointer font-medium text-ink">Inloggegevens</summary>
           <form action={updateCredentials} className="mt-4 flex min-w-0 flex-col gap-2">
