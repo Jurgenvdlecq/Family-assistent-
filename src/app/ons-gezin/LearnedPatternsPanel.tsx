@@ -52,7 +52,13 @@ function labelPatternReason(contextValue: unknown) {
   return typeof label === "string" && label ? label : null;
 }
 
-export default async function LearnedPatternsPanel({ householdId }: { householdId: string }) {
+export default async function LearnedPatternsPanel({
+  householdId,
+  learnedRecipes,
+}: {
+  householdId: string;
+  learnedRecipes: { id: string; title: string; stanceLabel: string }[];
+}) {
   const patterns = await prisma.learnedPattern.findMany({
     where: {
       householdId,
@@ -66,42 +72,65 @@ export default async function LearnedPatternsPanel({ householdId }: { householdI
     <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
       <summary className="flex cursor-pointer items-center gap-2 font-medium text-ink">
         <Sparkles size={16} className="text-tag-purple-ink" />
-        Wat ik over jullie week heb geleerd
+        Wat ik heb geleerd
       </summary>
-      <div className="mt-4 grid gap-2">
-        {patterns.length === 0 ? (
-          <p className="rounded-lg bg-surface-2 px-3 py-2 text-sm text-ink-muted">
-            Nog geen weekpatronen om te beheren. Dit groeit vanzelf wanneer jullie weekmenu&apos;s bevestigen of aanpassen.
-          </p>
-        ) : (
-          patterns.map((pattern) => {
-            const reason = labelPatternReason(pattern.context);
-            return (
-              <div key={pattern.id} className="flex min-w-0 items-start justify-between gap-3 rounded-lg border border-line p-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-ink">{labelPattern(pattern)}</p>
-                  <p className="mt-1 text-xs text-ink-muted">
-                    {STATUS_LABELS[pattern.status] ?? pattern.status}
-                    {` · ${pattern.evidenceCount} signalen · ${Math.round(pattern.confidence * 100)}% zekerheid`}
-                    {reason ? ` · ${reason}` : ""}
-                  </p>
+      <div className="mt-4 flex min-w-0 flex-col gap-5">
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">Weekpatronen</p>
+          <div className="grid gap-2">
+            {patterns.length === 0 ? (
+              <p className="rounded-lg bg-surface-2 px-3 py-2 text-sm text-ink-muted">
+                Nog geen weekpatronen om te beheren. Dit groeit vanzelf wanneer jullie weekmenu&apos;s bevestigen of aanpassen.
+              </p>
+            ) : (
+              patterns.map((pattern) => {
+                const reason = labelPatternReason(pattern.context);
+                return (
+                  <div key={pattern.id} className="flex min-w-0 items-start justify-between gap-3 rounded-lg border border-line p-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-ink">{labelPattern(pattern)}</p>
+                      <p className="mt-1 text-xs text-ink-muted">
+                        {STATUS_LABELS[pattern.status] ?? pattern.status}
+                        {` · ${pattern.evidenceCount} signalen · ${Math.round(pattern.confidence * 100)}% zekerheid`}
+                        {reason ? ` · ${reason}` : ""}
+                      </p>
+                    </div>
+                    <form action={dismissLearnedPattern} className="shrink-0">
+                      <input type="hidden" name="householdId" value={householdId} />
+                      <input type="hidden" name="patternId" value={pattern.id} />
+                      <button
+                        type="submit"
+                        aria-label="Patroon vergeten"
+                        title="Patroon vergeten"
+                        className="rounded-lg border border-line p-2 text-ink-faint transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-700"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </form>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-faint">Gerechtvoorkeuren</p>
+          <div className="flex min-w-0 flex-col gap-2">
+            {learnedRecipes.length === 0 ? (
+              <p className="rounded-lg bg-surface-2 px-3 py-2 text-sm text-ink-muted">
+                Nog niet genoeg feedback om iets te tonen — dit groeit terwijl jullie de app gebruiken.
+              </p>
+            ) : (
+              learnedRecipes.map((recipe) => (
+                <div key={recipe.id} className="flex min-w-0 items-center justify-between gap-3">
+                  <span className="min-w-0 truncate text-sm text-ink">{recipe.title}</span>
+                  <span className="shrink-0 text-xs text-ink-faint">{recipe.stanceLabel}</span>
                 </div>
-                <form action={dismissLearnedPattern} className="shrink-0">
-                  <input type="hidden" name="householdId" value={householdId} />
-                  <input type="hidden" name="patternId" value={pattern.id} />
-                  <button
-                    type="submit"
-                    aria-label="Patroon vergeten"
-                    title="Patroon vergeten"
-                    className="rounded-lg border border-line p-2 text-ink-faint transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-700"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </form>
-              </div>
-            );
-          })
-        )}
+              ))
+            )}
+          </div>
+        </div>
       </div>
     </details>
   );
