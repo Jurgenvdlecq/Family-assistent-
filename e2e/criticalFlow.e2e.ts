@@ -815,7 +815,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
     );
 
     await t.test(
-      "11. Een vaste boodschap kan ook via 'toon volledige lijst' verwijderd worden, zonder de sjabloon te raken (nieuwe functie)",
+      "11. Een vaste boodschap verwijderen via 'toon volledige lijst': geblokkeerd zolang die al in het mandje ligt, daarna wel, zonder de sjabloon te raken",
       async () => {
         // Bewust als allerlaatste stap: "Aardappelen" (toegevoegd in stap 5)
         // wordt hier definitief van de lijst van déze week gehaald — geen
@@ -831,6 +831,32 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
           },
         });
 
+        // Eerst het veiligheidsgedrag: zolang de regel al in het Picnic-mandje
+        // ligt mag de app 'm niet van de lijst halen — dat zou de "ligt al in
+        // je mandje"-markering wissen en tot dubbel bestellen leiden.
+        await prisma.shoppingListLine.update({
+          where: { id: fixedLine.id },
+          data: { transferredToPicnicAt: new Date() },
+        });
+        await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
+        await page.locator("#alle-te-bestellen-producten summary").click();
+        const blockedBlock = page.locator(`#meal-line-${fixedLine.id}`);
+        await blockedBlock.waitFor({ state: "visible", timeout: 10_000 });
+        await blockedBlock.getByRole("button", { name: "Verwijderen" }).click();
+        await page.locator("text=Dit product ligt al in je Picnic-mandje").waitFor({
+          state: "visible",
+          timeout: 15_000,
+        });
+        assert.ok(
+          await prisma.shoppingListLine.findUnique({ where: { id: fixedLine.id } }),
+          "een regel die al in het mandje ligt mag niet verwijderd worden"
+        );
+
+        // Daarna het normale geval: niet meer overgedragen, dan kan het wel.
+        await prisma.shoppingListLine.update({
+          where: { id: fixedLine.id },
+          data: { transferredToPicnicAt: null },
+        });
         await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
         await page.locator("#alle-te-bestellen-producten summary").click();
         const lineBlock = page.locator(`#meal-line-${fixedLine.id}`);
