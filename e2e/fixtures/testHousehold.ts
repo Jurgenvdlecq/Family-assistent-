@@ -56,6 +56,11 @@ export async function completeOnboardingViaUi(
   await page.getByPlaceholder("Bevestig wachtwoord").fill(password);
   await page.getByRole("button", { name: "Maak mijn eerste week" }).click();
 
+  // Landt eerst op de (overslaanbare) Picnic-koppelstap — de meeste tests
+  // hebben geen live/mock-Picnic-koppeling nodig op dit punt (die zetten ze
+  // zelf later via een directe Prisma-update), dus gewoon overslaan.
+  await page.waitForURL(`${baseURL}/onboarding/picnic`, { timeout: 30_000 });
+  await page.getByRole("link", { name: "Overslaan, dit doe ik later →" }).click();
   await page.waitForURL(`${baseURL}/`, { timeout: 30_000 });
 
   const household = await prisma.household.findFirstOrThrow({

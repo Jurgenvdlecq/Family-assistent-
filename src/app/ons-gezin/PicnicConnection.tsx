@@ -24,11 +24,13 @@ export default function PicnicConnection({
   connected,
   pendingTwoFactor,
   status,
+  returnTo = "/ons-gezin",
 }: {
   householdId: string;
   connected: boolean;
   pendingTwoFactor: boolean;
   status?: string;
+  returnTo?: string;
 }) {
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
   const errorMessage = status ? ERROR_MESSAGES[status] : undefined;
@@ -71,6 +73,7 @@ export default function PicnicConnection({
               <span className="text-ink-muted">Zeker weten?</span>
               <form action={disconnectPicnicAccount}>
                 <input type="hidden" name="householdId" value={householdId} />
+                <input type="hidden" name="returnTo" value={returnTo} />
                 <button type="submit" className="font-medium text-red-600 underline decoration-dotted">
                   Ja, ontkoppelen
                 </button>
@@ -88,6 +91,7 @@ export default function PicnicConnection({
       ) : pendingTwoFactor ? (
         <form action={verifyPicnicTwoFactorCode} className="grid gap-2">
           <input type="hidden" name="householdId" value={householdId} />
+          <input type="hidden" name="returnTo" value={returnTo} />
           <p className="text-sm text-ink-muted">Picnic heeft jullie een verificatiecode gestuurd (sms).</p>
           <input
             type="text"
@@ -104,6 +108,7 @@ export default function PicnicConnection({
             </button>
             <form action={cancelPicnicTwoFactor}>
               <input type="hidden" name="householdId" value={householdId} />
+              <input type="hidden" name="returnTo" value={returnTo} />
               <button type="submit" className="rounded-lg border border-line px-3 py-2 text-sm font-medium text-ink-muted hover:bg-surface-2">
                 Annuleren
               </button>
@@ -113,6 +118,7 @@ export default function PicnicConnection({
       ) : (
         <form action={connectPicnicAccount} className="grid gap-2">
           <input type="hidden" name="householdId" value={householdId} />
+          <input type="hidden" name="returnTo" value={returnTo} />
           <input
             type="email"
             name="username"

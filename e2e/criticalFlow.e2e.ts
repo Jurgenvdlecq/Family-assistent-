@@ -119,6 +119,55 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       assert.equal(household, null, "Er mag geen huishouden zijn aangemaakt vóórdat er daadwerkelijk verzonden is");
     });
 
+    await t.test(
+      "1c. Picnic koppelen kan al tijdens onboarding, direct na het aanmaken van het account (nieuwe functie)",
+      async () => {
+        const picnicHouseholdName = `${HOUSEHOLD_NAME} (picnic-onboarding)`;
+        // Eigen, volledig geïsoleerde browserpagina (eigen browsercontext,
+        // eigen cookies): deze substap maakt een tweede huishouden aan en
+        // koppelt Picnic — dat mag de sessie van de gedeelde `page`
+        // (het hoofdtesthuishouden, `householdId`) niet aanraken.
+        const onboardingPage = await browser.newPage({ viewport: { width: 420, height: 1400 } });
+        try {
+          await onboardingPage.goto(`${server.baseURL}/onboarding`, { waitUntil: "load" });
+          await onboardingPage.getByRole("button", { name: "Volgende" }).click();
+          await onboardingPage.getByPlaceholder("Bijvoorbeeld: Familie Van der Lecq").fill(picnicHouseholdName);
+          await onboardingPage.getByRole("button", { name: "Volgende" }).click();
+          await onboardingPage.getByPlaceholder("Naam").fill("Testouder2");
+          await onboardingPage.getByRole("button", { name: "Volgende" }).click();
+          await onboardingPage.getByRole("button", { name: "Volgende" }).click();
+          await onboardingPage.getByPlaceholder("Gebruikersnaam (minimaal 3 tekens)").fill("e2epicnicquick");
+          await onboardingPage.getByPlaceholder("Wachtwoord (minimaal 6 tekens)").fill(PASSWORD);
+          await onboardingPage.getByPlaceholder("Bevestig wachtwoord").fill(PASSWORD);
+          await onboardingPage.getByRole("button", { name: "Maak mijn eerste week" }).click();
+
+          await onboardingPage.waitForURL(`${server.baseURL}/onboarding/picnic`, { timeout: 30_000 });
+          await onboardingPage.locator("text=Koppel je Picnic-account").waitFor({ state: "visible", timeout: 10_000 });
+
+          await onboardingPage.getByPlaceholder("Picnic e-mailadres").fill("test@example.com");
+          await onboardingPage.getByPlaceholder("Picnic wachtwoord").fill("irrelevant-in-mock");
+          await onboardingPage.getByRole("button", { name: "Koppelen" }).click();
+
+          // Bij een geslaagde koppeling redirect de tussenpagina zelf meteen
+          // door naar "/" — geen apart "gekoppeld"-tussenscherm nodig (zie
+          // onboarding/picnic/page.tsx: al gekoppeld -> redirect).
+          await onboardingPage.waitForURL(`${server.baseURL}/`, { timeout: 15_000 });
+
+          const picnicHousehold = await prisma.household.findFirstOrThrow({
+            where: { name: picnicHouseholdName },
+          });
+          assert.ok(
+            picnicHousehold.picnicAuthToken,
+            "Na koppelen tijdens onboarding moet het huishouden een Picnic-token hebben"
+          );
+
+          await prisma.household.delete({ where: { id: picnicHousehold.id } });
+        } finally {
+          await onboardingPage.close();
+        }
+      }
+    );
+
     await t.test("2. Weekmenu bekijken", async () => {
       await page.goto(`${server.baseURL}/`, { waitUntil: "load" });
       await page.locator("text=Jullie weekmenu").waitFor({ state: "visible", timeout: 20_000 });

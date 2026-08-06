@@ -123,7 +123,7 @@ export default function OnboardingWizard() {
           setError(result.error);
           return;
         }
-        router.push("/");
+        router.push("/onboarding/picnic");
       } catch (e) {
         setError(e instanceof Error ? e.message : "Er ging iets mis. Probeer het opnieuw.");
       }
