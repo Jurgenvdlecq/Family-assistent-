@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, LogOut, Heart, ShoppingBag, Sparkles, Trash2 } from "lucide-react";
+import { ChevronLeft, LogOut, Heart, ShoppingBag, Trash2 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
 import type { DayKey } from "@/lib/week";
@@ -234,7 +234,14 @@ export default async function OnsGezinPage({
 
         <PersonalPreferencesManager householdId={household.id} preferences={personalPreferenceItems} />
 
-        <LearnedPatternsPanel householdId={household.id} />
+        <LearnedPatternsPanel
+          householdId={household.id}
+          learnedRecipes={learnedVariants.map((variant) => ({
+            id: variant.id,
+            title: variant.recipe.title,
+            stanceLabel: STANCE_LABELS[stanceByVariantId.get(variant.id) ?? "UNKNOWN"],
+          }))}
+        />
 
         <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
           <summary className="cursor-pointer font-medium text-ink">Jullie vaste gerechten per dag</summary>
@@ -482,28 +489,6 @@ export default async function OnsGezinPage({
           </form>
         </details>
 
-        <details className="mb-8 min-w-0 rounded-xl border border-line bg-surface p-4">
-          <summary className="flex cursor-pointer items-center gap-2 font-medium text-ink">
-            <Sparkles size={16} className="text-tag-purple-ink" />
-            Wat ik heb geleerd
-          </summary>
-          <div className="mt-4 flex min-w-0 flex-col gap-2">
-            {learnedVariants.length === 0 && (
-              <p className="text-sm text-ink-muted">
-                Nog niet genoeg feedback om iets te tonen — dit groeit terwijl jullie de app
-                gebruiken.
-              </p>
-            )}
-            {learnedVariants.map((variant) => (
-              <div key={variant.id} className="flex min-w-0 items-center justify-between gap-3">
-                <span className="min-w-0 truncate text-sm text-ink">{variant.recipe.title}</span>
-                <span className="shrink-0 text-xs text-ink-faint">
-                  {STANCE_LABELS[stanceByVariantId.get(variant.id) ?? "UNKNOWN"]}
-                </span>
-              </div>
-            ))}
-          </div>
-        </details>
       </div>
 
       <NavBar />
