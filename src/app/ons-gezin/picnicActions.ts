@@ -19,9 +19,20 @@ import {
  * lib/picnic/accountConnection.ts, los van deze dunne autorisatie- en
  * redirect-laag, zodat die met een gefakete fetch getest kan worden.
  */
-function redirectToOnsGezin(status: string): never {
-  revalidatePath("/ons-gezin");
-  redirect(`/ons-gezin?status=${encodeURIComponent(status)}`);
+/**
+ * `returnTo` komt uit een client-aangeleverd hidden formulierveld (zodat de
+ * onboarding-tussenpagina na een koppelactie op zichzelf kan blijven i.p.v.
+ * altijd naar /ons-gezin te springen) — vaste whitelist om open-redirect te
+ * voorkomen, geen vrij pad accepteren.
+ */
+const ALLOWED_RETURN_PATHS = ["/ons-gezin", "/onboarding/picnic"] as const;
+
+function redirectAfterPicnicAction(status: string, returnToInput: FormDataEntryValue | null): never {
+  const returnTo = ALLOWED_RETURN_PATHS.includes(returnToInput as (typeof ALLOWED_RETURN_PATHS)[number])
+    ? (returnToInput as string)
+    : "/ons-gezin";
+  revalidatePath(returnTo);
+  redirect(`${returnTo}?status=${encodeURIComponent(status)}`);
 }
 
 const OUTCOME_STATUS: Record<PicnicConnectOutcome | "twoFactorExpired" | "twoFactorWrongCode", string> = {
@@ -43,7 +54,7 @@ export async function connectPicnicAccount(formData: FormData) {
   const password = String(formData.get("password") ?? "");
 
   const outcome = await connectPicnicAccountForHousehold(householdId, username, password);
-  redirectToOnsGezin(OUTCOME_STATUS[outcome]);
+  redirectAfterPicnicAction(OUTCOME_STATUS[outcome], formData.get("returnTo"));
 }
 
 export async function verifyPicnicTwoFactorCode(formData: FormData) {
@@ -52,7 +63,7 @@ export async function verifyPicnicTwoFactorCode(formData: FormData) {
   const code = String(formData.get("code") ?? "").trim();
 
   const outcome = await verifyPicnicTwoFactorCodeForHousehold(householdId, code);
-  redirectToOnsGezin(OUTCOME_STATUS[outcome]);
+  redirectAfterPicnicAction(OUTCOME_STATUS[outcome], formData.get("returnTo"));
 }
 
 export async function cancelPicnicTwoFactor(formData: FormData) {
@@ -62,7 +73,7 @@ export async function cancelPicnicTwoFactor(formData: FormData) {
     where: { id: householdId },
     data: { picnicPendingAuthToken: null },
   });
-  redirectToOnsGezin("picnic-2fa-cancelled");
+  redirectAfterPicnicAction("picnic-2fa-cancelled", formData.get("returnTo"));
 }
 
 export async function disconnectPicnicAccount(formData: FormData) {
@@ -72,5 +83,5 @@ export async function disconnectPicnicAccount(formData: FormData) {
     where: { id: householdId },
     data: { picnicAuthToken: null, picnicTokenUpdatedAt: null, picnicPendingAuthToken: null },
   });
-  redirectToOnsGezin("picnic-disconnected");
+  redirectAfterPicnicAction("picnic-disconnected", formData.get("returnTo"));
 }
