@@ -307,6 +307,12 @@ async function persistRefreshedToken(client: PicnicClient, householdId: string, 
 export async function removeLineFromList(formData: FormData) {
   const lineId = String(formData.get("lineId"));
   const { line } = await loadLineForCurrentHousehold(lineId);
+  // Ligt het product al in het echte Picnic-mandje, dan kan de app het hier
+  // niet wegnemen: van de lijst halen zou de "ligt al in je mandje"-markering
+  // wissen en een volgende overdracht zou het dubbel toevoegen.
+  if (line.transferredToPicnicAt) {
+    await redirectToNextReviewLine(line.shoppingListId, lineId, "line-in-picnic-cart");
+  }
   await prisma.shoppingListLine.delete({ where: { id: lineId } });
   await redirectToNextReviewLine(line.shoppingListId, lineId, "removed");
 }

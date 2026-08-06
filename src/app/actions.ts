@@ -358,6 +358,18 @@ export async function regenerateCurrentWeekPlan(formData: FormData) {
   });
 
   if (existingPlan) {
+    // Opnieuw plannen gooit de hele weekplanning weg — inclusief (via cascade)
+    // de boodschappenlijst en daarmee de "ligt al in je Picnic-mandje"-
+    // markeringen. Anders dan bij invalidateShoppingList valt dat hier niet te
+    // bewaren: de MealPlan zelf verdwijnt. Ligt er al iets in het mandje, dan
+    // dus niet stilzwijgend doorgaan maar eerlijk blokkeren — anders zou een
+    // volgende overdracht alles nog een keer bestellen.
+    const transferredCount = await prisma.shoppingListLine.count({
+      where: { shoppingList: { mealPlanId: existingPlan.id }, transferredToPicnicAt: { not: null } },
+    });
+    if (transferredCount > 0) {
+      redirectToHome("week-regenerate-blocked");
+    }
     await prisma.shoppingList.deleteMany({ where: { mealPlanId: existingPlan.id } });
     await prisma.mealPlan.delete({ where: { id: existingPlan.id } });
   }
