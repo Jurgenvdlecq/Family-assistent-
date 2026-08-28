@@ -21,6 +21,8 @@ import PicnicDeliveryPreferenceForm from "./PicnicDeliveryPreferenceForm";
 import PlanningStyleEditor from "./PlanningStyleEditor";
 import PushNotificationSettings from "./PushNotificationSettings";
 import WeeklyRhythmEditor from "./WeeklyRhythmEditor";
+import WeekRhythmEditor from "./WeekRhythmEditor";
+import MealTemplatesEditor from "./MealTemplatesEditor";
 import { getNotificationPreferences } from "@/lib/notifications";
 import {
   forgetProductPreference,
@@ -50,11 +52,25 @@ const CATEGORY_STANCE_OPTIONS = [
 ] as const;
 
 const ERROR_STATUS_MESSAGES: Record<string, string> = {
+  "template-name-missing": "Geef het sjabloon eerst een naam.",
+  "template-exists": "Er bestaat al een sjabloon met die naam.",
+  "component-ingredient-missing": "Kies eerst een product voor dit onderdeel.",
+  "component-ingredient-unknown":
+    "Dat product ken ik nog niet. Voeg het eerst toe via Boodschappen, dan kun je het hier kiezen.",
+  "component-quantity-invalid": "Vul een hoeveelheid groter dan 0 in.",
   "username-taken": "Deze gebruikersnaam is al in gebruik door een ander huishouden. Kies een andere.",
   "credentials-invalid": "Kies een gebruikersnaam van minimaal 3 tekens en een wachtwoord van minimaal 6 tekens.",
 };
 
 const STATUS_MESSAGES: Record<string, string> = {
+  "rhythm-saved": "Weekritme bijgewerkt.",
+  "rhythm-saved-replanned": "Weekritme bijgewerkt — deze week is opnieuw gepland.",
+  "rhythm-cleared": "Deze avond volgt weer gewoon de suggesties van de app.",
+  "presence-saved": "Onthouden wie er mee-eet.",
+  "template-created": "Sjabloon aangemaakt. Voeg er nu onderdelen aan toe.",
+  "template-deleted": "Sjabloon verwijderd.",
+  "component-added": "Onderdeel toegevoegd.",
+  "component-removed": "Onderdeel verwijderd.",
   "person-added": "Gezinslid toegevoegd.",
   "person-updated": "Profiel opgeslagen.",
   "presence-updated": "Aanwezigheid bijgewerkt.",
@@ -94,6 +110,7 @@ export default async function OnsGezinPage({
         include: { presenceOverrides: { orderBy: { dayOfWeek: "asc" } } },
         orderBy: { createdAt: "asc" },
       },
+      mealDayRules: true,
       picnicDeliveryPreference: true,
     },
   });
@@ -102,6 +119,22 @@ export default async function OnsGezinPage({
     where: { ownerType: "HOUSEHOLD", ownerId: household.id },
   });
   const notificationPreferences = Object.fromEntries(await getNotificationPreferences(household.id));
+  const [mealTemplates, ingredientNames] = await Promise.all([
+    prisma.mealTemplate.findMany({
+      where: { householdId: household.id },
+      include: {
+        groups: {
+          orderBy: { sortOrder: "asc" },
+          include: { options: { include: { ingredient: true }, orderBy: { name: "asc" } } },
+        },
+      },
+      orderBy: { name: "asc" },
+    }),
+    // Alleen bestaande ingrediënten zijn te kiezen in een sjabloon: een nieuw
+    // ingrediënt aanmaken hoort bij het zoeken van een echt Picnic-product,
+    // niet bij het opschrijven van een maaltijdvorm.
+    prisma.ingredient.findMany({ select: { name: true }, orderBy: { name: "asc" } }),
+  ]);
   const personIds = household.persons.map((person) => person.id);
   const personalPreferences = await prisma.preference.findMany({
     where: {
@@ -337,6 +370,47 @@ export default async function OnsGezinPage({
           <summary className="cursor-pointer font-medium text-ink">Jullie weekritme</summary>
           <div className="mt-4">
             <WeeklyRhythmEditor householdId={household.id} initialRhythm={rhythm} />
+          </div>
+        </details>
+
+        <details id="weekritme" className="mb-8 min-w-0 scroll-mt-6 rounded-xl border border-line bg-surface p-4" open={params.status?.startsWith("rhythm") || params.status === "presence-saved"}>
+          <summary className="cursor-pointer font-medium text-ink">Weekritme per dag</summary>
+          <p className="mt-2 text-sm text-ink-muted">
+            Wie eet er mee, en wat voor soort avond is het? Ook als dat per week verschilt.
+          </p>
+          <div className="mt-4">
+            <WeekRhythmEditor
+              householdId={household.id}
+              rules={household.mealDayRules}
+              persons={household.persons}
+              templates={mealTemplates.map((template) => ({ id: template.id, name: template.name }))}
+            />
+          </div>
+        </details>
+
+        <details id="maaltijdsjablonen" className="mb-8 min-w-0 scroll-mt-6 rounded-xl border border-line bg-surface p-4" open={params.status?.startsWith("template") || params.status?.startsWith("component")}>
+          <summary className="cursor-pointer font-medium text-ink">Samengestelde maaltijden</summary>
+          <div className="mt-4">
+            <MealTemplatesEditor
+              householdId={household.id}
+              ingredientNames={ingredientNames.map((ingredient) => ingredient.name)}
+              templates={mealTemplates.map((template) => ({
+                id: template.id,
+                name: template.name,
+                groups: template.groups.map((group) => ({
+                  id: group.id,
+                  role: group.role,
+                  name: group.name,
+                  options: group.options.map((option) => ({
+                    id: option.id,
+                    name: option.name,
+                    quantityPerPortion: option.quantityPerPortion,
+                    unit: option.unit,
+                    ingredientName: option.ingredient.name,
+                  })),
+                })),
+              }))}
+            />
           </div>
         </details>
 

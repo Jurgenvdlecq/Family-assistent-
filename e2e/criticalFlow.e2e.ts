@@ -1047,6 +1047,56 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         );
       }
     );
+
+    await t.test("13. Weekritme instellen: soort avond en wie er mee-eet (nieuwe functie)", async () => {
+      // De kern van het weekritme: dit één keer invullen moet genoeg zijn.
+      // Deze stap bewijst dat het formulier daadwerkelijk een dagregel
+      // wegschrijft en dat de aanwezigheid van díé dag mee verandert.
+      await page.goto(`${server.baseURL}/ons-gezin`, { waitUntil: "load" });
+      await openDetails(page, "#weekritme");
+
+      const mondayBlock = page.locator("#ritme-monday");
+      await openDetails(page, "#ritme-monday");
+
+      const profileSelect = mondayBlock.locator('select[name="profileKey"]').first();
+      await profileSelect.waitFor({ state: "visible", timeout: 10_000 });
+      await profileSelect.selectOption("BUSY_EARLY_REHEATABLE");
+      await mondayBlock.getByRole("button", { name: "Bewaar deze avond" }).first().click();
+      await page.waitForURL((url) => url.searchParams.get("ritme") === "monday-EVERY", { timeout: 15_000 });
+
+      const rule = await prisma.mealDayRule.findFirst({
+        where: { householdId, dayOfWeek: "MONDAY", weekParity: "EVERY" },
+      });
+      assert.ok(rule, "De dagregel hoort opgeslagen te zijn");
+      assert.equal(rule!.profileKey, "BUSY_EARLY_REHEATABLE");
+
+      // En de aanwezigheid van die dag: iedereen uitvinken hoort een
+      // afwijking van de standaard op te leveren.
+      await openDetails(page, "#weekritme");
+      await openDetails(page, "#ritme-monday");
+      const presenceForm = mondayBlock.locator('form:has(button:text("Bewaar wie er mee-eet"))').first();
+      const checkboxes = presenceForm.locator('input[name="presentPersonId"]');
+      const count = await checkboxes.count();
+      assert.ok(count > 0, "Er horen gezinsleden in het formulier te staan");
+      for (let index = 0; index < count; index += 1) {
+        await checkboxes.nth(index).uncheck();
+      }
+      await presenceForm.getByRole("button", { name: "Bewaar wie er mee-eet" }).click();
+      await page.waitForURL((url) => url.searchParams.get("status") === "presence-saved", { timeout: 15_000 });
+
+      const overrides = await prisma.personPresenceOverride.findMany({
+        where: { person: { householdId }, dayOfWeek: "MONDAY", weekParity: "EVERY" },
+      });
+      assert.ok(overrides.length > 0, "Wie er niet mee-eet hoort als afwijking vastgelegd te zijn");
+      assert.ok(
+        overrides.every((override) => override.present === false),
+        "En dan als 'eet niet mee'"
+      );
+
+      // Opruimen, zodat latere runs een normaal huishouden aantreffen.
+      await prisma.personPresenceOverride.deleteMany({ where: { person: { householdId } } });
+      await prisma.mealDayRule.deleteMany({ where: { householdId } });
+    });
   } finally {
     await browser.close();
     await server.close();
