@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
 import { inferFixedGroceryQuantity, inferIngredientCategory, titleCaseSearchTerm } from "./fixedGroceryProductChoice";
 import { parsePackageQuantity } from "./quantity/parsePackageSize";
+import { recordPriceObservation } from "./pricing/observations";
 
 export interface PicnicProductChoiceInput {
   searchTerm: string;
@@ -58,6 +59,19 @@ export async function resolvePicnicProductChoice(input: PicnicProductChoiceInput
     update: productData,
     create: productData,
   });
+
+  // Elke keer dat de app een Picnic-prijs ziet, wordt dat ook een waarneming.
+  // Zo bouwt de prijsgeschiedenis zich vanzelf op vanaf het moment dat deze
+  // laag bestaat — zonder dat er een aparte Picnic-verversing nodig is, en
+  // zonder dat er iets aan het bestaande gedrag verandert.
+  if (typeof input.price === "number" && Number.isFinite(input.price) && input.price >= 0) {
+    await recordPriceObservation({
+      productId: product.id,
+      price: input.price,
+      packageSize: input.packageSize ?? null,
+      source: "API",
+    });
+  }
 
   return { ingredient, product };
 }
