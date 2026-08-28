@@ -1,5 +1,10 @@
-import { DAY_ENUM, DAY_KEYS, dateForDay, type DayKey } from "@/lib/week";
-import { calendarDateKey, weekParityForDate, type WeekParity } from "@/domain/week/isoWeek";
+import { DAY_ENUM, DAY_KEYS, dateForDay, dayKeyForDate, type DayKey } from "@/lib/week";
+import {
+  calendarDateKey,
+  calendarDateKeyFromColumn,
+  weekParityForDate,
+  type WeekParity,
+} from "@/domain/week/isoWeek";
 
 type DayOfWeekValue = (typeof DAY_ENUM)[DayKey];
 
@@ -61,8 +66,11 @@ function parityOf(override: PresenceOverrideInput): WeekParity {
  */
 export function isPersonPresentOnDate(person: PersonPresenceInput, date: Date): boolean {
   const dateKey = calendarDateKey(date);
+  // De opgeslagen datum komt uit een `@db.Date`-kolom (middernacht UTC) en de
+  // gevraagde datum is door de app uitgerekend (lokale middernacht) — die twee
+  // moeten dus elk met hun eigen lezer naar een kalenderdag.
   const dateOverride = (person.presenceDateOverrides ?? []).find(
-    (item) => calendarDateKey(item.date) === dateKey
+    (item) => calendarDateKeyFromColumn(item.date) === dateKey
   );
   if (dateOverride) return dateOverride.present;
 
@@ -77,17 +85,6 @@ export function isPersonPresentOnDate(person: PersonPresenceInput, date: Date): 
   if (everyWeek) return everyWeek.present;
 
   return person.defaultPresent;
-}
-
-/**
- * De weekdag van een datum, afgeleid uit de lokale kalenderdag — zelfde
- * conventie als `getCurrentWeekStart`/`dateForDay`. Staat hier en niet in
- * `lib/week.ts` omdat `lib/orderDays.ts` al een identieke helper heeft; die
- * gebruikt deze module niet, en andersom zou een importcyclus ontstaan.
- */
-function dayKeyForDate(date: Date): DayKey {
-  const jsDay = date.getDay(); // 0 = zondag
-  return DAY_KEYS[(jsDay + 6) % 7];
 }
 
 /**

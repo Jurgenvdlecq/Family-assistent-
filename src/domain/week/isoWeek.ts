@@ -81,3 +81,36 @@ export function calendarDateKey(date: Date): string {
   const day = String(date.getDate()).padStart(2, "0");
   return `${date.getFullYear()}-${month}-${day}`;
 }
+
+/**
+ * De kalenderdag als middernacht **UTC** — de vorm die een `@db.Date`-kolom
+ * verwacht.
+ *
+ * Waarom dit nodig is: Prisma zet een `Date` om naar UTC en bewaart daar het
+ * datumdeel van. Een datum die als lokale middernacht is uitgerekend, is in
+ * Europe/Amsterdam 22:00 of 23:00 UTC op de dág ervoor — en dan komt er een
+ * dag te vroeg in de database te staan. Aangetoond met een test tegen de
+ * echte database met `TZ=Europe/Amsterdam`: 11 september werd 10 september,
+ * waarna de uitzondering nooit meer werd teruggevonden.
+ *
+ * Valt niet op zolang de server in UTC draait (zoals Vercel), maar wel zodra
+ * iemand de app lokaal draait — of zodra die instelling ooit verandert.
+ */
+export function toCalendarDate(date: Date): Date {
+  return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+}
+
+/**
+ * De kalenderdag van een waarde die uít een `@db.Date`-kolom komt.
+ *
+ * Zulke waarden zijn altijd middernacht UTC, dus die moeten ook met
+ * UTC-ogen gelezen worden. `calendarDateKey` gebruikt lokale getters en is
+ * bedoeld voor datums die de app zélf heeft uitgerekend; die twee door
+ * elkaar halen levert in een tijdzone áchter UTC een dag verschil op — en
+ * dan wordt een opgeslagen uitzondering nooit meer teruggevonden.
+ */
+export function calendarDateKeyFromColumn(date: Date): string {
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${date.getUTCFullYear()}-${month}-${day}`;
+}

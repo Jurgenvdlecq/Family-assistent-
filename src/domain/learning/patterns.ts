@@ -1,6 +1,7 @@
 import type { DayOfWeek, FeedbackReason, FeedbackSubjectType } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import { labelFeedbackReason, MEAL_ACCEPTANCE_REASONS, MEAL_REPLACEMENT_REASONS } from "./feedbackReasons";
+import { describePresencePrompt } from "./presencePatterns";
 
 const PROMPT_THRESHOLD = 3;
 
@@ -184,8 +185,21 @@ export async function getPendingLearningPrompts(householdId: string, limit = 2) 
   return prompts.map((prompt) => {
     const context = readPatternContext(prompt.learnedPattern?.context);
     const isAcceptancePrompt = prompt.promptType === "CONFIRM_REPEATED_ACCEPTANCE";
+    // Een aanwezigheidsvraag is een ja/nee-vraag, geen smaakvraag: er hoort
+    // geen lijst met redenen bij, maar één knop "ja, standaard maken".
+    if (prompt.promptType === "CONFIRM_PRESENCE_PATTERN") {
+      const evidenceCount = Number((prompt.payload as { evidenceCount?: number })?.evidenceCount ?? 3);
+      return {
+        id: prompt.id,
+        kind: "presence" as const,
+        title: "Zal ik dit onthouden?",
+        question: describePresencePrompt(prompt.learnedPattern?.context, evidenceCount),
+        answerOptions: [],
+      };
+    }
     return {
       id: prompt.id,
+      kind: "meal" as const,
       title: isAcceptancePrompt ? "Zal ik dit vaker doen?" : "Ik zie een patroon",
       question: isAcceptancePrompt
         ? `Ik merk dat ${context.label ?? "dit type gerecht"} op ${String(context.dayOfWeek ?? "deze dag").toLowerCase()} vaak blijft staan. Is dat een goede match voor die dag?`
