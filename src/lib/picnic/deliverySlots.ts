@@ -149,6 +149,81 @@ function formatTime(date: Date): string {
   return new Intl.DateTimeFormat("nl-NL", { timeZone: TIME_ZONE, hour: "2-digit", minute: "2-digit" }).format(date);
 }
 
+/** "18:00–19:00" — het tijdvak van één bezorgmoment, in Nederlandse tijd. */
+export function formatSlotWindow(slot: PicnicDeliverySlot): string {
+  return `${formatTime(slot.windowStart)}–${formatTime(slot.windowEnd)}`;
+}
+
+/** "2026-09-04" in Europe/Amsterdam — de kalenderdag waarop een slot valt. */
+function amsterdamIsoDate(date: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+/** "do 4 sep" */
+function formatDayLabel(date: Date): string {
+  const parts = new Intl.DateTimeFormat("nl-NL", {
+    timeZone: TIME_ZONE,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).formatToParts(date);
+  const valueOf = (type: string) => (parts.find((part) => part.type === type)?.value ?? "").replace(".", "");
+  return `${valueOf("weekday")} ${valueOf("day")} ${valueOf("month")}`;
+}
+
+export type DeliveryDayGroup = {
+  /** yyyy-mm-dd in Europe/Amsterdam — ook de sorteersleutel. */
+  isoDate: string;
+  dayKey: DayKey;
+  /** "do 4 sep" */
+  label: string;
+  /** Alleen de nog vrije tijdvakken, op tijd gesorteerd. */
+  availableSlots: PicnicDeliverySlot[];
+  /** Hoeveel tijdvakken die dag al vol zitten — een dag met 0 vrije en >0 volle toont "alles vol". */
+  unavailableCount: number;
+};
+
+/**
+ * Bundelt de ruwe slotenlijst per bezorgdag, zodat de app kan tonen wanneer
+ * er nog bezorgd kan worden in plaats van alleen of één vaste voorkeur nog
+ * past.
+ *
+ * Bewust geen aanname over hoever Picnic vooruit kijkt: we groeperen precies
+ * wat er binnenkomt en laten de UI beslissen hoeveel dagen ze meteen toont.
+ * Verandert Picnic dat venster, dan verandert deze lijst gewoon mee.
+ */
+export function groupDeliverySlotsByDay(slots: PicnicDeliverySlot[]): DeliveryDayGroup[] {
+  const byDate = new Map<string, DeliveryDayGroup>();
+
+  for (const slot of slots) {
+    const isoDate = amsterdamIsoDate(slot.windowStart);
+    let group = byDate.get(isoDate);
+    if (!group) {
+      group = {
+        isoDate,
+        dayKey: amsterdamDayKeyAndMinutes(slot.windowStart).dayKey,
+        label: formatDayLabel(slot.windowStart),
+        availableSlots: [],
+        unavailableCount: 0,
+      };
+      byDate.set(isoDate, group);
+    }
+    if (slot.isAvailable) group.availableSlots.push(slot);
+    else group.unavailableCount += 1;
+  }
+
+  const groups = [...byDate.values()].sort((a, b) => a.isoDate.localeCompare(b.isoDate));
+  for (const group of groups) {
+    group.availableSlots.sort((a, b) => a.windowStart.getTime() - b.windowStart.getTime());
+  }
+  return groups;
+}
+
 /**
  * Bepaalt in gewone, uitlegbare regels of de voorkeurstijd van een
  * huishouden op de voorkeursdag (nog) beschikbaar lijkt bij Picnic. Bewust
