@@ -485,3 +485,61 @@ test("dagprofiel: een te vermijden eigenschap kost punten maar sluit niet uit", 
   });
   assert.equal(onlyExtensive.candidate.id, "extensive", "één kandidaat blijft altijd kiesbaar");
 });
+
+test("zelf halen: een gerecht met een extern ingrediënt scoort lager maar blijft kiesbaar", () => {
+  // De eis uit de opdracht: markeren mag het gerecht niet onbruikbaar maken.
+  const withExternal = candidate({
+    id: "biefstuk",
+    recipeTitle: "Biefstuk met paprika",
+    ingredients: [
+      { id: "biefstuk", name: "Biefstuk" },
+      { id: "paprika", name: "Paprika" },
+    ],
+  });
+  const withoutExternal = candidate({
+    id: "kip",
+    recipeTitle: "Kip met paprika",
+    ingredients: [
+      { id: "kip", name: "Kipfilet" },
+      { id: "paprika", name: "Paprika" },
+    ],
+  });
+  const externalIngredientIds = new Set(["biefstuk"]);
+
+  const both = chooseMealPlanCandidate({
+    ...baseInput([withExternal, withoutExternal]),
+    externalIngredientIds,
+  });
+  assert.equal(both.candidate.id, "kip", "bij gelijke geschiktheid wint het gerecht zonder extra boodschap");
+
+  const onlyExternal = chooseMealPlanCandidate({
+    ...baseInput([withExternal]),
+    externalIngredientIds,
+  });
+  assert.equal(onlyExternal.candidate.id, "biefstuk", "maar als het de enige optie is, wordt hij gewoon gekozen");
+  assert.ok(
+    onlyExternal.reasons.some((reason) => reason.includes("zelf nog halen")),
+    `de uitleg hoort te waarschuwen, kreeg: ${onlyExternal.reasons.join(" | ")}`
+  );
+});
+
+test("zelf halen: een profiel dat alles via Picnic wil, weegt een externe boodschap zwaarder", () => {
+  const withExternal = candidate({
+    id: "biefstuk",
+    recipeTitle: "Biefstuk met paprika",
+    ingredients: [{ id: "biefstuk", name: "Biefstuk" }],
+  });
+  const externalIngredientIds = new Set(["biefstuk"]);
+
+  const neutral = chooseMealPlanCandidate({ ...baseInput([withExternal]), externalIngredientIds });
+  const picnicFirst = chooseMealPlanCandidate({
+    ...baseInput([withExternal]),
+    externalIngredientIds,
+    dayProfile: DAY_PROFILES.ADULT_TAKEAWAY_REPLACEMENT,
+  });
+
+  assert.ok(
+    picnicFirst.score < neutral.score,
+    "op een avond die bestellen moet vervangen telt 'nog even langs de slager' zwaarder"
+  );
+});

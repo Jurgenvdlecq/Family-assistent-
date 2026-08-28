@@ -117,3 +117,115 @@ test("mealEntryNeeds: hetzelfde ingrediënt in een andere eenheid blijft een eig
   const needs = mealEntryNeeds(entry, { scale: 1, presentPortions: 2 });
   assert.equal(needs.length, 2);
 });
+
+// ── Verdeelde avonden ───────────────────────────────────────────────────────
+
+function assignment(
+  label: string,
+  fulfillment: string,
+  sortOrder: number,
+  personIds: string[],
+  items: Array<{ ingredientId: string; quantityPerPortion: number; unit: "GRAM" | "PIECE" }> = []
+) {
+  return { label, fulfillment, sortOrder, persons: personIds.map((personId) => ({ personId })), items };
+}
+
+/** De zaterdag uit de opdracht: de kinderen eten bolletjes, de ouders regelen zelf iets. */
+const splitEntry: MealEntryLike = {
+  recipeVariant: null,
+  mealTemplate: null,
+  components: [],
+  assignments: [
+    assignment("Bolletjes met knakworst", "PICNIC", 0, ["lynn", "kai"], [
+      { ingredientId: "bolletjes", quantityPerPortion: 2, unit: "PIECE" },
+      { ingredientId: "knakworst", quantityPerPortion: 2, unit: "PIECE" },
+    ]),
+    assignment("Zelf iets regelen", "SELF_PROVIDED", 1, ["jurgen", "ellen"]),
+  ],
+};
+
+const PORTIONS = {
+  scale: 1,
+  presentPortions: 3.4,
+  personPortions: new Map([
+    ["jurgen", 1],
+    ["ellen", 1],
+    ["lynn", 0.7],
+    ["kai", 0.7],
+  ]),
+};
+
+test("verdeelde avond: de naam laat zien dat er twee dingen op tafel staan", () => {
+  assert.equal(mealEntryTitle(splitEntry), "Bolletjes met knakworst · Zelf iets regelen");
+});
+
+test("verdeelde avond: alleen de bekende delen leveren boodschappen op", () => {
+  const needs = mealEntryNeeds(splitEntry, PORTIONS);
+  // Lynn en Kai samen: 0,7 + 0,7 = 1,4 portie, elk 2 stuks.
+  assert.deepEqual(needs, [
+    { ingredientId: "bolletjes", quantity: 2 * 1.4, unit: "PIECE" },
+    { ingredientId: "knakworst", quantity: 2 * 1.4, unit: "PIECE" },
+  ]);
+});
+
+test("verdeelde avond: een deel dat iemand zelf regelt sluit de rest niet uit", () => {
+  // Dit is de kern van de eis: zonder verdeling zou de hele avond wegvallen
+  // zodra één deel niets oplevert.
+  const needs = mealEntryNeeds(splitEntry, PORTIONS);
+  assert.ok(needs.length > 0, "de bolletjes horen gewoon besteld te worden");
+});
+
+test("verdeelde avond: iemand die er die dag niet is telt niet mee in de porties", () => {
+  const withoutKai = {
+    ...PORTIONS,
+    personPortions: new Map([
+      ["jurgen", 1],
+      ["ellen", 1],
+      ["lynn", 0.7],
+    ]),
+  };
+  const needs = mealEntryNeeds(splitEntry, withoutKai);
+  assert.equal(needs.find((need) => need.ingredientId === "bolletjes")?.quantity, 2 * 0.7);
+});
+
+test("verdeelde avond: een deel waar niemand van aanwezig is levert niets op", () => {
+  const nobodyPresent = { ...PORTIONS, personPortions: new Map([["jurgen", 1]]) };
+  const needs = mealEntryNeeds(splitEntry, nobodyPresent);
+  assert.deepEqual(needs, []);
+});
+
+test("verdeelde avond: twee delen met hetzelfde ingrediënt worden één regel", () => {
+  const entry: MealEntryLike = {
+    recipeVariant: null,
+    mealTemplate: null,
+    components: [],
+    assignments: [
+      assignment("Pizza salami", "PICNIC", 0, ["jurgen"], [
+        { ingredientId: "sla", quantityPerPortion: 50, unit: "GRAM" },
+      ]),
+      assignment("Tonijnsalade", "PICNIC", 1, ["ellen"], [
+        { ingredientId: "sla", quantityPerPortion: 80, unit: "GRAM" },
+      ]),
+    ],
+  };
+  const needs = mealEntryNeeds(entry, PORTIONS);
+  assert.deepEqual(needs, [{ ingredientId: "sla", quantity: 130, unit: "GRAM" }]);
+});
+
+test("verdeelde avond: 'ergens anders kopen' levert wél boodschappen op, alleen niet via Picnic", () => {
+  // Het onderscheid tussen OTHER_STORE en SELF_PROVIDED: het eerste moet nog
+  // gekocht worden (en dus op de lijst), het tweede niet.
+  const entry: MealEntryLike = {
+    recipeVariant: null,
+    mealTemplate: null,
+    components: [],
+    assignments: [
+      assignment("Biefstuk van de slager", "OTHER_STORE", 0, ["jurgen"], [
+        { ingredientId: "biefstuk", quantityPerPortion: 200, unit: "GRAM" },
+      ]),
+    ],
+  };
+  assert.deepEqual(mealEntryNeeds(entry, PORTIONS), [
+    { ingredientId: "biefstuk", quantity: 200, unit: "GRAM" },
+  ]);
+});

@@ -56,6 +56,13 @@ export interface MealPlanScoringInput {
    * zoals vóór het weekritme.
    */
   dayProfile?: DayProfileDefinition | null;
+  /**
+   * Ingrediënten die dit huishouden niet via Picnic haalt. Een gerecht dat er
+   * één bevat blijft gewoon planbaar — het scoort alleen lager, want het kost
+   * een extra boodschap. Uitsluiten zou te ver gaan: dan zou "biefstuk halen
+   * wij zelf" stilzwijgend alle biefstukgerechten wegstrepen.
+   */
+  externalIngredientIds?: Set<string>;
   lastPlannedByRecipeId: Map<string, Date>;
   usedRecipeIds: Set<string>;
   targetDate: Date;
@@ -253,6 +260,23 @@ function scoreCandidate(input: MealPlanScoringInput, candidate: MealPlanCandidat
 
   if (input.dayProfile) {
     applyDayProfile(signal, input.dayProfile, candidateTags, dayLabel);
+  }
+
+  const externalIngredients = input.externalIngredientIds
+    ? candidate.ingredients.filter((ingredient) => input.externalIngredientIds!.has(ingredient.id))
+    : [];
+  if (externalIngredients.length > 0) {
+    // Een profiel dat expliciet "het liefst alles via Picnic" zegt (zoals de
+    // donderdag-avond die bestellen moet vervangen) weegt dit zwaarder.
+    const perIngredient = input.dayProfile?.preferPicnicComplete ? 14 : 6;
+    signal.score -= externalIngredients.length * perIngredient;
+    signal.hasDoubt = true;
+    signal.reasons.push(
+      `hiervoor moet je ${externalIngredients
+        .slice(0, 2)
+        .map((ingredient) => ingredient.name.toLowerCase())
+        .join(" en ")} zelf nog halen`
+    );
   }
 
   if (input.preferredCategories.size > 0) {

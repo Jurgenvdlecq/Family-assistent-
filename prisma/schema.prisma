@@ -75,6 +75,7 @@ model Household {
   dayRoutines            DayRoutine[]
   mealDayRules           MealDayRule[]
   mealTemplates          MealTemplate[]
+  ingredientFulfillments HouseholdIngredientFulfillment[]
   pushSubscriptions      PushSubscription[]
   notificationPreferences NotificationPreference[]
   notificationDeliveryLogs NotificationDeliveryLog[]
@@ -235,6 +236,96 @@ model MealPlanEntryComponent {
   @@map("meal_plan_entry_components")
 }
 
+// Waar een ingrediënt vandaan komt.
+//
+// Niet alles gaat via Picnic: biefstuk halen sommige huishoudens bij de
+// slager, en soms regelt iemand gewoon zelf iets. Zonder dit onderscheid zou
+// zo'n product ofwel ten onrechte in het Picnic-mandje belanden, ofwel het
+// hele gerecht onplanbaar maken — allebei fout.
+enum FulfillmentSource {
+  PICNIC
+  /// Wel boodschappen, maar ergens anders gekocht.
+  OTHER_STORE
+  /// Iemand regelt dit zelf; hier hoeft niets voor gekocht te worden.
+  SELF_PROVIDED
+
+  @@map("fulfillment_source")
+}
+
+// "Biefstuk halen wij zelf" — één keer vastleggen per huishouden, in plaats
+// van bij elk recept opnieuw. Elke boodschappenregel voor dit ingrediënt
+// erft deze herkomst.
+model HouseholdIngredientFulfillment {
+  id           String            @id @default(uuid())
+  householdId  String            @map("household_id")
+  ingredientId String            @map("ingredient_id")
+  fulfillment  FulfillmentSource
+  /// Optioneel: waar dan, of waarom. Puur voor de gebruiker.
+  note         String?
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+
+  household  Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+
+  @@unique([householdId, ingredientId])
+  @@map("household_ingredient_fulfillments")
+}
+
+// Eén deel van een avond waarop niet iedereen hetzelfde eet.
+//
+// Zonder dit zou "Lynn en Kai eten bolletjes met knakworst, Jurgen en Ellen
+// regelen zelf iets" alleen als hele avond te plannen zijn — en dan valt de
+// avond weg zodra één deel niets oplevert. Staan er geen delen bij een avond,
+// dan is het gewoon één maaltijd voor iedereen (het normale geval).
+model MealAssignment {
+  id              String            @id @default(uuid())
+  mealPlanEntryId String            @map("meal_plan_entry_id")
+  /// Wat dit deel is, in gewone taal ("Pizza salami", "Zelf iets halen").
+  label           String
+  fulfillment     FulfillmentSource @default(PICNIC)
+  sortOrder       Int               @default(0) @map("sort_order")
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  mealPlanEntry MealPlanEntry          @relation(fields: [mealPlanEntryId], references: [id], onDelete: Cascade)
+  persons       MealAssignmentPerson[]
+  items         MealAssignmentItem[]
+
+  @@index([mealPlanEntryId])
+  @@map("meal_assignments")
+}
+
+// Wie er bij dit deel hoort. Bepaalt meteen de porties: alleen de personen
+// die op die datum ook echt mee-eten tellen mee.
+model MealAssignmentPerson {
+  id               String @id @default(uuid())
+  mealAssignmentId String @map("meal_assignment_id")
+  personId         String @map("person_id")
+
+  mealAssignment MealAssignment @relation(fields: [mealAssignmentId], references: [id], onDelete: Cascade)
+  person         Person         @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@unique([mealAssignmentId, personId])
+  @@map("meal_assignment_persons")
+}
+
+// Wat er voor dit deel nodig is, per persoon — zelfde vorm als een
+// componentoptie, zodat de behoefteberekening één regel kent in plaats van
+// twee uitzonderingen.
+model MealAssignmentItem {
+  id                 String @id @default(uuid())
+  mealAssignmentId   String @map("meal_assignment_id")
+  ingredientId       String @map("ingredient_id")
+  quantityPerPortion Float  @map("quantity_per_portion")
+  unit               Unit
+
+  mealAssignment MealAssignment @relation(fields: [mealAssignmentId], references: [id], onDelete: Cascade)
+  ingredient     Ingredient     @relation(fields: [ingredientId], references: [id])
+
+  @@index([mealAssignmentId])
+  @@map("meal_assignment_items")
+}
+
 model HouseholdSession {
   id          String   @id @default(uuid())
   householdId String   @map("household_id")
@@ -352,6 +443,7 @@ model Person {
   feedbackEvents        FeedbackEvent[]
   presenceOverrides     PersonPresenceOverride[]
   presenceDateOverrides PersonPresenceDateOverride[]
+  mealAssignments       MealAssignmentPerson[]
 
   @@index([householdId])
   @@map("persons")
@@ -603,6 +695,7 @@ model MealPlanEntry {
   recipeVariant       RecipeVariant?           @relation(fields: [recipeVariantId], references: [id])
   mealTemplate        MealTemplate?            @relation(fields: [mealTemplateId], references: [id], onDelete: SetNull)
   components          MealPlanEntryComponent[]
+  assignments         MealAssignment[]
   replacedFromVariant RecipeVariant? @relation("MealPlanEntryReplacedFrom", fields: [replacedFromRecipeVariantId], references: [id], onDelete: SetNull)
 
   @@unique([mealPlanId, dayOfWeek])
@@ -690,6 +783,8 @@ model Ingredient {
   productPreferences     HouseholdProductPreference[]
   rejectedProductMatches RejectedProductMatch[]
   mealComponentOptions   MealComponentOption[]
+  assignmentItems        MealAssignmentItem[]
+  householdFulfillments  HouseholdIngredientFulfillment[]
 
   @@map("ingredients")
 }
@@ -867,6 +962,11 @@ model ShoppingListLine {
   // hoeveelheid weer handmatig wijzigt, zodat een nieuw tekort niet stil
   // wordt overgeslagen.
   shortfallAcknowledged Boolean @default(false) @map("shortfall_acknowledged")
+
+  // Waar dit product vandaan komt. Alleen PICNIC-regels gaan mee naar het
+  // Picnic-mandje; de rest verschijnt als "zelf halen". Standaard PICNIC,
+  // dus voor bestaande regels verandert er niets.
+  fulfillment FulfillmentSource @default(PICNIC)
 
   // Afvinklijst voor zelf boodschappen doen (in een fysieke winkel, of
   // gewoon om bij te houden wat al in het mandje ligt) — losstaand van
