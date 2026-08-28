@@ -1097,6 +1097,95 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       await prisma.personPresenceOverride.deleteMany({ where: { person: { householdId } } });
       await prisma.mealDayRule.deleteMany({ where: { householdId } });
     });
+
+    await t.test("14. De lijst doorrekenen bij een andere winkel (nieuwe functie)", async () => {
+      // Geen netwerk naar Albert Heijn in deze omgeving — die prijzen komen
+      // sowieso uit de database, gevuld door de geplande verversing. Hier
+      // zetten we die waarnemingen zelf klaar, zodat de pagina hetzelfde pad
+      // aflegt als in productie.
+      const line = await prisma.shoppingListLine.findFirstOrThrow({
+        where: { shoppingList: { mealPlan: { householdId } }, product: { isNot: null }, fulfillment: "PICNIC" },
+        include: { ingredient: true, product: true },
+      });
+
+      // Zonder merk op ons eigen product is de klasse niet vast te stellen, en
+      // dan hoort de app "niet te vergelijken" te zeggen in plaats van te
+      // gokken. De mock-catalogus heeft geen merken, dus zetten we er hier één
+      // op — anders zou deze stap alleen dat (correcte) zwijgen testen.
+      const original = {
+        brand: line.product!.brand,
+        packageQuantity: line.product!.packageQuantity,
+        price: line.product!.price,
+      };
+      const packageQuantity = original.packageQuantity ?? Math.max(1, Math.ceil(line.quantity));
+      await prisma.product.update({
+        where: { id: line.product!.id },
+        // Ook de verpakking en prijs moeten bekend zijn: zonder die twee kan de
+        // app onze eigen kant niet doorrekenen, en dan telt de regel (terecht)
+        // aan geen van beide kanten mee.
+        data: { brand: "Testmerk", packageQuantity, price: original.price ?? 1.5 },
+      });
+
+      const createdProductIds: string[] = [];
+      for (const variant of [
+        { ref: "e2e-ah-1", suffix: "", price: 1.29 },
+        { ref: "e2e-ah-2", suffix: " groot", price: 2.19 },
+      ]) {
+        const product = await prisma.product.create({
+          data: {
+            ingredientId: line.ingredientId,
+            provider: "AH",
+            externalRef: variant.ref,
+            name: `AH ${line.ingredient.name}${variant.suffix}`,
+            brand: "AH",
+            packageSize: line.product!.packageSize,
+            packageQuantity,
+            price: variant.price,
+            qualityTier: "STANDAARD",
+          },
+        });
+        createdProductIds.push(product.id);
+        await prisma.priceObservation.create({
+          data: { productId: product.id, price: variant.price, source: "API" },
+        });
+      }
+
+      try {
+        // De regel op /boodschappen wijst door naar het volledige overzicht.
+        await page.goto(`${server.baseURL}/prijzen`, { waitUntil: "load" });
+        await page.locator("text=Je boodschappen bij een andere winkel").waitFor({
+          state: "visible",
+          timeout: 15_000,
+        });
+        const row = page.locator(`#regel-${line.id}`);
+        await row.waitFor({ state: "visible", timeout: 10_000 });
+        // Een bedrag mag alleen naast het onze staan als het over dezelfde
+        // regels gaat; die tekst hoort er dus letterlijk bij te staan.
+        await page.locator("text=voor diezelfde regels").first().waitFor({ state: "visible", timeout: 10_000 });
+
+        // En de correctie: zelf een ander product aanwijzen.
+        await row.locator("details").first().evaluate((el) => {
+          (el as HTMLDetailsElement).open = true;
+        });
+        const otherForm = row.locator(`form:has(input[value="${createdProductIds[1]}"])`);
+        await otherForm.getByRole("button", { name: "Kies" }).click();
+        await page.waitForURL((url) => url.searchParams.get("status") === "keuze-opgeslagen", {
+          timeout: 15_000,
+        });
+
+        const choice = await prisma.householdStoreProductChoice.findFirst({
+          where: { householdId, ingredientId: line.ingredientId, provider: "AH" },
+        });
+        assert.ok(choice, "De keuze hoort onthouden te zijn");
+        assert.equal(choice!.productId, createdProductIds[1]);
+      } finally {
+        await prisma.householdStoreProductChoice.deleteMany({ where: { householdId } });
+        await prisma.priceObservation.deleteMany({ where: { productId: { in: createdProductIds } } });
+        await prisma.product.deleteMany({ where: { id: { in: createdProductIds } } });
+        // De gedeelde catalogus weer terugzetten zoals we 'm aantroffen.
+        await prisma.product.update({ where: { id: line.product!.id }, data: original });
+      }
+    });
   } finally {
     await browser.close();
     await server.close();

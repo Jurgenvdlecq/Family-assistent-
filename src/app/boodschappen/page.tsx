@@ -32,6 +32,7 @@ import { getHouseholdHardRestrictions, getHouseholdPortionScaleForDate } from "@
 import { mealEntryNeeds, mealEntryTitle } from "@/domain/meal-planning/mealEntry";
 import { setIngredientFulfillment } from "./fulfillmentActions";
 import { getStorePricesForIngredients, type StorePriceForIngredient } from "@/lib/pricing/storePrices";
+import { getBasketOverview, COMPARISON_PROVIDERS } from "@/lib/pricing/basket";
 import { PROVIDER_LABELS } from "@/domain/pricing/types";
 import type { ProductProvider } from "@/generated/prisma/enums";
 import { getFixedGroceries } from "@/lib/fixedGroceries";
@@ -426,6 +427,36 @@ function StorePriceHint({
         </p>
       )}
     </>
+  );
+}
+
+/**
+ * Eén regel: wat deze lijst elders zou kosten.
+ *
+ * Bewust met het aantal vergeleken regels erbij, en met het Picnic-bedrag over
+ * diezelfde regels ernaast. Een kaal "bij AH € 62" zou een belofte zijn die de
+ * cijfers niet waarmaken zodra een deel van de lijst daar niet te vinden is.
+ * Het volledige overzicht staat op /prijzen.
+ */
+function StoreBasketHint({ overview }: { overview: Awaited<ReturnType<typeof getBasketOverview>> }) {
+  const lineCount = overview.comparison.lines.length;
+  const usable = COMPARISON_PROVIDERS.map((provider) => overview.comparison.totals.get(provider)).filter(
+    (total) => total !== undefined && total.linesCompared > 0
+  ) as NonNullable<ReturnType<typeof overview.comparison.totals.get>>[];
+  if (lineCount === 0 || usable.length === 0) return null;
+
+  return (
+    <p className="mb-3 text-xs text-ink-faint">
+      {usable.map((total) => (
+        <span key={total.provider}>
+          Bij {PROVIDER_LABELS[total.provider]} € {total.hardTotal.toFixed(2)} voor {total.linesCompared} van
+          de {lineCount} regels (bij Picnic € {total.referenceTotalForHardLines.toFixed(2)}).{" "}
+        </span>
+      ))}
+      <Link href="/prijzen" className="font-medium text-accent underline">
+        Bekijk regel voor regel
+      </Link>
+    </p>
   );
 }
 
@@ -873,6 +904,7 @@ export default async function BoodschappenPage({
     storePricesByIngredient,
     householdHardRestrictions,
     inventoryMap,
+    basketOverview,
   ] =
     await Promise.all([
       getFixedGroceries(household.id),
@@ -901,6 +933,9 @@ export default async function BoodschappenPage({
       // van dit huishouden — nooit om er zelf iets uit te concluderen.
       getHouseholdHardRestrictions(household.id),
       getInventoryMap(household.id),
+      // Alleen voor de ene regel hieronder ("wat kost deze lijst elders");
+      // het echte overzicht staat op /prijzen.
+      getBasketOverview(household.id, mealPlan.id),
     ]);
   const fixedProductResults = fixedSearch.value;
   const manualProductResults = manualSearch.value;
@@ -1599,6 +1634,7 @@ export default async function BoodschappenPage({
             {listTotalCost > 0 ? `€ ${listTotalCost.toFixed(2)}` : "Prijs onbekend"}
           </span>
         </div>
+        <StoreBasketHint overview={basketOverview} />
         {/* Een leeg omkaderd blok rendert niet: zonder aangevinkte avonden zou
             de lijst er dan uitzien alsof er niets besteld wordt, terwijl de
             vaste boodschappen gewoon klaarstaan. */}

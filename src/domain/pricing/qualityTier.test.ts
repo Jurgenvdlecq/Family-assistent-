@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { deriveQualityTier, sameQualityTier } from "./qualityTier";
+import { comparablePreservation, derivePreservation, deriveQualityTier, sameQualityTier } from "./qualityTier";
 
 test("klasse: biologisch wint van huismerk", () => {
   // "AH Biologische halfvolle melk" is allebei; voor de vergelijking is bio
@@ -42,4 +42,22 @@ test("sameQualityTier: onbekend is nooit gelijk aan onbekend", () => {
   assert.equal(sameQualityTier("BIO", null), false);
   assert.equal(sameQualityTier("BIO", "BIO"), true);
   assert.equal(sameQualityTier("BIO", "STANDAARD"), false);
+});
+
+test("vers/houdbaar: 'houdbare' telt, en 'diverse' is geen 'vers'", () => {
+  // Twee fouten die met een test zijn aangetoond: zoeken op precies
+  // "houdbaar" mist de vorm die op het pak staat, en zoeken op "vers" als
+  // deelreeks slaat aan op "diverse".
+  assert.equal(derivePreservation("AH Houdbare halfvolle melk"), "HOUDBAAR");
+  assert.equal(derivePreservation("AH Verse halfvolle melk"), "VERS");
+  assert.equal(derivePreservation("Diverse groenten"), null);
+});
+
+test("vers/houdbaar: onbekend tegenover onbekend is geen bezwaar", () => {
+  // De meeste producten zeggen er niets over; dat mag geen reden zijn om
+  // alles onvergelijkbaar te noemen.
+  assert.equal(comparablePreservation(null, null), true);
+  assert.equal(comparablePreservation("VERS", null), false);
+  assert.equal(comparablePreservation("VERS", "VERS"), true);
+  assert.equal(comparablePreservation("VERS", "HOUDBAAR"), false);
 });
