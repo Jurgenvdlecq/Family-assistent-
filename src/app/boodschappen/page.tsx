@@ -1,10 +1,10 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { after } from "next/server";
 import { CalendarDays, ShoppingCart, CheckCircle2, Utensils, ChevronRight, Search, ClipboardList, Minus, Plus, X } from "lucide-react";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { ensureMealPlan } from "@/lib/mealPlan";
-import { getDeliveryOverviewForHousehold } from "@/lib/picnic/deliveryStatus";
-import { getOrderDayWindow } from "@/lib/orderDays";
+import { getOrderDayWindow, nextDateForWeekday } from "@/lib/orderDays";
 import { DAY_ENUM, DAY_KEY_BY_ENUM, DAY_LABELS, getCurrentWeekStart } from "@/lib/week";
 import {
   describeLinePackaging,
@@ -29,7 +29,7 @@ import NavBar from "@/components/NavBar";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import PicnicTransfer from "./PicnicTransfer";
 import AddToPicnicCart from "./AddToPicnicCart";
-import DeliverySlotsCard from "./DeliverySlotsCard";
+import DeliverySlotsSection, { DeliverySlotsPlaceholder } from "./DeliverySlotsSection";
 import MealDayPicker, { type MealDayOption } from "./MealDayPicker";
 import ShoppingChecklist, { type ChecklistLine } from "./ShoppingChecklist";
 import {
@@ -653,20 +653,17 @@ export default async function BoodschappenPage({
   // op een gerecht dat wél gewoon in de lijst staat.
   const groceryMeals = await getGroceryMealEntries(mealPlan.id);
 
-  // Eén Picnic-aanroep voor zowel de bezorgkaart als de dagkeuze: het venster
-  // met avonden begint bij het eerste moment waarop Picnic nog kan bezorgen.
+  // Het dagvenster begint bij het verwachte bezorgmoment. Dat komt bewust uit
+  // de opgeslagen voorkeur en niet uit de live slotenlijst van Picnic: die
+  // opvragen kost een netwerkaanroep, en dan zou élke actie op deze pagina
+  // (zoals een avond aantikken) daarop moeten wachten. De bezorgkaart hieronder
+  // toont nog steeds de echte, live beschikbaarheid.
   const deliveryPreference = await prisma.picnicDeliveryPreference.findUnique({
     where: { householdId: household.id },
   });
-  const deliveryOverview = household.picnicAuthToken
-    ? await getDeliveryOverviewForHousehold({
-        householdId: household.id,
-        picnicAuthToken: household.picnicAuthToken,
-        preference: deliveryPreference,
-      })
+  const firstDeliveryDate = deliveryPreference
+    ? nextDateForWeekday(DAY_KEY_BY_ENUM[deliveryPreference.preferredDayOfWeek], new Date())
     : null;
-  const firstDeliveryIsoDate =
-    deliveryOverview?.groups.find((group) => group.availableSlots.length > 0)?.isoDate ?? null;
 
   const planByWeekStart = new Map(
     [groceryMeals.mealPlan, groceryMeals.nextWeekPlan]
@@ -675,7 +672,7 @@ export default async function BoodschappenPage({
   );
   const mealDayOptions: MealDayOption[] = getOrderDayWindow({
     now: new Date(),
-    firstDeliveryIsoDate,
+    firstDeliveryDate,
   }).map((day) => {
     const entry = planByWeekStart
       .get(day.weekStart.getTime())
@@ -988,7 +985,13 @@ export default async function BoodschappenPage({
             opent met wanneer er bezorgd kan worden en wat er klaarstaat, want
             dat is waarvoor de app in de praktijk geopend wordt. De lijst zelf
             en het beheer eronder blijven ongewijzigd — alleen verplaatst. */}
-        <DeliverySlotsCard preference={deliveryPreference} overview={deliveryOverview} />
+        <Suspense fallback={<DeliverySlotsPlaceholder />}>
+          <DeliverySlotsSection
+            householdId={household.id}
+            picnicAuthToken={household.picnicAuthToken}
+            preference={deliveryPreference}
+          />
+        </Suspense>
 
         <MealDayPicker days={mealDayOptions} />
 

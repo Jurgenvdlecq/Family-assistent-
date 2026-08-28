@@ -6,8 +6,12 @@
  * prijscontrole is — zodat het gezin ziet wat er ongeveer gaat gebeuren
  * vóórdat er echt iets in het Picnic-mandje belandt.
  */
+export type ConfirmationLineSource = "MEAL" | "FIXED" | "MANUAL" | "INVENTORY";
+
 export interface ConfirmationLineInput {
   ingredientName: string;
+  /** Waar komt deze regel vandaan? Bepaalt de uitsplitsing in het bevestigingsscherm. */
+  source: ConfirmationLineSource;
   matchStatus: "MATCHED_TRUSTED" | "MATCHED_REVIEW_REQUIRED" | "NOT_FOUND" | "MANUALLY_SELECTED" | "UNAVAILABLE";
   transferredToPicnicAt: Date | null;
   packageCount?: number;
@@ -29,6 +33,12 @@ export interface ConfirmationSummary {
   unavailable: string[];
   /** Oudste lastSeenAvailable onder de geprijsde producten die worden overgedragen, of null als er geen enkele bekend is. */
   oldestPriceCheck: Date | null;
+  /**
+   * Hoeveel van de over te dragen producten per herkomst. Zodat het
+   * bevestigingsscherm geen enkel getal hoeft te tonen waarvan de gebruiker
+   * niet kan zien waar het vandaan komt.
+   */
+  toTransferBySource: Record<ConfirmationLineSource, number>;
 }
 
 export function buildConfirmationSummary(lines: ConfirmationLineInput[]): ConfirmationSummary {
@@ -65,5 +75,12 @@ export function buildConfirmationSummary(lines: ConfirmationLineInput[]): Confir
       .filter((line) => line.matchStatus === "NOT_FOUND" || line.matchStatus === "UNAVAILABLE")
       .map((line) => line.ingredientName),
     oldestPriceCheck,
+    toTransferBySource: toTransfer.reduce<Record<ConfirmationLineSource, number>>(
+      (counts, line) => {
+        counts[line.source] += 1;
+        return counts;
+      },
+      { MEAL: 0, FIXED: 0, MANUAL: 0, INVENTORY: 0 }
+    ),
   };
 }

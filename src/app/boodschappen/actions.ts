@@ -15,6 +15,8 @@ import {
 } from "@/lib/picnic/cartService";
 import { buildConfirmationSummary, type ConfirmationSummary } from "@/lib/picnic/confirmationSummary";
 import { describeLinePackaging, findShoppingListShortfalls, getGroceryMealEntries } from "@/lib/shoppingList";
+import { getDeliveryOverviewForHousehold } from "@/lib/picnic/deliveryStatus";
+import { formatSlotWindow } from "@/lib/picnic/deliverySlots";
 import { getHouseholdPortionScaleByDay } from "@/lib/household";
 import { getInventoryMap } from "@/lib/inventory";
 import { assertShoppingListAccess } from "@/lib/shoppingListAccess";
@@ -231,13 +233,40 @@ export async function removeBoodschappenLineThisWeek(formData: FormData) {
   redirect("/boodschappen#jullie-boodschappenlijst");
 }
 
-/** Bevestigingssamenvatting vóór het echt vullen van het Picnic-mandje (Fase 7/8). */
+export type ConfirmationDeliveryCheck = {
+  checkedAt: Date;
+  /** De eerstvolgende dagen waarop Picnic nog vrije tijdvakken heeft. */
+  days: Array<{ label: string; windows: string[] }>;
+  /** Minimale bestelwaarde zoals Picnic die meegeeft, of null als die onbekend is. */
+  minimumOrderValue: number | null;
+  error: "auth" | "other" | null;
+};
+
+export type PicnicConfirmationDetails = ConfirmationSummary & {
+  /** `null` zonder Picnic-koppeling — dan valt er niets te controleren. */
+  delivery: ConfirmationDeliveryCheck | null;
+};
+
+/** Hoeveel bezorgdagen het bevestigingsscherm noemt — genoeg om te zien dat het kan, kort genoeg om te lezen. */
+const CONFIRMATION_DELIVERY_DAYS = 2;
+
+/**
+ * Bevestigingssamenvatting vóór het echt vullen van het Picnic-mandje
+ * (Fase 7/8).
+ *
+ * Haalt op dit moment ook de bezorgmomenten opnieuw op. Dat is bewust hier en
+ * niet alleen bij het laden van de pagina: een scherm dat al even openstaat is
+ * een momentopname, en dit is het laatste moment waarop de gebruiker nog kan
+ * besluiten om te wachten. Faalt die controle, dan blokkeert dat het
+ * bevestigen niet — het mandje vullen is iets anders dan een bezorgmoment
+ * vastleggen, en dat laatste doet de app sowieso niet.
+ */
 export async function getPicnicConfirmationSummary(
   shoppingListId: string,
   rawScope: PicnicTransferScope = "all"
-): Promise<ConfirmationSummary> {
+): Promise<PicnicConfirmationDetails> {
   const scope = normalizeScope(rawScope);
-  await assertShoppingListAccess(shoppingListId);
+  const accessibleList = await assertShoppingListAccess(shoppingListId);
   const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
     where: { id: shoppingListId },
     include: { lines: { include: { ingredient: true, product: true } } },
@@ -245,9 +274,10 @@ export async function getPicnicConfirmationSummary(
   const lines =
     scope === "fixed" ? shoppingList.lines.filter((line) => QUICK_ORDER_SOURCES.includes(line.source)) : shoppingList.lines;
 
-  return buildConfirmationSummary(
+  const summary = buildConfirmationSummary(
     lines.map((line) => ({
       ingredientName: line.ingredient.name,
+      source: line.source,
       matchStatus: line.matchStatus,
       transferredToPicnicAt: line.transferredToPicnicAt,
       packageCount: line.product
@@ -268,6 +298,40 @@ export async function getPicnicConfirmationSummary(
         : null,
     }))
   );
+
+  const household = await prisma.household.findUniqueOrThrow({
+    where: { id: accessibleList.mealPlan.householdId },
+    select: { id: true, picnicAuthToken: true },
+  });
+  if (!household.picnicAuthToken) {
+    return { ...summary, delivery: null };
+  }
+
+  const preference = await prisma.picnicDeliveryPreference.findUnique({
+    where: { householdId: household.id },
+  });
+  const overview = await getDeliveryOverviewForHousehold({
+    householdId: household.id,
+    picnicAuthToken: household.picnicAuthToken,
+    preference,
+  });
+  const daysWithRoom = overview.groups.filter((group) => group.availableSlots.length > 0);
+
+  return {
+    ...summary,
+    delivery: {
+      checkedAt: overview.fetchedAt,
+      days: daysWithRoom.slice(0, CONFIRMATION_DELIVERY_DAYS).map((group) => ({
+        label: group.label,
+        windows: group.availableSlots.map(formatSlotWindow),
+      })),
+      minimumOrderValue:
+        daysWithRoom
+          .flatMap((group) => group.availableSlots)
+          .find((slot) => slot.minimumOrderValue !== undefined)?.minimumOrderValue ?? null,
+      error: overview.error,
+    },
+  };
 }
 
 export async function addToPicnicCart(
