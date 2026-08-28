@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Utensils } from "lucide-react";
 import type { OrderDay } from "@/lib/orderDays";
 import { setMealIncludedInGroceries } from "./mealDayActions";
+import DayToggleButton from "./DayToggleButton";
 
 export type MealDayOption = OrderDay & {
   /** Telt deze avond mee in de eerstvolgende bestelling? */
@@ -15,33 +16,18 @@ export type MealDayOption = OrderDay & {
 };
 
 function DayButton({ day }: { day: MealDayOption }) {
-  const base =
-    "flex min-w-[2.75rem] flex-col items-center gap-0.5 rounded-lg border px-2 py-1.5 text-center transition-colors";
-  const tone = day.included
-    ? "border-accent bg-accent text-accent-ink"
-    : "border-line bg-surface text-ink hover:bg-surface-2";
-  // Gestippeld = volgende week. Bewust zichtbaar: "dinsdag" na een bezorging
-  // op zaterdag is een andere dinsdag dan de gebruiker misschien denkt.
-  const nextWeek = day.isNextWeek && !day.included ? "border-dashed" : "";
-
   return (
     <form action={setMealIncludedInGroceries}>
       <input type="hidden" name="date" value={day.isoDate} />
       <input type="hidden" name="included" value={day.included ? "false" : "true"} />
-      <button
-        type="submit"
-        aria-label={`${day.fullLabel}: ${day.included ? "niet meenemen in deze bestelling" : "boodschappen meenemen"}`}
-        aria-pressed={day.included}
-        // Het onderscheid "deze week / volgende week" is niet af te leiden uit
-        // de zichtbare tekst (alleen uit een stippellijn), maar de e2e-test
-        // moet er wel gericht op kunnen selecteren.
-        data-order-day={day.isoDate}
-        data-next-week={day.isNextWeek ? "true" : "false"}
-        className={`${base} ${tone} ${nextWeek}`}
-      >
-        <span className={`text-[10px] ${day.included ? "text-accent-ink" : "text-ink-muted"}`}>{day.shortLabel}</span>
-        <span className="text-xs font-semibold tabular-nums">{day.dayNumber}</span>
-      </button>
+      <DayToggleButton
+        included={day.included}
+        shortLabel={day.shortLabel}
+        dayNumber={day.dayNumber}
+        fullLabel={day.fullLabel}
+        isoDate={day.isoDate}
+        isNextWeek={day.isNextWeek}
+      />
     </form>
   );
 }
