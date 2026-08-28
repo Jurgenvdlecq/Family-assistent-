@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { PicnicAuthError, PicnicClient } from "./client";
+import { parseCartItemCount } from "./cartState";
 import {
   parseDeliverySlotsResponse,
   findPreferredDeliverySlotStatus,
@@ -68,6 +69,12 @@ export type DeliveryOverview = {
   groups: DeliveryDayGroup[];
   /** Alleen gevuld als het huishouden een voorkeursmoment heeft ingesteld. */
   preferred: PreferredDeliverySlotStatus | null;
+  /**
+   * Hoeveel producten er op dit moment in het echte Picnic-mandje liggen, of
+   * `null` als dat niet met zekerheid te lezen was. Komt uit dezelfde aanroep
+   * als de bezorgmomenten.
+   */
+  cartItemCount: number | null;
   error: "auth" | "other" | null;
 };
 
@@ -89,12 +96,13 @@ export async function getDeliveryOverviewForHousehold(input: {
 }): Promise<DeliveryOverview> {
   const client = new PicnicClient(input.picnicAuthToken);
   try {
-    const raw = await client.getDeliverySlots();
+    const { cart, slots: raw } = await client.getCartAndDeliverySlots();
     await persistRefreshedToken(client, input.householdId, input.picnicAuthToken);
     const slots = parseDeliverySlotsResponse(raw);
     return {
       fetchedAt: new Date(),
       groups: groupDeliverySlotsByDay(slots),
+      cartItemCount: parseCartItemCount(cart),
       preferred: input.preference
         ? findPreferredDeliverySlotStatus({
             slots,
@@ -117,6 +125,7 @@ export async function getDeliveryOverviewForHousehold(input: {
       fetchedAt: new Date(),
       groups: [],
       preferred: null,
+      cartItemCount: null,
       error: error instanceof PicnicAuthError ? "auth" : "other",
     };
   }

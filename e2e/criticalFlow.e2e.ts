@@ -828,6 +828,52 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
     );
 
     await t.test(
+      "10e. Leeg Picnic-mandje terwijl er regels overgedragen zijn: de app vraagt of er besteld is (nieuwe functie)",
+      async () => {
+        // De app kan niet zien of er afgerekend is. Wat ze wel kan: merken dat
+        // het mandje leeg is terwijl zij er producten in heeft gelegd. Dan
+        // vraagt ze het, in plaats van een oranje kaart te laten staan tot de
+        // gebruiker er zelf aan denkt.
+        const shoppingList = await prisma.shoppingList.findFirstOrThrow({
+          where: { mealPlan: { householdId } },
+          include: { lines: true },
+        });
+        await prisma.shoppingList.update({
+          where: { id: shoppingList.id },
+          data: { orderConfirmedAt: null },
+        });
+        await prisma.shoppingListLine.update({
+          where: { id: shoppingList.lines[0].id },
+          data: { transferredToPicnicAt: new Date() },
+        });
+
+        // Het mandje buiten de app om leegmaken — precies het scenario
+        // "afgerekend in de Picnic-app zelf".
+        mockPicnic.addedProducts.length = 0;
+
+        await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
+        await page
+          .locator("text=Je Picnic-mandje is leeg — heb je besteld?")
+          .waitFor({ state: "visible", timeout: 15_000 });
+
+        await page.getByRole("button", { name: "Ja, besteld" }).click();
+        await page.getByRole("button", { name: "Bezig…" }).waitFor({ state: "hidden", timeout: 15_000 });
+
+        const confirmed = await prisma.shoppingList.findUniqueOrThrow({ where: { id: shoppingList.id } });
+        assert.ok(confirmed.orderConfirmedAt, "'Ja, besteld' moet de bestelling bevestigen");
+
+        // En daarna staat er een bonnetje in plaats van opnieuw een vraag.
+        await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
+        await page.locator("text=Besteld op").waitFor({ state: "visible", timeout: 15_000 });
+        const stillAsking = await page
+          .locator("text=Je Picnic-mandje is leeg — heb je besteld?")
+          .isVisible()
+          .catch(() => false);
+        assert.equal(stillAsking, false, "na bevestigen mag de vraag niet opnieuw verschijnen");
+      }
+    );
+
+    await t.test(
       "11. Een vaste boodschap verwijderen via 'toon volledige lijst': geblokkeerd zolang die al in het mandje ligt, daarna wel, zonder de sjabloon te raken",
       async () => {
         // Bewust als allerlaatste stap: "Aardappelen" (toegevoegd in stap 5)

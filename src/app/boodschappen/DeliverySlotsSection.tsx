@@ -2,6 +2,7 @@ import { Truck } from "lucide-react";
 import type { PicnicDeliveryPreference } from "@/generated/prisma/client";
 import { getDeliveryOverviewForHousehold } from "@/lib/picnic/deliveryStatus";
 import DeliverySlotsCard from "./DeliverySlotsCard";
+import OrderPlacedQuestion from "./OrderPlacedQuestion";
 
 const CARD = "mb-4 min-w-0 rounded-xl border border-line bg-surface p-3 text-xs";
 
@@ -33,14 +34,31 @@ export default async function DeliverySlotsSection({
   householdId,
   picnicAuthToken,
   preference,
+  shoppingListId,
+  mayAskOrderPlaced,
 }: {
   householdId: string;
   picnicAuthToken: string | null;
   preference: PicnicDeliveryPreference | null;
+  shoppingListId: string;
+  /**
+   * Staan er producten van deze lijst in het mandje waarvan nog niet bevestigd
+   * is dat ze besteld zijn? Alleen dán is de vraag "heb je besteld?" zinvol.
+   */
+  mayAskOrderPlaced: boolean;
 }) {
   const overview = picnicAuthToken
     ? await getDeliveryOverviewForHousehold({ householdId, picnicAuthToken, preference })
     : null;
 
-  return <DeliverySlotsCard preference={preference} overview={overview} />;
+  // Strikt `=== 0`: bij `null` (mandje niet met zekerheid te lezen) vragen we
+  // niets. Een verkeerd gelezen respons mag nooit tot deze vraag leiden.
+  const cartLooksEmpty = overview?.cartItemCount === 0;
+
+  return (
+    <>
+      {mayAskOrderPlaced && cartLooksEmpty && <OrderPlacedQuestion shoppingListId={shoppingListId} />}
+      <DeliverySlotsCard preference={preference} overview={overview} />
+    </>
+  );
 }

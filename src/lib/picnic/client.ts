@@ -220,14 +220,23 @@ export class PicnicClient {
    * `search()` versus `extractSearchResults()`).
    */
   async getDeliverySlots(): Promise<unknown> {
+    return (await this.getCartAndDeliverySlots()).slots;
+  }
+
+  /**
+   * Het mandje én de bezorgmomenten uit dezelfde aanroep. De app wil beide
+   * weten op hetzelfde moment (welke tijdvakken zijn er nog, en ligt er nog
+   * iets in het mandje) — dat kost zo één netwerkaanroep in plaats van twee.
+   */
+  async getCartAndDeliverySlots(): Promise<{ cart: unknown; slots: unknown }> {
     const cart = await this.requestJson("GET", "/cart");
     if (
       cart &&
       typeof cart === "object" &&
       Array.isArray((cart as { delivery_slots?: unknown }).delivery_slots)
     ) {
-      return (cart as { delivery_slots: unknown }).delivery_slots;
+      return { cart, slots: (cart as { delivery_slots: unknown }).delivery_slots };
     }
-    return this.requestJson("GET", "/cart/delivery_slots");
+    return { cart, slots: await this.requestJson("GET", "/cart/delivery_slots") };
   }
 }
