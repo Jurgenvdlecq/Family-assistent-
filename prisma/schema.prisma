@@ -74,6 +74,7 @@ model Household {
   learningPrompts        LearningPrompt[]
   dayRoutines            DayRoutine[]
   mealDayRules           MealDayRule[]
+  mealTemplates          MealTemplate[]
   pushSubscriptions      PushSubscription[]
   notificationPreferences NotificationPreference[]
   notificationDeliveryLogs NotificationDeliveryLog[]
@@ -128,15 +129,110 @@ model MealDayRule {
   fixedRecipeVariantId String?        @map("fixed_recipe_variant_id")
   /// Optioneel: kies bij voorkeur uit deze categorie in plaats van een vast gerecht.
   preferredCategory    RecipeCategory? @map("preferred_category")
+  /// Optioneel: stel deze avond samen uit componenten (aardappel + vlees + groente)
+  /// in plaats van één recept te kiezen.
+  mealTemplateId       String?        @map("meal_template_id")
   createdAt            DateTime       @default(now()) @map("created_at")
   updatedAt            DateTime       @updatedAt @map("updated_at")
 
   household          Household      @relation(fields: [householdId], references: [id], onDelete: Cascade)
   fixedRecipeVariant RecipeVariant? @relation("MealDayRuleFixedVariant", fields: [fixedRecipeVariantId], references: [id], onDelete: SetNull)
+  mealTemplate       MealTemplate?  @relation(fields: [mealTemplateId], references: [id], onDelete: SetNull)
 
   @@unique([householdId, dayOfWeek, weekParity])
   @@index([householdId])
   @@map("meal_day_rules")
+}
+
+// Een samengestelde maaltijd: "AVG" is geen gerecht maar een vorm — een
+// aardappelcomponent, een vleescomponent en een groentecomponent, elk met een
+// paar opties. Zo hoeft er niet voor elke combinatie (schnitzel + broccoli,
+// hamburger + sperziebonen, ...) een apart recept te bestaan, en kan de
+// planner de onderdelen los van elkaar afwisselen.
+model MealTemplate {
+  id          String   @id @default(uuid())
+  householdId String   @map("household_id")
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  household Household            @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  groups    MealComponentGroup[]
+  dayRules  MealDayRule[]
+  entries   MealPlanEntry[]
+
+  @@unique([householdId, name])
+  @@map("meal_templates")
+}
+
+// Eén onderdeel van een samengestelde maaltijd, met de opties die daarvoor in
+// aanmerking komen. `sortOrder` bepaalt de volgorde in de naam die de app
+// toont ("Schnitzel met aardappelblokjes en broccoli").
+model MealComponentGroup {
+  id             String            @id @default(uuid())
+  mealTemplateId String            @map("meal_template_id")
+  role           MealComponentRole
+  name           String
+  sortOrder      Int               @default(0) @map("sort_order")
+
+  mealTemplate MealTemplate          @relation(fields: [mealTemplateId], references: [id], onDelete: Cascade)
+  options      MealComponentOption[]
+
+  @@unique([mealTemplateId, role])
+  @@index([mealTemplateId])
+  @@map("meal_component_groups")
+}
+
+enum MealComponentRole {
+  BASE
+  PROTEIN
+  VEGETABLE
+  SIDE
+  SAUCE
+  OTHER
+
+  @@map("meal_component_role")
+}
+
+// Eén keuzemogelijkheid binnen een component, gekoppeld aan een ingrediënt.
+//
+// `quantityPerPortion` is bewust per persoon en niet "voor het hele gezin",
+// anders dan bij een recept: een component is per definitie iets wat je per
+// eter afmeet (één schnitzel, 200 gram aardappel). De behoefteberekening
+// vermenigvuldigt dit met het aantal aanwezige porties van die avond — zie
+// aggregateMealNeeds in src/lib/shoppingList.ts, waar beide vormen
+// samenkomen.
+model MealComponentOption {
+  id                   String @id @default(uuid())
+  mealComponentGroupId String @map("meal_component_group_id")
+  name                 String
+  ingredientId         String @map("ingredient_id")
+  quantityPerPortion   Float  @map("quantity_per_portion")
+  unit                 Unit
+
+  group      MealComponentGroup       @relation(fields: [mealComponentGroupId], references: [id], onDelete: Cascade)
+  ingredient Ingredient               @relation(fields: [ingredientId], references: [id])
+  choices    MealPlanEntryComponent[]
+
+  @@index([mealComponentGroupId])
+  @@map("meal_component_options")
+}
+
+// Welke opties de planner voor één avond heeft gekozen. Bewust een eigen
+// tabel en geen JSON-veld op de avond: hierop moet gequeryd kunnen worden
+// ("welke groente hadden we vorige week?") om afwisseling te bepalen.
+model MealPlanEntryComponent {
+  id                    String @id @default(uuid())
+  mealPlanEntryId       String @map("meal_plan_entry_id")
+  mealComponentOptionId String @map("meal_component_option_id")
+
+  mealPlanEntry MealPlanEntry       @relation(fields: [mealPlanEntryId], references: [id], onDelete: Cascade)
+  option        MealComponentOption @relation(fields: [mealComponentOptionId], references: [id], onDelete: Cascade)
+
+  @@unique([mealPlanEntryId, mealComponentOptionId])
+  @@index([mealPlanEntryId])
+  @@map("meal_plan_entry_components")
 }
 
 model HouseholdSession {
@@ -470,7 +566,12 @@ model MealPlanEntry {
   id                          String              @id @default(uuid())
   mealPlanId                  String              @map("meal_plan_id")
   dayOfWeek                   DayOfWeek           @map("day_of_week")
-  recipeVariantId             String              @map("recipe_variant_id")
+  // Optioneel sinds de samengestelde maaltijden: een avond is óf een recept,
+  // óf een samenstelling uit componenten (`mealTemplateId` + `components`).
+  // Alle bestaande rijen hebben een recept, dus deze kolom nullable maken
+  // verandert niets aan wat er al staat.
+  recipeVariantId             String?             @map("recipe_variant_id")
+  mealTemplateId              String?             @map("meal_template_id")
   source                      MealPlanEntrySource @default(AUTO) @map("source")
   status                      MealPlanEntryStatus @default(PROPOSED) @map("status")
   reason                      String?             @map("reason")
@@ -498,8 +599,10 @@ model MealPlanEntry {
   includedInGroceries         Boolean             @default(false) @map("included_in_groceries")
   updatedAt                   DateTime            @updatedAt @map("updated_at")
 
-  mealPlan            MealPlan       @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
-  recipeVariant       RecipeVariant  @relation(fields: [recipeVariantId], references: [id])
+  mealPlan            MealPlan                 @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
+  recipeVariant       RecipeVariant?           @relation(fields: [recipeVariantId], references: [id])
+  mealTemplate        MealTemplate?            @relation(fields: [mealTemplateId], references: [id], onDelete: SetNull)
+  components          MealPlanEntryComponent[]
   replacedFromVariant RecipeVariant? @relation("MealPlanEntryReplacedFrom", fields: [replacedFromRecipeVariantId], references: [id], onDelete: SetNull)
 
   @@unique([mealPlanId, dayOfWeek])
@@ -586,6 +689,7 @@ model Ingredient {
   inventoryItems         InventoryItem[]
   productPreferences     HouseholdProductPreference[]
   rejectedProductMatches RejectedProductMatch[]
+  mealComponentOptions   MealComponentOption[]
 
   @@map("ingredients")
 }

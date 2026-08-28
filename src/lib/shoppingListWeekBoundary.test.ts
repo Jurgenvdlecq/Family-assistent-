@@ -155,9 +155,10 @@ test("een gerecht wisselen op een avond in de volgende week werkt de lijst van d
     assert.ok(ingredientsBefore.size > 0, "testopzet: het oude gerecht moet regels opleveren");
 
     // Een ander gerecht kiezen voor diezelfde avond, met andere ingrediënten.
+    assert.ok(entry.recipeVariantId, "testopzet: deze avond hoort een recept te hebben");
     const otherVariant = await prisma.recipeVariant.findFirstOrThrow({
       where: {
-        id: { not: entry.recipeVariantId },
+        id: { not: entry.recipeVariantId ?? undefined },
         recipe: { ingredients: { none: { ingredientId: { in: [...ingredientsBefore] } } } },
       },
       include: { recipe: { include: { ingredients: true } } },

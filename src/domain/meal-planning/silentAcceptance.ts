@@ -3,7 +3,8 @@ import type { DayOfWeek, MealPlanEntrySource, MealPlanEntryStatus } from "@/gene
 export interface SilentAcceptanceEntry {
   id: string;
   dayOfWeek: DayOfWeek;
-  recipeVariantId: string;
+  /** `null` bij een samengestelde maaltijd — die heeft geen receptvariant. */
+  recipeVariantId: string | null;
   source: MealPlanEntrySource;
   status: MealPlanEntryStatus;
   /** Huishouden eet deze dag niet thuis — geen feedback/geleerd patroon voor een maaltijd die nooit gekookt is. */

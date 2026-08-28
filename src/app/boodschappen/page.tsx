@@ -28,6 +28,7 @@ import {
 } from "@/lib/shoppingList";
 import { prisma } from "@/lib/prisma";
 import { getHouseholdPortionScaleForDate } from "@/lib/household";
+import { mealEntryNeeds, mealEntryTitle } from "@/domain/meal-planning/mealEntry";
 import { getFixedGroceries } from "@/lib/fixedGroceries";
 import { getInventoryChecklist, getInventoryMap } from "@/lib/inventory";
 import { enrichShoppingListProductImages } from "@/lib/picnic/productEnrichment";
@@ -742,7 +743,7 @@ export default async function BoodschappenPage({
         ...day,
         included: entry?.includedInGroceries ?? false,
         skipped: entry?.skipped ?? false,
-        mealName: entry?.recipeVariant.recipe.title,
+        mealName: entry ? mealEntryTitle(entry) : undefined,
         reason: entry?.reason ?? undefined,
       };
     });
@@ -874,7 +875,12 @@ export default async function BoodschappenPage({
   const dayReviewCounts = new Map(
     mealPlan.entries.map((entry) => [
       entry.id,
-      entry.recipeVariant.recipe.ingredients.filter((ri) => mealReviewIds.has(ri.ingredientId)).length,
+      // Recept of samenstelling: beide leveren ingrediënten, alleen op een
+      // andere manier. De schaal doet er hier niet toe — het gaat om welke
+      // ingrediënten er zijn, niet hoeveel.
+      mealEntryNeeds(entry, { scale: 1, presentPortions: 1 }).filter((need) =>
+        mealReviewIds.has(need.ingredientId)
+      ).length,
     ])
   );
 
@@ -1529,12 +1535,26 @@ export default async function BoodschappenPage({
             <div className="mt-3 grid gap-4">
               {mealPlan.entries.map((entry) => {
                 const dayKey = DAY_KEY_BY_ENUM[entry.dayOfWeek];
-                const scale = portionScaleForDate(dateForDay(weekStart, dayKey)).scale;
+                const portions = portionScaleForDate(dateForDay(weekStart, dayKey));
+                const scale = portions.scale;
                 const dayReviewCount = dayReviewCounts.get(entry.id) ?? 0;
-                const dayCost = entry.recipeVariant.recipe.ingredients.reduce((total, ri) => {
-                  const line = mealLineByIngredientId.get(ri.ingredientId);
-                  const scaledNeed = { quantity: ri.quantity * scale, unit: ri.unit };
-                  return total + estimatedDayIngredientCost(scaledNeed, line?.product);
+                // Recept of samenstelling: dezelfde berekening, één ingang.
+                const dayNeeds = mealEntryNeeds(entry, portions);
+                // Namen komen uit de avond zelf: een ingrediënt kan namelijk
+                // helemaal geen regel op de lijst hebben (bijvoorbeeld omdat
+                // het al in voorraad is), en dan is er niets om de naam uit af
+                // te leiden.
+                const ingredientNameById = new Map<string, string>([
+                  ...(entry.recipeVariant?.recipe.ingredients ?? []).map(
+                    (ri) => [ri.ingredientId, ri.ingredient.name] as const
+                  ),
+                  ...entry.components.map(
+                    (component) => [component.option.ingredientId, component.option.ingredient.name] as const
+                  ),
+                ]);
+                const dayCost = dayNeeds.reduce((total, need) => {
+                  const line = mealLineByIngredientId.get(need.ingredientId);
+                  return total + estimatedDayIngredientCost({ quantity: need.quantity, unit: need.unit }, line?.product);
                 }, 0);
                 return (
                   <article key={entry.id} className="rounded-xl border border-line bg-surface p-4">
@@ -1542,7 +1562,7 @@ export default async function BoodschappenPage({
                       <div className="min-w-0">
                         <p className="text-xs font-medium uppercase tracking-wide text-accent">{DAY_LABELS[dayKey]}</p>
                         <h3 className="mt-0.5 line-clamp-2 font-semibold text-ink">
-                          {entry.recipeVariant.recipe.title}
+                          {mealEntryTitle(entry)}
                         </h3>
                         <p className="mt-1 text-xs text-ink-faint">
                           {scale === 1 ? "Normale porties" : `${Math.round(scale * 100)}% van normale porties`}
@@ -1570,16 +1590,18 @@ export default async function BoodschappenPage({
                       </div>
                     </div>
                     <div className="grid gap-2">
-                      {entry.recipeVariant.recipe.ingredients.map((ri) => {
-                        const line = mealLineByIngredientId.get(ri.ingredientId);
-                        const scaledNeed = { quantity: ri.quantity * scale, unit: ri.unit };
+                      {dayNeeds.map((need) => {
+                        const ingredientName =
+                          ingredientNameById.get(need.ingredientId) ?? "Onbekend ingrediënt";
+                        const line = mealLineByIngredientId.get(need.ingredientId);
+                        const scaledNeed = { quantity: need.quantity, unit: need.unit };
                         const candidates = line ? candidatesByIngredient.get(line.ingredientId) ?? [] : [];
                         const alternatives = candidates.filter((candidate) => candidate.id !== line?.product?.id).slice(0, 5);
                         const statusMessage =
                           line?.id === focusedLineId && params.status ? STATUS_MESSAGES[params.status] : undefined;
                         return (
                           <div
-                            key={ri.id}
+                            key={`${need.ingredientId}:${need.unit}`}
                             id={line ? `day-line-${line.id}` : undefined}
                             className={`scroll-mt-6 rounded-lg border bg-surface-2 p-3 transition-colors ${
                               line?.id === focusedLineId ? "border-accent ring-2 ring-accent/20" : "border-line"
@@ -1598,10 +1620,10 @@ export default async function BoodschappenPage({
                             )}
                             <div className="flex min-w-0 items-center justify-between gap-3">
                               <div className="flex min-w-0 items-center gap-3">
-                                <ProductImage product={line?.product} label={ri.ingredient.name} />
+                                <ProductImage product={line?.product} label={ingredientName} />
                                 <div className="min-w-0">
                                   <p className="line-clamp-2 text-sm font-medium text-ink">
-                                    {line?.product?.name ?? ri.ingredient.name}
+                                    {line?.product?.name ?? ingredientName}
                                   </p>
                                   <p className="mt-0.5 text-xs text-ink-faint">
                                     {describePackage(line?.product)}

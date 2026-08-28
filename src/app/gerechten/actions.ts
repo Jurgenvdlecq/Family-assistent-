@@ -164,39 +164,50 @@ export async function replaceMealPlanEntry(formData: FormData) {
     if (currentEntry.recipeVariantId === recipeVariantId) {
       redirectToGerechten(dayKey, direction, wishText, "meal-unchanged", isNextWeekPlan(weekStart));
     }
-    const replacedVariant = await prisma.recipeVariant.findUniqueOrThrow({
-      where: { id: currentEntry.recipeVariantId },
-      include: { recipe: { select: { category: true, title: true } } },
-    });
-    await logFeedbackEvent({
-      householdId,
-      subjectType: "RECIPE_VARIANT",
-      subjectId: currentEntry.recipeVariantId,
-      eventType: "REPLACED",
-      reason: replacementReason,
-      explicit: true,
-      context: { dayOfWeek: dayEnum, reasonLabel: labelFeedbackReason(replacementReason) },
-    });
-    await recordRepeatedMealReplacement({
-      householdId,
-      dayOfWeek: dayEnum,
-      replacedRecipeVariantId: currentEntry.recipeVariantId,
-      replacementRecipeVariantId: recipeVariantId,
-      replacedRecipeCategory: replacedVariant.recipe.category,
-      replacedRecipeTitle: replacedVariant.recipe.title,
-      reason: replacementReason,
-    });
-    await recalculateVariantConfidence(householdId, currentEntry.recipeVariantId);
+    // Feedback en leren gaan over het gerecht dat je wegklikt. Stond er een
+    // samengestelde maaltijd (geen recept), dan is er niets om over te leren:
+    // er ís geen variant die "vervangen" is. De wissel zelf gaat gewoon door.
+    const replacedVariantId = currentEntry.recipeVariantId;
+    if (replacedVariantId) {
+      const replacedVariant = await prisma.recipeVariant.findUniqueOrThrow({
+        where: { id: replacedVariantId },
+        include: { recipe: { select: { category: true, title: true } } },
+      });
+      await logFeedbackEvent({
+        householdId,
+        subjectType: "RECIPE_VARIANT",
+        subjectId: replacedVariantId,
+        eventType: "REPLACED",
+        reason: replacementReason,
+        explicit: true,
+        context: { dayOfWeek: dayEnum, reasonLabel: labelFeedbackReason(replacementReason) },
+      });
+      await recordRepeatedMealReplacement({
+        householdId,
+        dayOfWeek: dayEnum,
+        replacedRecipeVariantId: replacedVariantId,
+        replacementRecipeVariantId: recipeVariantId,
+        replacedRecipeCategory: replacedVariant.recipe.category,
+        replacedRecipeTitle: replacedVariant.recipe.title,
+        reason: replacementReason,
+      });
+      await recalculateVariantConfidence(householdId, replacedVariantId);
+    }
+    // Een avond is óf een recept óf een samenstelling: het sjabloon en de
+    // gekozen componenten moeten dus weg, anders blijft er een half
+    // opgeruimde avond staan die twee dingen tegelijk beweert.
+    await prisma.mealPlanEntryComponent.deleteMany({ where: { mealPlanEntryId: currentEntry.id } });
     await prisma.mealPlanEntry.update({
       where: { id: currentEntry.id },
       data: {
         recipeVariantId,
+        mealTemplateId: null,
         source: "MANUAL",
         status: "ACCEPTED",
         reason: "Je hebt dit zelf gekozen.",
         score: null,
         confidenceLevel: "CERTAIN",
-        replacedFromRecipeVariantId: currentEntry.recipeVariantId,
+        replacedFromRecipeVariantId: replacedVariantId,
       },
     });
   } else {

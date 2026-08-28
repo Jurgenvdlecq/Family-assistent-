@@ -204,19 +204,25 @@ export async function setLooseMealForDay(formData: FormData) {
   const dayEnum = DAY_ENUM[dayKey];
   const currentEntry = mealPlan.entries.find((entry) => entry.dayOfWeek === dayEnum);
   if (currentEntry) {
-    await logFeedbackEvent({
-      householdId,
-      subjectType: "RECIPE_VARIANT",
-      subjectId: currentEntry.recipeVariantId,
-      eventType: "REPLACED",
-      reason: "ONLY_THIS_TIME",
-      explicit: true,
-      context: { dayOfWeek: dayEnum, source: "loose_meal" },
-    });
+    // Alleen als er een gerecht stond valt er iets te "vervangen" — bij een
+    // samengestelde maaltijd is er geen variant om feedback over te geven.
+    if (currentEntry.recipeVariantId) {
+      await logFeedbackEvent({
+        householdId,
+        subjectType: "RECIPE_VARIANT",
+        subjectId: currentEntry.recipeVariantId,
+        eventType: "REPLACED",
+        reason: "ONLY_THIS_TIME",
+        explicit: true,
+        context: { dayOfWeek: dayEnum, source: "loose_meal" },
+      });
+    }
+    await prisma.mealPlanEntryComponent.deleteMany({ where: { mealPlanEntryId: currentEntry.id } });
     await prisma.mealPlanEntry.update({
       where: { id: currentEntry.id },
       data: {
         recipeVariantId,
+        mealTemplateId: null,
         source: "ASSISTANT",
         status: "ACCEPTED",
         reason: "Losse maaltijd die je hebt ingevuld.",
