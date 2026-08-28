@@ -426,3 +426,58 @@ test("clearPicnicCartForShoppingList: geeft een resultaat terug i.p.v. te gooien
     await cleanup(household.id);
   }
 });
+
+/** Een weekplan voor de vólgende week met één avond aangevinkt voor de boodschappen. */
+async function makeNextWeekPlanWithIncludedDay(householdId: string) {
+  const variant = await prisma.recipeVariant.findFirstOrThrow({});
+  const nextWeek = getCurrentWeekStart();
+  nextWeek.setDate(nextWeek.getDate() + 7);
+  return prisma.mealPlan.create({
+    data: {
+      householdId,
+      weekStart: nextWeek,
+      entries: { create: [{ dayOfWeek: "TUESDAY", recipeVariantId: variant.id, includedInGroceries: true }] },
+    },
+    include: { entries: true },
+  });
+}
+
+test("maaltijdboodschappen overdragen zet de dagkeuze van de volgende week terug", async () => {
+  // Anders stelt de app hetzelfde, al bezorgde gerecht opnieuw voor zodra die
+  // week de huidige wordt — een verse lijst kent de overdrachtsmarkeringen van
+  // de vorige bestelling niet.
+  const { household, shoppingList } = await makeHouseholdWithShoppingListLine("Cart — dagkeuze vrijgeven");
+  const nextWeekPlan = await makeNextWeekPlanWithIncludedDay(household.id);
+  const originalFetch = global.fetch;
+  global.fetch = fakeAddProductFetch([]);
+  try {
+    await addShoppingListToPicnicCart(shoppingList.id);
+
+    const entry = await prisma.mealPlanEntry.findUniqueOrThrow({ where: { id: nextWeekPlan.entries[0].id } });
+    assert.equal(entry.includedInGroceries, false);
+  } finally {
+    global.fetch = originalFetch;
+    await cleanup(household.id);
+  }
+});
+
+test("een snelle bestelling zonder maaltijdregels laat de dagkeuze met rust", async () => {
+  // "Vaste boodschappen + losse toevoegingen" gaat niet over het avondeten,
+  // dus die overdracht mag de gekozen avonden niet stilzwijgend uitzetten.
+  const { household, shoppingList } = await makeHouseholdWithShoppingListLine("Cart — snelle bestelling");
+  const nextWeekPlan = await makeNextWeekPlanWithIncludedDay(household.id);
+  const originalFetch = global.fetch;
+  global.fetch = fakeAddProductFetch([]);
+  try {
+    // De lijst bevat alleen een MEAL-regel, dus met deze scope wordt er niets
+    // overgedragen — precies het geval dat de dagkeuze niet mag raken.
+    const result = await addShoppingListToPicnicCart(shoppingList.id, { onlySources: ["FIXED", "MANUAL"] });
+    assert.equal(result.added.length, 0, "testopzet: er mag niets overgedragen zijn");
+
+    const entry = await prisma.mealPlanEntry.findUniqueOrThrow({ where: { id: nextWeekPlan.entries[0].id } });
+    assert.equal(entry.includedInGroceries, true, "de gekozen avond moet gewoon blijven staan");
+  } finally {
+    global.fetch = originalFetch;
+    await cleanup(household.id);
+  }
+});
