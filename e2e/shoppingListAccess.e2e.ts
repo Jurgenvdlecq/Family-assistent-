@@ -94,12 +94,17 @@ test("addManualProduct weigert een shoppingListId van een ander huishouden", { t
       await pageA.getByRole("button", { name: "Openen" }).click();
       await pageA.waitForURL(`${server.baseURL}/`, { timeout: 15_000 });
 
-      await pageA.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load", timeout: 90_000 });
-      const searchInput = pageA.getByPlaceholder("Zoek een product, bv. chips");
-      await searchInput.waitFor({ state: "visible", timeout: 15_000 });
-      await searchInput.fill("aardappelen");
-      await pageA.getByRole("button", { name: "Zoeken bij Picnic" }).first().click();
-      await pageA.waitForURL((u) => u.searchParams.get("manualQ") === "aardappelen", { timeout: 15_000 });
+      // Het zoekveld is sinds "Nog iets nodig?" geen permanent kader meer maar
+      // de kies-zelf-stap: die verschijnt zodra er een zoekopdracht in de URL
+      // staat. Daar meteen naartoe, want deze test gaat over het formulier dat
+      // er dán staat, niet over de weg ernaartoe.
+      await pageA.goto(`${server.baseURL}/boodschappen?manualQ=aardappelen#quick-add-product`, {
+        waitUntil: "load",
+        timeout: 90_000,
+      });
+      await pageA
+        .getByPlaceholder("Zoek een product, bv. chips")
+        .waitFor({ state: "visible", timeout: 15_000 });
 
       // #quick-add-product bevat zowel het zoekformulier (geen
       // shoppingListId-veld) als, per zoekresultaat, een eigen

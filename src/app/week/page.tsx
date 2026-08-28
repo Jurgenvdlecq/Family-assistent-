@@ -2,10 +2,7 @@ import Link from "next/link";
 import {
   CalendarDays,
   CheckCircle2,
-  ClipboardCheck,
   Search,
-  ShoppingBasket,
-  ShoppingCart,
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
@@ -13,8 +10,6 @@ import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { getHouseholdMealParticipantsByDay } from "@/lib/household";
 import { ensureMealPlan } from "@/lib/mealPlan";
-import { getAttentionItemsForMealPlan } from "@/lib/attention";
-import type { AttentionItem, AttentionItemType } from "@/domain/attention/attentionItems";
 import {
   getCurrentWeekStart,
   formatWeekRange,
@@ -39,7 +34,6 @@ import {
 } from "@/lib/categoryStyle";
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
-import AddToPicnicCart from "../boodschappen/AddToPicnicCart";
 import { getPendingLearningPrompts } from "@/domain/learning/patterns";
 import {
   answerSmartLearningPrompt,
@@ -102,60 +96,25 @@ const PERSONAL_STANCE_TONES = {
 
 const PERSONAL_STANCES = ["LIKED", "SOMETIMES", "RATHER_NOT", "NEVER"] as const;
 
-const ATTENTION_ICONS: Record<AttentionItemType, typeof ClipboardCheck> = {
-  WEEK_MENU_READY_NO_GROCERIES: ShoppingBasket,
-  PRODUCT_REVIEW_OPEN: ClipboardCheck,
-  GROCERIES_READY_NOT_SENT_TO_PICNIC: CheckCircle2,
-  PICNIC_CART_FILLED_NOT_CONFIRMED: ShoppingCart,
-};
 
 /**
- * De homepage toont altijd precies één tegel (Fase 12: één duidelijke
- * primaire actie per scherm) — leervragen gaan voor (bestaande, hogere
- * prioriteit, geen onderdeel van de attention-laag/pushmeldingen uit
- * WP69), daarna het belangrijkste attention-item (zelfde bron als de
- * latere pushscheduler, WP69), en anders een neutrale standaardtegel.
+ * De weekpagina toont nog één tegel, en die gaat uitsluitend over leervragen.
+ *
+ * De aandachtsmeldingen stonden hier ook, maar dat was dubbelop geworden: sinds
+ * boodschappen de startpagina is, staat elk van die vier situaties dáár al op
+ * z'n eigen plek — de controleknop bij de amberen "producten vragen aandacht"-
+ * balk, en de twee Picnic-situaties in `AddToPicnicCart` zelf, met de echte
+ * knop erbij in plaats van een verwijzing. Ze hier herhalen betekende twee
+ * plekken die hetzelfde beweren en uit elkaar kunnen lopen. De onderliggende
+ * `getAttentionItems` blijft ongemoeid: de pushlaag leest daar nog uit.
  */
-function nextStepCopy(input: {
-  learningPromptCount: number;
-  attentionItem: AttentionItem | undefined;
-  orderConfirmed: boolean;
-}): { icon: LucideIcon; title: string; body: string; href?: string; cta?: string } {
-  if (input.learningPromptCount > 0) {
-    return {
-      icon: Sparkles,
-      title: "Ik heb een korte vraag",
-      body: "Beantwoord maximaal twee leervragen, dan kan ik beter begrijpen waarom iets wel of niet blijft staan.",
-      href: "#leervragen",
-      cta: "Vraag bekijken",
-    };
-  }
-  if (input.attentionItem) {
-    const item = input.attentionItem;
-    return {
-      icon: ATTENTION_ICONS[item.type],
-      title: item.title,
-      body: item.body,
-      href: item.href,
-      cta: item.cta,
-    };
-  }
-  if (input.orderConfirmed) {
-    // Eindtoestand (UX-review): na "ik heb besteld" is er niets meer te doen
-    // — dat mag de kaart dan ook gewoon zeggen, i.p.v. opnieuw een taak te
-    // suggereren. Bewust zonder knop: geen taak, geen call-to-action.
-    return {
-      icon: CheckCircle2,
-      title: "Alles is geregeld voor deze week",
-      body: "De boodschappen zijn besteld. Wil je toch nog iets aanpassen, dan kan dat gewoon via Boodschappen.",
-    };
-  }
+function learningPromptCard(): { icon: LucideIcon; title: string; body: string; href: string; cta: string } {
   return {
-    icon: ClipboardCheck,
-    title: "Boodschappen staan klaar",
-    body: "Loop de lijst nog even na. Vertrouwde keuzes hoeven weinig aandacht te vragen.",
-    href: "/boodschappen",
-    cta: "Boodschappen bekijken",
+    icon: Sparkles,
+    title: "Ik heb een korte vraag",
+    body: "Beantwoord maximaal twee leervragen, dan kan ik beter begrijpen waarom iets wel of niet blijft staan.",
+    href: "#leervragen",
+    cta: "Vraag bekijken",
   };
 }
 
@@ -223,7 +182,7 @@ export default async function Home({
   if (!mealPlan) {
     throw new Error("Weekplanning kon niet worden geladen.");
   }
-  const [participantsByDay, learningPrompts, dayRoutines, shoppingListForPicnic] = await Promise.all([
+  const [participantsByDay, learningPrompts, dayRoutines] = await Promise.all([
     getHouseholdMealParticipantsByDay(household.id),
     getPendingLearningPrompts(
       household.id,
@@ -233,26 +192,10 @@ export default async function Home({
       where: { householdId: household.id },
       include: { recipeVariant: { include: { recipe: true } } },
     }),
-    // Alleen nodig voor de "Bestel nu"-actie hieronder (rechtstreeks vanaf
-    // de startpagina het Picnic-mandje vullen/bestelling bevestigen, zonder
-    // eerst naar /boodschappen te hoeven navigeren) — bewust een losse,
-    // gerichte query i.p.v. ensureShoppingList (die zou een lijst
-    // aanmaken/opbouwen, wat hier niet de bedoeling is: als er nog geen
-    // lijst is, is dat toch een ander scherm se taak).
-    prisma.shoppingList.findUnique({
-      where: { mealPlanId: mealPlan.id },
-      select: {
-        id: true,
-        orderConfirmedAt: true,
-        lines: { select: { source: true, transferredToPicnicAt: true } },
-      },
-    }),
   ]);
   const routineByDay = new Map(
     dayRoutines.map((routine) => [routine.dayOfWeek, routine]),
   );
-  const attentionItems = await getAttentionItemsForMealPlan(mealPlan.id, mealPlan.createdAt);
-  const attentionItem = attentionItems[0];
   const mealVariantIds = mealPlan.entries.map((entry) => entry.recipeVariantId);
   const mealCategoryIds = [
     ...new Set(
@@ -295,32 +238,8 @@ export default async function Home({
   const greetingName = household.persons[0]?.name ?? household.name;
   const greeting = timeOfDayGreeting();
   const defaultWishDayKey = currentDayKey();
-  const nextStep = nextStepCopy({
-    learningPromptCount: learningPrompts.length,
-    attentionItem,
-    orderConfirmed: shoppingListForPicnic?.orderConfirmedAt != null,
-  });
+  const nextStep = learningPromptCard();
   const NextStepIcon = nextStep.icon;
-
-  // Vanuit deze twee statussen is "naar Picnic" letterlijk de enige
-  // vervolgstap — reken dan meteen hier af i.p.v. eerst door te sturen naar
-  // /boodschappen, dat daar dezelfde knop nog een keer zou tonen. Nooit
-  // de bestelling zelf plaatsen (dat blijft altijd in de echte Picnic-app,
-  // bewust zo gehouden) — AddToPicnicCart vult alleen het mandje.
-  const showInlinePicnicAction =
-    shoppingListForPicnic &&
-    (attentionItem?.type === "GROCERIES_READY_NOT_SENT_TO_PICNIC" ||
-      attentionItem?.type === "PICNIC_CART_FILLED_NOT_CONFIRMED");
-  const picnicHasTransferredLines =
-    shoppingListForPicnic?.lines.some((line) => line.transferredToPicnicAt !== null) ?? false;
-  const picnicFixedPendingCount =
-    shoppingListForPicnic?.lines.filter(
-      (line) => line.source === "FIXED" && line.transferredToPicnicAt === null
-    ).length ?? 0;
-  const picnicManualPendingCount =
-    shoppingListForPicnic?.lines.filter(
-      (line) => line.source === "MANUAL" && line.transferredToPicnicAt === null
-    ).length ?? 0;
 
   const priorFeedback = await prisma.feedbackEvent.findMany({
     where: {
@@ -365,42 +284,28 @@ export default async function Home({
           Dit is jullie week. Corrigeer alleen wat niet klopt, dan regel ik de
           rest.
         </p>
-        <section className="mb-4 rounded-xl border border-accent/30 bg-surface p-4">
-          <div className="flex min-w-0 gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
-              <NextStepIcon size={18} />
-            </div>
-            <div className="min-w-0 flex-1">
-              {/* Bij "bestelling afronden" toont AddToPicnicCart hieronder
-                  zelf al vrijwel dezelfde titel/uitleg ("Rond je bestelling
-                  af in Picnic...") — die dubbel tonen zou verwarrend zijn,
-                  dus laat de kaart hier stil zijn en spreekt de component. */}
-              {attentionItem?.type !== "PICNIC_CART_FILLED_NOT_CONFIRMED" && (
-                <>
-                  <p className="font-semibold text-ink">{nextStep.title}</p>
-                  <p className="mt-1 text-sm text-ink-muted">{nextStep.body}</p>
-                </>
-              )}
-              {showInlinePicnicAction && shoppingListForPicnic ? (
-                <AddToPicnicCart
-                  shoppingListId={shoppingListForPicnic.id}
-                  connected={Boolean(household.picnicAuthToken)}
-                  hasTransferredLines={picnicHasTransferredLines}
-                  orderConfirmed={shoppingListForPicnic.orderConfirmedAt !== null}
-                  fixedCount={picnicFixedPendingCount}
-                  manualCount={picnicManualPendingCount}
-                />
-              ) : nextStep.href && nextStep.cta ? (
+        {/* Alleen nog de leervraag-tegel. De bestelacties stonden hier ook,
+            maar die horen bij de boodschappenpagina — daar staat de échte knop,
+            in plaats van een verwijzing ernaartoe. */}
+        {learningPrompts.length > 0 && (
+          <section className="mb-4 rounded-xl border border-accent/30 bg-surface p-4">
+            <div className="flex min-w-0 gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
+                <NextStepIcon size={18} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-ink">{nextStep.title}</p>
+                <p className="mt-1 text-sm text-ink-muted">{nextStep.body}</p>
                 <Link
                   href={nextStep.href}
                   className="mt-3 inline-flex rounded-lg bg-accent px-3 py-2 text-sm font-medium text-accent-ink hover:opacity-90"
                 >
                   {nextStep.cta}
                 </Link>
-              ) : null}
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        )}
 
         {learningPrompts.length > 0 && (
           <div id="leervragen" className="mb-6 grid gap-3">
