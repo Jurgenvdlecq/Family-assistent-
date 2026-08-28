@@ -831,23 +831,99 @@ model Product {
   // ingrediënt-eenheid (zie src/lib/quantity/parsePackageSize.ts); dan is
   // handmatige controle nodig in plaats van een geraden waarde.
   packageQuantity   Float?          @map("package_quantity")
+  // De laatst bekende prijs. Blijft bestaan zodat alle bestaande schermen
+  // ongewijzigd blijven werken; de prijsgeschiedenis staat in PriceObservation.
   price             Decimal?        @db.Decimal(10, 2)
   lastSeenAvailable DateTime?       @map("last_seen_available")
+  // Klasse van het product (huismerk, A-merk, bio, ...). Zie QualityTier.
+  qualityTier       QualityTier?    @map("quality_tier")
+  // Barcode. Vandaag vult alleen Albert Heijn dit; Dirk geeft hem niet en van
+  // Picnic is het onbekend. Daarom bewust géén hoofdsleutel: een EAN tilt een
+  // match van "waarschijnlijk" naar "zeker" als beide kanten hem hebben, meer
+  // niet. De ruggengraat blijft het ingrediënt.
+  gtin              String?
 
   ingredient           Ingredient?                  @relation(fields: [ingredientId], references: [id])
   shoppingListLines    ShoppingListLine[]
   householdPreferences HouseholdProductPreference[]
   rejections           RejectedProductMatch[]
+  priceObservations    PriceObservation[]
 
   @@unique([ingredientId, provider, externalRef])
   @@index([ingredientId])
+  @@index([ingredientId, provider])
+  @@index([gtin])
   @@map("products")
 }
 
+// Eén waargenomen prijs op één moment.
+//
+// Prijs is bewust een waarneming in de tijd en geen eigenschap van een
+// product. Dat maakt drie dingen mogelijk die anders niet kunnen: een
+// vergelijking is dateerbaar ("prijzen van gisteren"), een nep-korting is
+// herkenbaar (was de van-prijs er vorige maand ook al?), en een verouderde
+// prijs kan nooit stilzwijgend als actueel op het scherm komen.
+model PriceObservation {
+  id            String            @id @default(uuid())
+  productId     String            @map("product_id")
+  price         Decimal           @db.Decimal(10, 2)
+  /// De van-prijs bij een actie; `null` als er geen actie is.
+  wasPrice      Decimal?          @map("was_price") @db.Decimal(10, 2)
+  /// Genormaliseerd per liter/kilo/stuk, zodat verpakkingsgroottes vergelijkbaar zijn.
+  unitPrice     Decimal?          @map("unit_price") @db.Decimal(10, 4)
+  unitPriceUnit Unit?             @map("unit_price_unit")
+  promoType     PromoType         @default(GEEN) @map("promo_type")
+  /// Zoals de winkel het opschrijft: "1+1 gratis", "2e halve prijs".
+  promoLabel    String?           @map("promo_label")
+  promoUntil    DateTime?         @map("promo_until")
+  observedAt    DateTime          @default(now()) @map("observed_at")
+  source        ObservationSource
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, observedAt])
+  @@map("price_observations")
+}
+
+// Bij welke winkel een product hoort. PICNIC is de enige waar de app ook
+// daadwerkelijk kan bestellen; AH en DIRK leveren alleen inzicht in wat de
+// lijst daar zou kosten.
 enum ProductProvider {
   PICNIC
+  AH
+  DIRK
 
   @@map("product_provider")
+}
+
+// In welke klasse een product valt. Nodig omdat "goedkoper" zonder klasse
+// misleidend is: verse melk vervangen door houdbare melk levert 34% korting
+// op die niemand gevraagd heeft. `null` betekent expliciet "niet vast te
+// stellen" — en dat is een reden om níét te vergelijken, geen reden om aan te
+// nemen dat het wel goed zit.
+enum QualityTier {
+  BUDGET
+  STANDAARD
+  PREMIUM
+  BIO
+
+  @@map("quality_tier")
+}
+
+enum PromoType {
+  GEEN
+  BONUS
+  X_VOOR_Y
+  VOLUME
+
+  @@map("promo_type")
+}
+
+enum ObservationSource {
+  API
+  SCRAPE
+
+  @@map("observation_source")
 }
 
 // Vervangt het generieke gebruik van Preference{subjectType: PRODUCT} met
