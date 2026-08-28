@@ -481,3 +481,35 @@ test("een snelle bestelling zonder maaltijdregels laat de dagkeuze met rust", as
     await cleanup(household.id);
   }
 });
+
+test("mandje legen bouwt de lijst opnieuw op, zodat er niets van de vorige bestelling blijft hangen", async () => {
+  // Gebruikersmelding: na het bestellen stonden er producten op de lijst
+  // terwijl er geen enkele avond aangevinkt was. Ze bleven staan omdat ze in
+  // het echte Picnic-mandje lagen — terecht — maar na het legen van dat mandje
+  // hoort de lijst weer te kloppen met wat er nú gekozen is.
+  const { household, shoppingList } = await makeHouseholdWithShoppingListLine("Cart — legen bouwt opnieuw op");
+  const originalFetch = global.fetch;
+  global.fetch = fakeAddProductFetch([]);
+  try {
+    await addShoppingListToPicnicCart(shoppingList.id);
+    // Niemand kookt meer op die avond: de maaltijdregel heeft geen basis meer.
+    await prisma.mealPlanEntry.updateMany({
+      where: { mealPlan: { householdId: household.id } },
+      data: { includedInGroceries: false },
+    });
+
+    const beforeClear = await prisma.shoppingListLine.count({ where: { shoppingListId: shoppingList.id } });
+    assert.ok(beforeClear > 0, "testopzet: de regel ligt in het mandje en blijft dus staan");
+
+    const result = await clearPicnicCartForShoppingList(shoppingList.id);
+    assert.equal(result.ok, true);
+
+    const remaining = await prisma.shoppingListLine.count({
+      where: { shoppingList: { mealPlanId: shoppingList.mealPlanId }, source: "MEAL" },
+    });
+    assert.equal(remaining, 0, "na het legen mag er geen maaltijdregel meer staan zonder aangevinkte avond");
+  } finally {
+    global.fetch = originalFetch;
+    await cleanup(household.id);
+  }
+});
