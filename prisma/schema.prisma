@@ -837,6 +837,13 @@ model Product {
   lastSeenAvailable DateTime?       @map("last_seen_available")
   // Klasse van het product (huismerk, A-merk, bio, ...). Zie QualityTier.
   qualityTier       QualityTier?    @map("quality_tier")
+  // Waar dit product gegarandeerd vrij van is, in het gecontroleerde
+  // vocabulaire van src/lib/dietaryRestrictions.ts. Alleen gevuld door
+  // winkels die dat gestructureerd meegeven (vandaag: Albert Heijn), en
+  // alleen met wat expliciet FREE_FROM is — "kan sporen bevatten" is bij een
+  // allergie geen garantie en telt hier dus niet mee. Leeg betekent
+  // "onbekend", nooit "bevat het".
+  freeFromAllergens String[]        @default([]) @map("free_from_allergens")
   // Barcode. Vandaag vult alleen Albert Heijn dit; Dirk geeft hem niet en van
   // Picnic is het onbekend. Daarom bewust géén hoofdsleutel: een EAN tilt een
   // match van "waarschijnlijk" naar "zeker" als beide kanten hem hebben, meer

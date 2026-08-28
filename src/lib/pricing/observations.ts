@@ -72,6 +72,7 @@ export async function recordObservedProduct(input: {
       price: product.price,
       qualityTier,
       gtin: product.gtin,
+      freeFromAllergens: product.freeFromAllergens,
       picnicImageId: product.provider === "PICNIC" ? product.imageId : null,
       lastSeenAvailable: observedAt,
     },
@@ -86,6 +87,9 @@ export async function recordObservedProduct(input: {
       // Een barcode die er al is nooit wissen: als een provider hem een keer
       // niet meestuurt, is dat geen bewijs dat hij niet bestaat.
       ...(product.gtin ? { gtin: product.gtin } : {}),
+      // Alleen overschrijven als de winkel er iets over zei: een leeg antwoord
+      // is geen bewijs dat het product de allergeen wél bevat.
+      ...(product.freeFromAllergens.length > 0 ? { freeFromAllergens: product.freeFromAllergens } : {}),
       lastSeenAvailable: observedAt,
     },
   });

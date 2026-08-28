@@ -30,6 +30,7 @@ function ahProduct(overrides: Partial<ProviderProduct> = {}): ProviderProduct {
     promoUntil: null,
     gtin: "08710400003601",
     labels: [],
+    freeFromAllergens: [],
     imageId: null,
     ...overrides,
   };
