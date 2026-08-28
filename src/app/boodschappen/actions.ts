@@ -17,7 +17,7 @@ import { buildConfirmationSummary, type ConfirmationSummary } from "@/lib/picnic
 import { describeLinePackaging, findShoppingListShortfalls, getGroceryMealEntries } from "@/lib/shoppingList";
 import { getDeliveryOverviewForHousehold } from "@/lib/picnic/deliveryStatus";
 import { formatSlotWindow } from "@/lib/picnic/deliverySlots";
-import { getHouseholdPortionScaleByDay } from "@/lib/household";
+import { getHouseholdPortionScaleForDate } from "@/lib/household";
 import { getInventoryMap } from "@/lib/inventory";
 import { assertShoppingListAccess } from "@/lib/shoppingListAccess";
 import type { LineSource } from "@/generated/prisma/enums";
@@ -132,12 +132,12 @@ export async function fillShoppingListShortfall(formData: FormData) {
     where: { id: line.shoppingListId },
     select: { mealPlanId: true },
   });
-  const [groceryMeals, portionScaleByDay, inventoryMap] = await Promise.all([
+  const [groceryMeals, portionScaleForDate, inventoryMap] = await Promise.all([
     getGroceryMealEntries(shoppingList.mealPlanId),
-    getHouseholdPortionScaleByDay(householdId),
+    getHouseholdPortionScaleForDate(householdId),
     getInventoryMap(householdId),
   ]);
-  const [shortfall] = findShoppingListShortfalls(groceryMeals, portionScaleByDay, inventoryMap, [line]);
+  const [shortfall] = findShoppingListShortfalls(groceryMeals, portionScaleForDate, inventoryMap, [line]);
 
   await prisma.shoppingListLine.update({
     where: { id: line.id },

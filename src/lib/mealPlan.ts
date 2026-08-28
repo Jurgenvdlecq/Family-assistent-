@@ -2,7 +2,7 @@ import { prisma } from "./prisma";
 import { logFeedbackEvent } from "./feedback";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "./scoring";
 import { DAY_KEYS, DAY_ENUM, DAY_KEY_BY_ENUM, DAY_LABELS, dateForDay, type DayKey } from "./week";
-import { getHouseholdHardRestrictionsAndParticipantsByDay } from "./household";
+import { getHouseholdHardRestrictionsAndParticipantsForWeek } from "./household";
 import { recipeConflictsWithRestrictions } from "./dietaryRestrictions";
 import { accessibleRecipeWhere } from "./recipeScope";
 import {
@@ -162,7 +162,10 @@ async function ensureMealPlanInner(
       where: { recipe: accessibleRecipeWhere(householdId) },
       include: { recipe: { include: { ingredients: { include: { ingredient: true } } } } },
     }),
-    getHouseholdHardRestrictionsAndParticipantsByDay(householdId),
+    // Aanwezigheid van déze week: het oneven/even-ritme en
+    // datum-uitzonderingen maken dat een weekdag alleen samen met een
+    // concrete week betekenis heeft.
+    getHouseholdHardRestrictionsAndParticipantsForWeek(householdId, weekStart),
     prisma.dayRoutine.findMany({ where: { householdId } }),
     prisma.learnedPattern.findMany({
       where: {

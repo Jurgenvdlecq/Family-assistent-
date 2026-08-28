@@ -147,14 +147,21 @@ export async function updatePersonPresence(formData: FormData) {
     select: { defaultPresent: true },
   });
 
+  // Deze knoppen zetten het patroon dat élke week geldt. Een oneven/even-
+  // ritme instellen kan hier (nog) niet — dat komt in het weekritme-scherm.
+  // Bewust dus expliciet `EVERY` en niet "de eerstvolgende rij die past":
+  // zou dit scherm stilzwijgend een pariteitsregel overschrijven, dan zou de
+  // gebruiker een instelling kwijtraken die hij hier niet eens ziet staan.
   if (present === person.defaultPresent) {
     await prisma.personPresenceOverride.deleteMany({
-      where: { personId, dayOfWeek: DAY_ENUM[dayKey] },
+      where: { personId, dayOfWeek: DAY_ENUM[dayKey], weekParity: "EVERY" },
     });
   } else {
     await prisma.personPresenceOverride.upsert({
-      where: { personId_dayOfWeek: { personId, dayOfWeek: DAY_ENUM[dayKey] } },
-      create: { personId, dayOfWeek: DAY_ENUM[dayKey], present },
+      where: {
+        personId_dayOfWeek_weekParity: { personId, dayOfWeek: DAY_ENUM[dayKey], weekParity: "EVERY" },
+      },
+      create: { personId, dayOfWeek: DAY_ENUM[dayKey], weekParity: "EVERY", present },
       update: { present },
     });
   }

@@ -3,15 +3,22 @@ import assert from "node:assert/strict";
 import { describeLinePackaging, findShoppingListShortfalls, isUserChosenPackageCount } from "./shoppingList";
 
 const NO_INVENTORY = new Map();
-const NORMAL_SCALE = {
-  monday: { scale: 1 },
-  tuesday: { scale: 1 },
-  wednesday: { scale: 1 },
-  thursday: { scale: 1 },
-  friday: { scale: 1 },
-  saturday: { scale: 1 },
-  sunday: { scale: 1 },
-};
+
+// Iedereen eet mee, ongeacht de datum — de datumafhankelijke schaling zelf
+// wordt getest in presence.test.ts en household.test.ts.
+const NORMAL_SCALE = () => ({
+  scale: 1,
+  presentPortions: 1,
+  defaultPortions: 1,
+  presentPersonNames: [],
+});
+
+// Maandag 7 september 2026 (ISO-week 37, oneven).
+const DATE_BY_DAY = {
+  MONDAY: new Date(2026, 8, 7),
+  TUESDAY: new Date(2026, 8, 8),
+  WEDNESDAY: new Date(2026, 8, 9),
+} as const;
 
 function mealPlanWithNeed(
   entries: Array<{
@@ -26,6 +33,7 @@ function mealPlanWithNeed(
   return {
     entries: entries.map((e) => ({
       dayOfWeek: e.dayOfWeek,
+      date: DATE_BY_DAY[e.dayOfWeek],
       skipped: e.skipped ?? false,
       // Deze fixture beschrijft avonden die de gebruiker heeft aangevinkt;
       // niet-aangevinkte avonden zijn een expliciet testgeval hieronder.
@@ -181,4 +189,48 @@ test("findShoppingListShortfalls: aangevinkt maar 'uit eten' telt evengoed niet 
   const lines = [line({ id: "l1", ingredientId: "aardappelen", quantity: 800, unit: "GRAM" })];
   const result = findShoppingListShortfalls(mealPlan, NORMAL_SCALE, NO_INVENTORY, lines);
   assert.deepEqual(result, []);
+});
+
+test("findShoppingListShortfalls: de behoefte wordt geschaald op de datum van de avond, niet op de weekdag", () => {
+  // De lijst van deze week kan avonden uit de volgende week bevatten
+  // (bezorging zaterdag, koken dinsdag). Die twee weken hebben altijd een
+  // verschillende oneven/even-pariteit, dus met "de schaal van dinsdag"
+  // zou de helft van de boodschappen verkeerd uitvallen.
+  const thisTuesday = new Date(2026, 8, 8);
+  const nextTuesday = new Date(2026, 8, 15);
+  const mealPlan = {
+    entries: [
+      {
+        dayOfWeek: "TUESDAY" as const,
+        date: thisTuesday,
+        skipped: false,
+        includedInGroceries: true,
+        recipeVariant: { recipe: { ingredients: [{ ingredientId: "kip", quantity: 400, unit: "GRAM" as const }] } },
+      },
+      {
+        dayOfWeek: "TUESDAY" as const,
+        date: nextTuesday,
+        skipped: false,
+        includedInGroceries: true,
+        recipeVariant: { recipe: { ingredients: [{ ingredientId: "kip", quantity: 400, unit: "GRAM" as const }] } },
+      },
+    ],
+  };
+
+  // Deze week eten er vier mee, volgende week twee.
+  const scaleByDate = (date: Date) => ({
+    scale: date.getTime() === nextTuesday.getTime() ? 0.5 : 1,
+    presentPortions: 1,
+    defaultPortions: 1,
+    presentPersonNames: [],
+  });
+
+  const lines = [line({ id: "l1", ingredientId: "kip", quantity: 600, unit: "GRAM" })];
+  const result = findShoppingListShortfalls(mealPlan, scaleByDate, NO_INVENTORY, lines);
+  assert.deepEqual(result, [], "400 g + 200 g = 600 g, dus deze regel klopt precies");
+
+  const tooLittle = [line({ id: "l1", ingredientId: "kip", quantity: 500, unit: "GRAM" })];
+  const shortfall = findShoppingListShortfalls(mealPlan, scaleByDate, NO_INVENTORY, tooLittle);
+  assert.equal(shortfall.length, 1);
+  assert.equal(shortfall[0].neededQuantity, 600);
 });

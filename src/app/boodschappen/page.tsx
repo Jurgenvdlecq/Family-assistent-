@@ -27,7 +27,7 @@ import {
   isUserChosenPackageCount,
 } from "@/lib/shoppingList";
 import { prisma } from "@/lib/prisma";
-import { getHouseholdPortionScaleByDay } from "@/lib/household";
+import { getHouseholdPortionScaleForDate } from "@/lib/household";
 import { getFixedGroceries } from "@/lib/fixedGroceries";
 import { getInventoryChecklist, getInventoryMap } from "@/lib/inventory";
 import { enrichShoppingListProductImages } from "@/lib/picnic/productEnrichment";
@@ -806,7 +806,7 @@ export default async function BoodschappenPage({
     manualSearch,
     bulkSearch,
     quickSearch,
-    portionScaleByDay,
+    portionScaleForDate,
     candidatesByIngredient,
     inventoryMap,
   ] =
@@ -825,7 +825,7 @@ export default async function BoodschappenPage({
       quickOrderText
         ? safePicnicSearch(() => searchQuickOrderPreview(household.id, household.picnicAuthToken, quickOrderText), [])
         : emptySearch<QuickOrderPreviewLine[]>([]),
-      getHouseholdPortionScaleByDay(household.id),
+      getHouseholdPortionScaleForDate(household.id),
       getShoppingListCandidatesByIngredient(household.id, mealLines.map((line) => line.ingredientId)),
       getInventoryMap(household.id),
     ]);
@@ -866,7 +866,7 @@ export default async function BoodschappenPage({
   const orderedTotalCost = orderedLines.reduce((total, line) => total + estimatedLineCost(line), 0);
   const mealReviewIds = new Set(mealLines.filter((line) => line.needsReview).map((line) => line.ingredientId));
   const shortfallByLineId = new Map(
-    findShoppingListShortfalls(groceryMeals, portionScaleByDay, inventoryMap, sortedLines)
+    findShoppingListShortfalls(groceryMeals, portionScaleForDate, inventoryMap, sortedLines)
       .filter((s) => !sortedLines.find((l) => l.id === s.lineId)?.shortfallAcknowledged)
       .map((s) => [s.lineId, s])
   );
@@ -1528,7 +1528,7 @@ export default async function BoodschappenPage({
             <div className="mt-3 grid gap-4">
               {mealPlan.entries.map((entry) => {
                 const dayKey = DAY_KEY_BY_ENUM[entry.dayOfWeek];
-                const scale = portionScaleByDay[dayKey]?.scale ?? 1;
+                const scale = portionScaleForDate(dateForDay(weekStart, dayKey)).scale;
                 const dayReviewCount = dayReviewCounts.get(entry.id) ?? 0;
                 const dayCost = entry.recipeVariant.recipe.ingredients.reduce((total, ri) => {
                   const line = mealLineByIngredientId.get(ri.ingredientId);

@@ -8,7 +8,7 @@ import { assertCurrentHousehold } from "@/lib/auth";
 import { logFeedbackEvent } from "@/lib/feedback";
 import { invalidateShoppingListForPlanChange } from "@/lib/shoppingList";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "@/lib/scoring";
-import { getHouseholdHardRestrictionsAndParticipantsByDay } from "@/lib/household";
+import { getHouseholdHardRestrictionsAndParticipantsForWeek } from "@/lib/household";
 import { recipeConflictsWithRestrictions } from "@/lib/dietaryRestrictions";
 import { accessibleRecipeWhere } from "@/lib/recipeScope";
 import { DAY_ENUM, DAY_KEYS, getCurrentWeekStart, type DayKey } from "@/lib/week";
@@ -114,7 +114,9 @@ export async function replaceMealPlanEntry(formData: FormData) {
       where: { id: recipeVariantId, recipe: accessibleRecipeWhere(householdId) },
       include: { recipe: { include: { ingredients: { include: { ingredient: true } } } } },
     }),
-    getHouseholdHardRestrictionsAndParticipantsByDay(householdId),
+    // Aanwezigheid hangt af van de concrete week (oneven/even-ritme,
+    // datum-uitzonderingen), dus expliciet de week waar deze bewerking over gaat.
+    getHouseholdHardRestrictionsAndParticipantsForWeek(householdId, weekStart),
   ]);
   const hardRestrictions = hardRestrictionsByDay[dayKey];
   const neverPreference = await prisma.preference.findFirst({
@@ -293,7 +295,7 @@ export async function chooseLiteralMealPlanEntry(formData: FormData) {
   // wens níét vooraf op beperkingen — deze twee zijn dus gewoon via typen
   // bereikbaar en verdienen een leesbare melding i.p.v. een (in productie
   // geredacte) throw.
-  const { hardRestrictionsByDay, participantsByDay } = await getHouseholdHardRestrictionsAndParticipantsByDay(householdId);
+  const { hardRestrictionsByDay, participantsByDay } = await getHouseholdHardRestrictionsAndParticipantsForWeek(householdId, weekStart);
   const hardRestrictions = hardRestrictionsByDay[dayKey];
   const conflicts = recipeConflictsWithRestrictions(
     ingredients.map((ingredient) => ({

@@ -20,12 +20,15 @@ import {
   releaseNextWeekMealDays,
 } from "./shoppingList";
 import { getCurrentWeekStart } from "./week";
+import { weekParityForDate } from "@/domain/week/isoWeek";
 
 async function makeHousehold(name: string) {
   return prisma.household.create({ data: { name, persons: { create: [{ name: "Test", role: "PARENT" }] } } });
 }
 
 async function cleanup(householdId: string) {
+  await prisma.personPresenceOverride.deleteMany({ where: { person: { householdId } } });
+  await prisma.personPresenceDateOverride.deleteMany({ where: { person: { householdId } } });
   await prisma.shoppingList.deleteMany({ where: { mealPlan: { householdId } } });
   await prisma.mealPlan.deleteMany({ where: { householdId } });
   await prisma.fixedGrocery.deleteMany({ where: { householdId } });
@@ -242,6 +245,82 @@ test("een besteld avondeten in de volgende week wordt niet opnieuw voorgesteld z
       0,
       "het al bestelde gerecht mag in de nieuwe week niet opnieuw op de lijst komen"
     );
+  } finally {
+    await cleanup(household.id);
+  }
+});
+
+test("de behoefte van een avond in de volgende week wordt geschaald op wie er dán mee-eet", async () => {
+  // Het weekritme maakt van de tweewekengrens een échte fout in plaats van
+  // een theoretische: als vrijdag in de ene week met vier en in de andere met
+  // twee mensen is, dan is "de schaal van vrijdag" een betekenisloos begrip.
+  // De lijst van déze week draagt avonden uit béide weken, dus de schaling
+  // moet per datum gebeuren.
+  const household = await prisma.household.create({
+    data: {
+      name: "Weekgrens — schaling per datum",
+      persons: {
+        create: [
+          { name: "Ouder", role: "PARENT", portionMultiplier: 1 },
+          { name: "Kind", role: "CHILD", portionMultiplier: 1 },
+        ],
+      },
+    },
+    include: { persons: true },
+  });
+
+  try {
+    const thisWeek = await ensureMealPlan(household.id, getCurrentWeekStart());
+    const nextWeek = await ensureMealPlan(household.id, nextWeekStart());
+    assert.ok(thisWeek && nextWeek, "testopzet: beide weekplannen");
+
+    const entry = await prisma.mealPlanEntry.findFirstOrThrow({
+      where: { mealPlanId: nextWeek!.id },
+      orderBy: { dayOfWeek: "asc" },
+    });
+    await prisma.mealPlanEntry.update({ where: { id: entry.id }, data: { includedInGroceries: true } });
+
+    const child = household.persons.find((person) => person.name === "Kind")!;
+    const parityOfNextWeek = weekParityForDate(nextWeekStart());
+    const parityOfThisWeek = weekParityForDate(getCurrentWeekStart());
+
+    // Het kind eet niet mee op die weekdag, maar alléén in de weeksoort waar
+    // de volgende week in valt.
+    await prisma.personPresenceOverride.create({
+      data: { personId: child.id, dayOfWeek: entry.dayOfWeek, weekParity: parityOfNextWeek, present: false },
+    });
+    await invalidateShoppingList(thisWeek!.id);
+    const halved = await ensureShoppingList(thisWeek!.id, household.id);
+    const halvedLines = new Map(
+      halved.lines.filter((line) => line.source === "MEAL").map((line) => [line.ingredientId, line.quantity])
+    );
+    assert.ok(halvedLines.size > 0, "testopzet: de aangevinkte avond moet regels opleveren");
+
+    // Dezelfde regel maar nu geldt de uitzondering voor de ándere weeksoort:
+    // op de datum van die avond eet iedereen dus gewoon mee.
+    await prisma.personPresenceOverride.updateMany({
+      where: { personId: child.id },
+      data: { weekParity: parityOfThisWeek },
+    });
+    await invalidateShoppingList(thisWeek!.id);
+    const full = await ensureShoppingList(thisWeek!.id, household.id);
+    const fullLines = new Map(
+      full.lines.filter((line) => line.source === "MEAL").map((line) => [line.ingredientId, line.quantity])
+    );
+
+    assert.deepEqual(
+      [...fullLines.keys()].sort(),
+      [...halvedLines.keys()].sort(),
+      "testopzet: het gaat om dezelfde ingrediënten, alleen om andere hoeveelheden"
+    );
+    for (const [ingredientId, fullQuantity] of fullLines) {
+      const halvedQuantity = halvedLines.get(ingredientId)!;
+      assert.ok(
+        Math.abs(halvedQuantity * 2 - fullQuantity) < 1e-6,
+        `${ingredientId}: met één van de twee eters hoort de helft nodig te zijn ` +
+          `(kreeg ${halvedQuantity} tegenover ${fullQuantity})`
+      );
+    }
   } finally {
     await cleanup(household.id);
   }

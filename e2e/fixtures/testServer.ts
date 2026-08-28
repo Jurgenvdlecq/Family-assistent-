@@ -75,9 +75,17 @@ export async function startTestServer(options: { port: number; picnicBaseUrl: st
     }
   );
 
+  // De serveruitvoer wordt normaal alleen bewaard om in een opstartfout te
+  // kunnen tonen. Met E2E_SERVER_LOG=1 gaat hij ook live mee naar stderr —
+  // zonder dat is een falende server action in de e2e onzichtbaar: de test
+  // ziet alleen "er verandert niets op de pagina", niet de fout erachter.
   let output = "";
-  child.stdout.on("data", (chunk) => (output += chunk.toString()));
-  child.stderr.on("data", (chunk) => (output += chunk.toString()));
+  const record = (chunk: Buffer) => {
+    output += chunk.toString();
+    if (process.env.E2E_SERVER_LOG) process.stderr.write(chunk);
+  };
+  child.stdout.on("data", record);
+  child.stderr.on("data", record);
 
   const exited = new Promise<never>((_, reject) => {
     child.once("exit", (code) => {

@@ -4,8 +4,8 @@ import { getInventoryMap } from "./inventory";
 import { subtractInventory } from "./quantity/inventory";
 import { resolveInStockQuantity } from "./quantity/inventoryStatus";
 import type { BaseQuantity } from "./quantity/units";
-import { getCurrentWeekStart, DAY_KEY_BY_ENUM, type DayKey } from "./week";
-import { getHouseholdPortionScaleByDay } from "./household";
+import { getCurrentWeekStart, dateForDay, DAY_KEY_BY_ENUM } from "./week";
+import { getHouseholdPortionScaleForDate, type PortionScaleForDate } from "./household";
 import { matchProduct } from "@/domain/product-matching/matchProduct";
 import { matchProductForIngredient } from "@/domain/product-matching/matchIngredient";
 import { getRejectedProductIds, getTrustedPreferences, toMatchCandidate } from "@/domain/product-matching/repository";
@@ -17,7 +17,6 @@ import { Prisma } from "@/generated/prisma/client";
 import { logEvent, createCorrelationId } from "./logger";
 
 type InventoryLookup = Awaited<ReturnType<typeof getInventoryMap>>;
-type PortionScaleByDay = Record<DayKey, { scale: number }>;
 
 // Bewust een minimale, structurele vorm i.p.v. het volledige Prisma-payload-
 // type van getMealPlanForWeek: dit is alles wat de behoefteberekening nodig
@@ -25,6 +24,13 @@ type PortionScaleByDay = Record<DayKey, { scale: number }>;
 interface MealPlanWithEntries {
   entries: Array<{
     dayOfWeek: DayOfWeek;
+    /**
+     * De concrete datum van deze avond. Nodig omdat de behoefte geschaald
+     * wordt op wie er dán mee-eet: een lijst kan avonden uit twee weken
+     * bevatten, en die twee weken hebben altijd een verschillende
+     * oneven/even-pariteit.
+     */
+    date: Date;
     /** Huishouden eet deze dag niet thuis — telt niet mee in de behoefte. */
     skipped: boolean;
     /**
@@ -50,7 +56,7 @@ interface MealPlanWithEntries {
  */
 function aggregateMealNeeds(
   mealPlan: MealPlanWithEntries,
-  portionScaleByDay: PortionScaleByDay
+  portionScaleForDate: PortionScaleForDate
 ): Map<string, { ingredientId: string; quantity: number; unit: Unit }> {
   const totals = new Map<string, { ingredientId: string; quantity: number; unit: Unit }>();
   for (const entry of mealPlan.entries) {
@@ -58,8 +64,7 @@ function aggregateMealNeeds(
     // niet thuis (`skipped`), of de gebruiker heeft deze avond niet
     // aangevinkt voor de eerstvolgende bestelling (`includedInGroceries`).
     if (entry.skipped || !entry.includedInGroceries) continue;
-    const dayKey = DAY_KEY_BY_ENUM[entry.dayOfWeek];
-    const scale = portionScaleByDay[dayKey]?.scale ?? 1;
+    const scale = portionScaleForDate(entry.date).scale;
     for (const ri of entry.recipeVariant.recipe.ingredients) {
       const key = `${ri.ingredientId}:${ri.unit}`;
       const scaledQuantity = ri.quantity * scale;
@@ -200,26 +205,35 @@ export async function getGroceryMealEntries(mealPlanId: string) {
     include: { entries: { include: MEAL_ENTRY_INCLUDE } },
   });
 
+  // De datum per avond staat nergens op de rij zelf (alleen de weekdag), maar
+  // is wél nodig om op de juiste aanwezigheid te schalen — en juist hier is
+  // bekend uit welk weekplan een avond komt.
+  const withDate = <T extends { dayOfWeek: DayOfWeek }>(entries: T[], weekStart: Date) =>
+    entries.map((entry) => ({ ...entry, date: dateForDay(weekStart, DAY_KEY_BY_ENUM[entry.dayOfWeek]) }));
+
   return {
     mealPlan,
     /** Kan `null` zijn: de volgende week wordt pas gepland zodra iemand er een avond voor aanvinkt. */
     nextWeekPlan,
-    entries: [...mealPlan.entries, ...(nextWeekPlan?.entries ?? [])],
+    entries: [
+      ...withDate(mealPlan.entries, mealPlan.weekStart),
+      ...(nextWeekPlan ? withDate(nextWeekPlan.entries, nextWeekPlan.weekStart) : []),
+    ],
   };
 }
 
 async function buildShoppingListLines(mealPlanId: string, householdId: string) {
-  const [mealPlan, fixedGroceries, inventory, likelyInStockIngredients, portionScaleByDay, household] = await Promise.all([
+  const [mealPlan, fixedGroceries, inventory, likelyInStockIngredients, portionScaleForDate, household] = await Promise.all([
     getGroceryMealEntries(mealPlanId),
     prisma.fixedGrocery.findMany({ where: { householdId } }),
     getInventoryMap(householdId),
     prisma.ingredient.findMany({ where: { likelyInStock: true }, select: { id: true, unit: true } }),
-    getHouseholdPortionScaleByDay(householdId),
+    getHouseholdPortionScaleForDate(householdId),
     prisma.household.findUniqueOrThrow({ where: { id: householdId }, select: { deliveryPreference: true } }),
   ]);
   const productChoicePreference = productChoicePreferenceFromDeliveryPreference(household.deliveryPreference);
 
-  const totals = aggregateMealNeeds(mealPlan, portionScaleByDay);
+  const totals = aggregateMealNeeds(mealPlan, portionScaleForDate);
 
   // Voorraadcontrole vult alleen aan waar het weekmenu en de vaste
   // boodschappen nog geen regel voor hebben — anders zou hetzelfde
@@ -515,11 +529,11 @@ export async function syncShoppingListForInventoryChange(householdId: string, in
   });
   if (!shoppingList) return;
 
-  const [ingredient, inventory, fixedGroceries, portionScaleByDay] = await Promise.all([
+  const [ingredient, inventory, fixedGroceries, portionScaleForDate] = await Promise.all([
     prisma.ingredient.findUniqueOrThrow({ where: { id: ingredientId } }),
     getInventoryMap(householdId),
     prisma.fixedGrocery.findMany({ where: { householdId, ingredientId } }),
-    getHouseholdPortionScaleByDay(householdId),
+    getHouseholdPortionScaleForDate(householdId),
   ]);
 
   // Zelfde maaltijdenverzameling als de lijstopbouw (inclusief aangevinkte
@@ -530,8 +544,7 @@ export async function syncShoppingListForInventoryChange(householdId: string, in
   let rawNeed: BaseQuantity | null = null;
   for (const entry of groceryEntries) {
     if (entry.skipped || !entry.includedInGroceries) continue;
-    const dayKey = DAY_KEY_BY_ENUM[entry.dayOfWeek];
-    const scale = portionScaleByDay[dayKey]?.scale ?? 1;
+    const scale = portionScaleForDate(entry.date).scale;
     for (const ri of entry.recipeVariant.recipe.ingredients) {
       if (ri.ingredientId !== ingredientId) continue;
       const scaledQuantity = ri.quantity * scale;
@@ -705,11 +718,11 @@ const SHORTFALL_EPSILON = 0.001;
  */
 export function findShoppingListShortfalls(
   mealPlan: MealPlanWithEntries,
-  portionScaleByDay: PortionScaleByDay,
+  portionScaleForDate: PortionScaleForDate,
   inventory: InventoryLookup,
   lines: Array<{ id: string; ingredientId: string; quantity: number; unit: Unit; source: string }>
 ): ShoppingListShortfall[] {
-  const totals = aggregateMealNeeds(mealPlan, portionScaleByDay);
+  const totals = aggregateMealNeeds(mealPlan, portionScaleForDate);
   const shortfalls: ShoppingListShortfall[] = [];
   for (const line of lines) {
     if (line.source !== "MEAL") continue;

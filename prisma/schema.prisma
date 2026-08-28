@@ -213,27 +213,75 @@ model Person {
   portionMultiplier Float      @default(1) @map("portion_multiplier")
   createdAt         DateTime   @default(now()) @map("created_at")
 
-  household         Household                @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  feedbackEvents    FeedbackEvent[]
-  presenceOverrides PersonPresenceOverride[]
+  household             Household                    @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  feedbackEvents        FeedbackEvent[]
+  presenceOverrides     PersonPresenceOverride[]
+  presenceDateOverrides PersonPresenceDateOverride[]
 
   @@index([householdId])
   @@map("persons")
 }
 
+// Het verwachte aanwezigheidspatroon: "op deze weekdag eet deze persoon wel
+// of juist niet mee". `weekParity` maakt een tweewekelijks ritme mogelijk
+// (vrijdag in een oneven week met z'n vieren, in een even week met z'n
+// tweeën) zonder een tweede tabel naast deze — aanwezigheid heeft al één
+// bron van waarheid, en die houden we zo.
+//
+// Oplossing per persoon per datum, van specifiek naar algemeen:
+//   1. een uitzondering voor precies die datum (PersonPresenceDateOverride)
+//   2. de regel voor de pariteit van die week (ODD/EVEN)
+//   3. de regel die elke week geldt (EVERY)
+//   4. Person.defaultPresent
+// Bestaande rijen krijgen EVERY en gedragen zich daardoor exact zoals vóór
+// het weekritme.
 model PersonPresenceOverride {
-  id        String    @id @default(uuid())
-  personId  String    @map("person_id")
-  dayOfWeek DayOfWeek @map("day_of_week")
-  present   Boolean
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
+  id         String     @id @default(uuid())
+  personId   String     @map("person_id")
+  dayOfWeek  DayOfWeek  @map("day_of_week")
+  weekParity WeekParity @default(EVERY) @map("week_parity")
+  present    Boolean
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
 
   person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
 
-  @@unique([personId, dayOfWeek])
+  @@unique([personId, dayOfWeek, weekParity])
   @@index([personId])
   @@map("person_presence_overrides")
+}
+
+// Een afwijking voor één concrete datum: "deze ene vrijdag eet Kai niet mee".
+//
+// Bewust een eigen tabel en niet een extra veld op het patroon hierboven: een
+// uitzondering mag het verwachte ritme nóóit stilzwijgend veranderen. Eén
+// afwijkende vrijdag betekent niet dat vrijdag voortaan anders is — pas als
+// zoiets zich herhaalt mag de app ernaar vrágen (leerlaag), en dan nog is het
+// de gebruiker die het patroon wijzigt.
+model PersonPresenceDateOverride {
+  id        String   @id @default(uuid())
+  personId  String   @map("person_id")
+  date      DateTime @db.Date
+  present   Boolean
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@unique([personId, date])
+  @@index([personId, date])
+  @@map("person_presence_date_overrides")
+}
+
+// Op welke weken een ritmeregel van toepassing is, op basis van het
+// ISO-8601-weeknummer (zie src/domain/week/isoWeek.ts). EVERY is de standaard
+// en het enige dat bestond vóór het weekritme.
+enum WeekParity {
+  EVERY
+  ODD
+  EVEN
+
+  @@map("week_parity")
 }
 
 enum PersonRole {
