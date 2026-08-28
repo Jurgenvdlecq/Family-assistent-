@@ -1,11 +1,33 @@
 import { prisma } from "./prisma";
-import { DAY_KEYS, type DayKey } from "./week";
+import { DAY_KEYS, dateForDay, getCurrentWeekStart, type DayKey } from "./week";
 import {
   calculatePortionScaleByDay,
+  calculatePortionScaleForDate,
+  calculatePortionScaleForWeek,
+  getPresentPersonsForDate,
   getPresentPersonsForDay,
+  getPresentPersonsForWeek,
   type DayPortionScale,
   type PersonPresenceInput,
 } from "@/domain/household/presence";
+
+/**
+ * Hoe ver terug datum-uitzonderingen worden meegeladen.
+ *
+ * De planner en de boodschappenlijst kijken alleen vooruit; een uitzondering
+ * van vorige maand doet daar niets meer. Zonder deze grens zou elke
+ * berekening de hele geschiedenis van uitzonderingen meeslepen, die alleen
+ * maar groeit. Twee weken marge is ruim genoeg voor de lopende week plus de
+ * week ervoor (geschiedenis op /week).
+ */
+const DATE_OVERRIDE_LOOKBACK_DAYS = 14;
+
+function dateOverrideCutoff(reference: Date = new Date()): Date {
+  const cutoff = new Date(reference);
+  cutoff.setDate(cutoff.getDate() - DATE_OVERRIDE_LOOKBACK_DAYS);
+  cutoff.setHours(0, 0, 0, 0);
+  return cutoff;
+}
 
 export async function getHouseholdPersonsForMeals(householdId: string): Promise<PersonPresenceInput[]> {
   return prisma.person.findMany({
@@ -16,7 +38,11 @@ export async function getHouseholdPersonsForMeals(householdId: string): Promise<
       defaultPresent: true,
       portionMultiplier: true,
       hardRestrictions: true,
-      presenceOverrides: { select: { dayOfWeek: true, present: true } },
+      presenceOverrides: { select: { dayOfWeek: true, present: true, weekParity: true } },
+      presenceDateOverrides: {
+        where: { date: { gte: dateOverrideCutoff() } },
+        select: { date: true, present: true },
+      },
     },
     orderBy: { createdAt: "asc" },
   });
@@ -67,26 +93,49 @@ export async function getHouseholdPortionScaleByDay(
   return calculatePortionScaleByDay(persons);
 }
 
-function deriveParticipantsByDay(persons: PersonPresenceInput[]): Record<DayKey, PersonPresenceInput[]> {
-  return Object.fromEntries(
-    DAY_KEYS.map((dayKey) => [dayKey, getPresentPersonsForDay(persons, dayKey)])
-  ) as Record<DayKey, PersonPresenceInput[]>;
+/**
+ * Portieschaling voor een willekeurige datum, als functie in plaats van als
+ * tabel per weekdag.
+ *
+ * Waarom een functie: de boodschappenlijst rekent aan avonden uit twee
+ * verschillende weken tegelijk (bezorging zaterdag, koken dinsdag daarna).
+ * Die twee weken hebben altijd een verschillende oneven/even-pariteit, dus
+ * "de schaal van dinsdag" bestaat niet — alleen "de schaal van dinsdag 8
+ * september". De personen worden één keer geladen; de functie zelf raakt de
+ * database niet meer.
+ */
+export type PortionScaleForDate = (date: Date) => DayPortionScale;
+
+export async function getHouseholdPortionScaleForDate(
+  householdId: string
+): Promise<PortionScaleForDate> {
+  const persons = await getHouseholdPersonsForMeals(householdId);
+  return (date: Date) => calculatePortionScaleForDate(persons, date);
 }
 
-export async function getHouseholdMealParticipantsByDay(householdId: string) {
+/** Wie er mee-eet op elke dag van één concrete week (pariteit- en uitzonderingsbewust). */
+export async function getHouseholdMealParticipantsForWeek(householdId: string, weekStart: Date) {
   const persons = await getHouseholdPersonsForMeals(householdId);
-  return deriveParticipantsByDay(persons);
+  return getPresentPersonsForWeek(persons, weekStart);
 }
 
 /**
  * Fase 13: combineert harde beperkingen + aanwezigheid per dag in één
  * `person.findMany` — de aanroepers die beide nodig hebben (mealPlan.ts,
  * /gerechten) deden voorheen `getHouseholdHardRestrictions(dayKey)` per dag
- * én `getHouseholdMealParticipantsByDay()` los aan, wat dezelfde
- * personendata tot 8x per aanroep opnieuw uit de database haalde zonder dat
- * er tussentijds iets veranderde.
+ * én de deelnemers los aan, wat dezelfde personendata tot 8x per aanroep
+ * opnieuw uit de database haalde zonder dat er tussentijds iets veranderde.
+ *
+ * Neemt sinds het weekritme een `weekStart` aan: wie er mee-eet hangt af van
+ * de concrete datum (oneven/even-ritme, datum-uitzonderingen), niet alleen
+ * van de weekdag. Aanroepers die "deze week" bedoelen geven
+ * `getCurrentWeekStart()` mee — expliciet, zodat nooit onduidelijk is welke
+ * week er bedoeld wordt.
  */
-export async function getHouseholdHardRestrictionsAndParticipantsByDay(householdId: string): Promise<{
+export async function getHouseholdHardRestrictionsAndParticipantsForWeek(
+  householdId: string,
+  weekStart: Date = getCurrentWeekStart()
+): Promise<{
   hardRestrictionsByDay: Record<DayKey, string[]>;
   participantsByDay: Record<DayKey, PersonPresenceInput[]>;
 }> {
@@ -94,9 +143,20 @@ export async function getHouseholdHardRestrictionsAndParticipantsByDay(household
     getHouseholdPersonsForMeals(householdId),
     prisma.household.findUniqueOrThrow({ where: { id: householdId }, select: { hardRestrictions: true } }),
   ]);
-  const participantsByDay = deriveParticipantsByDay(persons);
+  const participantsByDay = Object.fromEntries(
+    DAY_KEYS.map((dayKey) => [dayKey, getPresentPersonsForDate(persons, dateForDay(weekStart, dayKey))])
+  ) as Record<DayKey, PersonPresenceInput[]>;
   const hardRestrictionsByDay = Object.fromEntries(
     DAY_KEYS.map((dayKey) => [dayKey, collectHardRestrictions(participantsByDay[dayKey], household.hardRestrictions)])
   ) as Record<DayKey, string[]>;
   return { hardRestrictionsByDay, participantsByDay };
+}
+
+/** Portieschaling voor elke dag van één concrete week. */
+export async function getHouseholdPortionScaleForWeek(
+  householdId: string,
+  weekStart: Date
+): Promise<Record<DayKey, DayPortionScale>> {
+  const persons = await getHouseholdPersonsForMeals(householdId);
+  return calculatePortionScaleForWeek(persons, weekStart);
 }

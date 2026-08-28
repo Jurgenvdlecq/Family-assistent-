@@ -353,6 +353,11 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         // meteen terugkeert op een pagina die nog niet herladen is.
         let clicked = 0;
         for (let guard = 0; guard < 7; guard += 1) {
+          // Elke tik herlaadt de pagina, waarna de bezorgkaart opnieuw
+          // na-streamt en de tegels een stukje verschuiven. Zonder deze wacht
+          // klikt de volgende ronde middenin die verschuiving — precies de
+          // race die eerder ook stap 4b liet wisselen.
+          await waitForBoodschappenSettled(page);
           const next = page.locator('button[data-next-week="false"][aria-pressed="false"]').first();
           if ((await next.count()) === 0) break;
           const dayToSelect = await next.getAttribute("data-order-day");

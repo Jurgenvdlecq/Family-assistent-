@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
-import { getHouseholdMealParticipantsByDay } from "@/lib/household";
+import { getHouseholdMealParticipantsForWeek } from "@/lib/household";
 import { ensureMealPlan } from "@/lib/mealPlan";
 import {
   getCurrentWeekStart,
@@ -183,7 +183,7 @@ export default async function Home({
     throw new Error("Weekplanning kon niet worden geladen.");
   }
   const [participantsByDay, learningPrompts, dayRoutines] = await Promise.all([
-    getHouseholdMealParticipantsByDay(household.id),
+    getHouseholdMealParticipantsForWeek(household.id, weekStart),
     getPendingLearningPrompts(
       household.id,
       household.maxSmartQuestionsPerSession,

@@ -3,7 +3,7 @@ import { ChevronLeft, UtensilsCrossed, Heart, Sparkles, EyeOff } from "lucide-re
 import { prisma } from "@/lib/prisma";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { getMealPlanForWeek } from "@/lib/mealPlan";
-import { getHouseholdHardRestrictionsAndParticipantsByDay } from "@/lib/household";
+import { getHouseholdHardRestrictionsAndParticipantsForWeek } from "@/lib/household";
 import { recipeConflictsWithRestrictions } from "@/lib/dietaryRestrictions";
 import { accessibleRecipeWhere } from "@/lib/recipeScope";
 import { DAY_KEYS, DAY_ENUM, DAY_LABELS, getCurrentWeekStart, currentDayKey, type DayKey } from "@/lib/week";
@@ -137,7 +137,7 @@ export default async function GerechtenPage({
       where: { recipe: accessibleRecipeWhere(household.id) },
       include: VARIANT_INCLUDE,
     }),
-    getHouseholdHardRestrictionsAndParticipantsByDay(household.id),
+    getHouseholdHardRestrictionsAndParticipantsForWeek(household.id, weekStart),
     prisma.preference.findMany({
       where: {
         ownerType: "HOUSEHOLD",
