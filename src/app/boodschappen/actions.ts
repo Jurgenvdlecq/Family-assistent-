@@ -232,7 +232,13 @@ export async function removeBoodschappenLineThisWeek(formData: FormData) {
   await prisma.shoppingListLine.delete({ where: { id: line.id } });
   revalidatePath("/boodschappen");
   revalidatePath("/controle");
-  redirect("/boodschappen#jullie-boodschappenlijst");
+  // Het id van de zojuist verwijderde regel maakt deze URL uniek. Zonder dat
+  // is de bestemming exact de pagina waar je al staat, en dan slaat de router
+  // de navigatie over: de regel bleef dan gewoon staan terwijl hij in de
+  // database allang weg was (zelfde oorzaak als bij de dagkeuze).
+  redirect(
+    `/boodschappen?status=line-removed&verwijderd=${encodeURIComponent(line.id)}#jullie-boodschappenlijst`
+  );
 }
 
 export type ConfirmationDeliveryCheck = {

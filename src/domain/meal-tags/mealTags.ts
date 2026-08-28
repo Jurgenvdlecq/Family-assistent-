@@ -14,12 +14,20 @@ export const MEAL_TAGS = [
   "VEGETARIAN",
   "COMFORT",
   "HEALTHY",
+  // Toegevoegd voor de dagprofielen (zie domain/meal-planning/dayProfiles.ts):
+  // een profiel als "rijst met kip" of "in plaats van bestellen" moet iets
+  // preciezers kunnen zeggen dan alleen "snel" of "makkelijk".
+  "CHICKEN",
+  "POTATO",
+  "WORLD_FOOD",
 ] as const;
 
 export type MealTag = (typeof MEAL_TAGS)[number];
 
 export interface MealTagCandidate {
   recipeCategory: string;
+  /** Optioneel: alleen gebruikt om een wereldgerecht te herkennen. */
+  recipeTitle?: string;
   recipeProperties: string[];
   variantType: string;
   contextFit: string[];
@@ -55,9 +63,22 @@ const TAG_ALIASES: Record<MealTag, string[]> = {
   VEGETARIAN: ["vegetarisch", "vega", "zonder vlees"],
   COMFORT: ["comfort", "comfortfood", "stamppot", "gezellig"],
   HEALTHY: ["gezond", "licht", "fris"],
+  // Bewust leeg: deze drie tags bestaan voor de dagprofielen, die alleen naar
+  // de eigenschappen van een gerecht kijken. Ze óók als zoekterm toevoegen zou
+  // de vrije maaltijdwens veranderen zonder dat daar iets aan mankeert —
+  // "kip" komt daar al binnen als ingrediënt (INGREDIENT_ALIAS_GROUPS), en
+  // een gerecht zou dan twee keer punten krijgen voor hetzelfde woord.
+  CHICKEN: [],
+  POTATO: [],
+  WORLD_FOOD: [],
 };
 
 const PROPERTY_TAGS: Record<string, MealTag[]> = {
+  // "uitgebreid" stond wel in de zoektermen (TAG_ALIASES) maar werd nergens
+  // uit een gerecht afgeleid: wie "uitgebreid" typte kreeg daardoor nooit een
+  // treffer. Nu symmetrisch, net als alle andere eigenschappen.
+  uitgebreid: ["EXTENSIVE"],
+  weekend_koken: ["EXTENSIVE", "WEEKEND"],
   snel: ["FAST", "LOW_EFFORT"],
   drukke_dag: ["FAST", "LOW_EFFORT"],
   makkelijk: ["LOW_EFFORT"],
@@ -74,7 +95,7 @@ const PROPERTY_TAGS: Record<string, MealTag[]> = {
 
 const CATEGORY_TAGS: Record<string, MealTag[]> = {
   PASTA: ["PASTA"],
-  WRAPS: ["WRAPS"],
+  WRAPS: ["WRAPS", "WORLD_FOOD"],
   RICE_DISH: ["RICE"],
   ALL_VEGGIE_DAY: ["AVG"],
   QUICK_AND_EASY: ["FAST", "LOW_EFFORT"],
@@ -213,6 +234,28 @@ function hasProtein(candidate: MealTagCandidate) {
   });
 }
 
+function hasIngredientLike(candidate: MealTagCandidate, parts: string[]) {
+  return candidate.ingredients.some((ingredient) => {
+    const name = normalizeMealText(ingredient.name);
+    return parts.some((part) => name.includes(part));
+  });
+}
+
+const WORLD_FOOD_TITLE_HINTS = [
+  "curry",
+  "burrito",
+  "taco",
+  "teriyaki",
+  "wok",
+  "nasi",
+  "shakshuka",
+  "couscous",
+  "chili",
+  "fajita",
+  "shoarma",
+  "kerrie",
+];
+
 export function tagsForMealCandidate(candidate: MealTagCandidate): MealTag[] {
   const tags = new Set<MealTag>();
   addTags(tags, CATEGORY_TAGS[candidate.recipeCategory]);
@@ -224,6 +267,22 @@ export function tagsForMealCandidate(candidate: MealTagCandidate): MealTag[] {
 
   if (hasStarchyIngredient(candidate) && hasVegetable(candidate) && hasProtein(candidate)) {
     tags.add("AVG");
+  }
+
+  // Ingrediënt-gestuurde tags: een dagprofiel als "rijst met kip" moet kunnen
+  // herkennen wat er in het gerecht zit, niet alleen in welke categorie het valt.
+  if (hasIngredientLike(candidate, ["kip"])) tags.add("CHICKEN");
+  if (hasIngredientLike(candidate, ["aardappel"])) tags.add("POTATO");
+  if (hasIngredientLike(candidate, ["rijst"])) tags.add("RICE");
+  if (hasIngredientLike(candidate, ["pasta", "spaghetti", "macaroni", "lasagne"])) tags.add("PASTA");
+
+  // "Wereldgerecht" staat nergens als eigenschap geregistreerd, maar zit wel
+  // herkenbaar in de titel van dit soort gerechten. Bewust een lijst met
+  // duidelijke termen en geen slimmigheid: liever een tag missen dan er een
+  // verzinnen.
+  const title = normalizeMealText(candidate.recipeTitle ?? "");
+  if (title && WORLD_FOOD_TITLE_HINTS.some((hint) => title.includes(hint))) {
+    tags.add("WORLD_FOOD");
   }
 
   return [...tags].sort();

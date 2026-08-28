@@ -77,9 +77,17 @@ function parseBulkChoice(raw: FormDataEntryValue): FixedPicnicProductInput {
   };
 }
 
-function redirectToFixedGroceries(status: string): never {
+/**
+ * `unique` is geen sier: zonder iets wat per actie verschilt komt de redirect
+ * op exact dezelfde URL uit als de pagina waar de gebruiker al staat, en dan
+ * slaat de router de navigatie over — de wijziging staat wél in de database,
+ * maar niet op het scherm.
+ */
+function redirectToFixedGroceries(status: string, unique?: string): never {
   revalidatePath("/boodschappen");
-  redirect(`/boodschappen?status=${encodeURIComponent(status)}#fixed-groceries`);
+  const params = new URLSearchParams({ status });
+  if (unique) params.set("regel", unique);
+  redirect(`/boodschappen?${params.toString()}#fixed-groceries`);
 }
 
 function redirectToFixedLine(lineId: string, status: string): never {
@@ -147,7 +155,7 @@ export async function removeFixedLineThisWeek(formData: FormData) {
   const lineId = String(formData.get("lineId"));
   const { line } = await loadFixedLine(lineId);
   await prisma.shoppingListLine.delete({ where: { id: line.id } });
-  redirectToFixedGroceries("fixed-disabled");
+  redirectToFixedGroceries("fixed-disabled", line.id);
 }
 
 /** Zet een eerder deze-week-uitgeschakelde vaste boodschap weer aan. */

@@ -13,6 +13,8 @@ import {
   type PersonalSubjectPreference,
 } from "@/domain/meal-planning/scoreMealPlanCandidate";
 import { dayRecipePreferenceOwnerId } from "@/domain/meal-planning/dayRecipePreferences";
+import { dayProfile } from "@/domain/meal-planning/dayProfiles";
+import { resolveMealDayRule } from "@/domain/meal-planning/mealDayRules";
 import { entriesForSilentAcceptance } from "@/domain/meal-planning/silentAcceptance";
 import { recordRepeatedMealAcceptance } from "@/domain/learning/patterns";
 import type { ConfidenceLevel } from "@/generated/prisma/enums";
@@ -112,6 +114,8 @@ async function ensureMealPlanInner(
 
   const recentPlanningStart = new Date(weekStart);
   recentPlanningStart.setDate(recentPlanningStart.getDate() - RECENT_PLANNING_WINDOW_DAYS);
+  const previousWeekStart = new Date(weekStart);
+  previousWeekStart.setDate(previousWeekStart.getDate() - 7);
 
   const [
     household,
@@ -122,6 +126,8 @@ async function ensureMealPlanInner(
     allVariants,
     { hardRestrictionsByDay, participantsByDay },
     dayRoutines,
+    mealDayRules,
+    previousWeekEntries,
     confirmedAcceptancePatterns,
   ] = await Promise.all([
     prisma.household.findUniqueOrThrow({ where: { id: householdId } }),
@@ -167,6 +173,13 @@ async function ensureMealPlanInner(
     // concrete week betekenis heeft.
     getHouseholdHardRestrictionsAndParticipantsForWeek(householdId, weekStart),
     prisma.dayRoutine.findMany({ where: { householdId } }),
+    prisma.mealDayRule.findMany({ where: { householdId } }),
+    // De maaltijden van vorige week — nodig voor een dagprofiel dat "dit
+    // varieert niet vanzelf" zegt zonder dat er een exact gerecht aan hangt.
+    prisma.mealPlanEntry.findMany({
+      where: { mealPlan: { householdId, weekStart: previousWeekStart } },
+      select: { dayOfWeek: true, recipeVariantId: true },
+    }),
     prisma.learnedPattern.findMany({
       where: {
         householdId,
@@ -180,6 +193,11 @@ async function ensureMealPlanInner(
   ]);
   const dayRoutineByDay = new Map(
     dayRoutines.map((routine) => [DAY_KEY_BY_ENUM[routine.dayOfWeek], routine.recipeVariantId])
+  );
+  const previousWeekVariantByDay = new Map(
+    previousWeekEntries
+      .filter((entry) => entry.recipeVariantId !== null)
+      .map((entry) => [DAY_KEY_BY_ENUM[entry.dayOfWeek], entry.recipeVariantId!])
   );
   const allVariantIds = allVariants.map((variant) => variant.id);
   const allRecipeCategories = [...new Set(allVariants.map((variant) => variant.recipe.category))];
@@ -323,6 +341,12 @@ async function ensureMealPlanInner(
 
   for (const dayKey of DAY_KEYS) {
     const busy = rhythm[dayKey] === "busy";
+    const targetDate = dateForDay(weekStart, dayKey);
+    // Het weekritme van dit huishouden voor déze datum (oneven/even).
+    // `null` bij een huishouden dat niets heeft ingesteld — dan verloopt
+    // alles hieronder precies zoals vóór het weekritme.
+    const rule = resolveMealDayRule(mealDayRules, DAY_ENUM[dayKey], targetDate);
+    const profile = dayProfile(rule?.profileKey);
     const personalPreferencesForPresentPersons = personalPreferencesForDay(dayKey);
     const variants = safeVariantsForDay(dayKey).filter(
       (variant) =>
@@ -333,6 +357,24 @@ async function ensureMealPlanInner(
       throw new Error(
         `Geen enkel gerecht in de bibliotheek voldoet aan de harde beperkingen voor ${DAY_ENUM[dayKey]}. Voeg geschikte recepten toe voordat er een weekplanning gemaakt kan worden.`
       );
+    }
+
+    // Een vaste maaltijd uit het weekritme (bijvoorbeeld de patatdag) gaat
+    // vóór de gewone scoring — maar net als bij een daggewoonte alleen zolang
+    // hij veilig is: `variants` is al gefilterd op harde beperkingen en
+    // NEVER-voorkeuren, dus een gerecht dat daar niet doorheen komt staat hier
+    // simpelweg niet meer in en de dag valt terug op scoring.
+    const fixedVariant = rule?.fixedRecipeVariantId
+      ? variants.find((variant) => variant.id === rule.fixedRecipeVariantId)
+      : undefined;
+    if (fixedVariant) {
+      usedRecipeIds.add(fixedVariant.recipeId);
+      picks[dayKey] = {
+        variant: fixedVariant,
+        reason: `Dit staat vast op ${DAY_LABELS[dayKey].toLowerCase()}.`,
+        confidence: "CERTAIN",
+      };
+      continue;
     }
 
     // Een expliciet onthouden daggewoonte (WP51) wint van de gewone scoring,
@@ -351,6 +393,28 @@ async function ensureMealPlanInner(
       continue;
     }
 
+    // Een dagprofiel kan ook zeggen "deze avond varieert niet vanzelf" zónder
+    // dat er een exact gerecht bij hoort. Dan is "hetzelfde als vorige week"
+    // de enige eerlijke invulling van die belofte: wél stabiel, en nog steeds
+    // door de gebruiker te wijzigen. Bestaat er geen vorige week (of is dat
+    // gerecht inmiddels onveilig), dan valt de dag gewoon terug op scoring —
+    // dat is beter dan een lege avond.
+    if (profile?.fixed) {
+      const previousVariantId = previousWeekVariantByDay.get(dayKey);
+      const previousVariant = previousVariantId
+        ? variants.find((variant) => variant.id === previousVariantId)
+        : undefined;
+      if (previousVariant) {
+        usedRecipeIds.add(previousVariant.recipeId);
+        picks[dayKey] = {
+          variant: previousVariant,
+          reason: `${DAY_LABELS[dayKey]} houden jullie hetzelfde.`,
+          confidence: "CERTAIN",
+        };
+        continue;
+      }
+    }
+
     const notUsedYet = variants.filter((v) => !usedRecipeIds.has(v.recipeId));
     const pool = notUsedYet.length > 0 ? notUsedYet : variants;
 
@@ -359,8 +423,19 @@ async function ensureMealPlanInner(
     const matchesPreference = (v: VariantWithRecipe) =>
       preferredCategories.size === 0 || preferredCategories.has(v.recipe.category);
 
-    let candidates = pool.filter((v) => matchesBusy(v) && matchesPreference(v));
+    // Een dagregel mag ook "kies uit deze categorie" zeggen in plaats van een
+    // exact gerecht. Bewust een voorkeursfilter en geen harde eis: is er in
+    // die categorie niets bruikbaars, dan is een passend gerecht uit een
+    // andere categorie beter dan geen maaltijd.
+    const matchesRuleCategory = (v: VariantWithRecipe) =>
+      !rule?.preferredCategory || v.recipe.category === rule.preferredCategory;
+
+    let candidates = pool.filter((v) => matchesBusy(v) && matchesPreference(v) && matchesRuleCategory(v));
     let confidence: ConfidenceLevel = "CERTAIN";
+    if (candidates.length === 0 && rule?.preferredCategory) {
+      candidates = pool.filter((v) => matchesBusy(v) && matchesRuleCategory(v));
+      confidence = "SLIGHT_DOUBT";
+    }
     if (candidates.length === 0) {
       candidates = pool.filter(matchesBusy);
       confidence = "SLIGHT_DOUBT";
@@ -395,9 +470,10 @@ async function ensureMealPlanInner(
       personalCategoryPreferences: personalPreferencesForPresentPersons.byCategory,
       personalIngredientPreferences: personalPreferencesForPresentPersons.byIngredient,
       planningStyle: household.planningStyle,
+      dayProfile: profile,
       lastPlannedByRecipeId,
       usedRecipeIds,
-      targetDate: dateForDay(weekStart, dayKey),
+      targetDate,
     });
     const chosen = candidates.find((candidate) => candidate.id === scored.candidate.id)!;
     usedRecipeIds.add(chosen.recipeId);

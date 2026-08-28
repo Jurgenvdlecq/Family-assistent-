@@ -350,3 +350,138 @@ test("formatteert gebruikersuitleg zonder generieke willekeurtekst", () => {
   assert.match(formatMealPlanReason(result), /drukke vrijdag/);
   assert.doesNotMatch(formatMealPlanReason(result), /willekeurig|random/i);
 });
+
+// ── Dagprofielen ────────────────────────────────────────────────────────────
+
+import { DAY_PROFILES } from "./dayProfiles";
+
+/** Alles wat een scoringsaanroep minimaal nodig heeft, zonder profiel. */
+function baseInput(candidates: MealPlanCandidate[]) {
+  return {
+    candidates,
+    dayKey: "monday" as const,
+    busy: false,
+    preferredCategories: new Set<string>(),
+    variantPreferences: new Map(),
+    lastPlannedByRecipeId: new Map<string, Date>(),
+    usedRecipeIds: new Set<string>(),
+    targetDate: TARGET_DATE,
+  };
+}
+
+test("dagprofiel: een drukke, vroege avond kiest het opwarmbare gerecht", () => {
+  const elaborate = candidate({
+    id: "elaborate",
+    recipeTitle: "Hachee met aardappelpuree",
+    recipeCategory: "COMFORT_FOOD",
+    recipeProperties: ["comfortfood"],
+    variantType: "FRESH",
+  });
+  const reheatable = candidate({
+    id: "reheatable",
+    recipeTitle: "Pasta pesto met kip",
+    recipeCategory: "PASTA",
+    recipeProperties: ["opwarmbaar", "snel"],
+    variantType: "REHEATABLE",
+  });
+
+  const result = chooseMealPlanCandidate({
+    ...baseInput([elaborate, reheatable]),
+    dayProfile: DAY_PROFILES.BUSY_EARLY_REHEATABLE,
+  });
+
+  assert.equal(result.candidate.id, "reheatable");
+  assert.ok(
+    result.reasons.some((reason) => reason.includes("past bij jullie maandag")),
+    `de uitleg moet het dagprofiel noemen, kreeg: ${result.reasons.join(" | ")}`
+  );
+});
+
+test("dagprofiel: rijst met kip kiest het rijstgerecht mét kip", () => {
+  const riceOnly = candidate({
+    id: "rice-only",
+    recipeTitle: "Nasi met ei en groenten",
+    recipeCategory: "RICE_DISH",
+    ingredients: [{ id: "rijst", name: "Rijst" }],
+  });
+  const riceAndChicken = candidate({
+    id: "rice-chicken",
+    recipeTitle: "Kip teriyaki met rijst",
+    recipeCategory: "RICE_DISH",
+    ingredients: [
+      { id: "rijst", name: "Rijst" },
+      { id: "kip", name: "Kipfilet" },
+    ],
+  });
+
+  const result = chooseMealPlanCandidate({
+    ...baseInput([riceOnly, riceAndChicken]),
+    dayProfile: DAY_PROFILES.ADULT_RICE_CHICKEN,
+  });
+
+  assert.equal(result.candidate.id, "rice-chicken");
+});
+
+test("dagprofiel: een gerecht dat nergens op scoort wordt niet uitgesloten, alleen lager gezet", () => {
+  // Belangrijk onderscheid: een profiel is een voorkeur, geen beperking.
+  // Als er niets anders is, moet het gerecht gewoon gekozen worden.
+  const mismatch = candidate({
+    id: "mismatch",
+    recipeTitle: "Hachee met aardappelpuree",
+    recipeCategory: "COMFORT_FOOD",
+    variantType: "FRESH",
+  });
+
+  const result = chooseMealPlanCandidate({
+    ...baseInput([mismatch]),
+    dayProfile: DAY_PROFILES.ADULT_RICE_CHICKEN,
+  });
+
+  assert.equal(result.candidate.id, "mismatch");
+  assert.equal(result.confidence, "SLIGHT_DOUBT", "de app moet er wel bij zeggen dat ze twijfelt");
+});
+
+test("dagprofiel: zonder profiel verandert er niets aan de bestaande scoring", () => {
+  // De backwards-compatibiliteitstest: een huishouden zonder weekritme moet
+  // exact dezelfde keuze en dezelfde score krijgen als vóór deze wijziging.
+  const candidates = [
+    candidate({ id: "a", recipeTitle: "Pasta pesto met kip", variantType: "FAST" }),
+    candidate({ id: "b", recipeTitle: "Lasagne", recipeCategory: "COMFORT_FOOD", variantType: "FRESH" }),
+  ];
+
+  const withoutProfile = chooseMealPlanCandidate(baseInput(candidates));
+  const withExplicitNull = chooseMealPlanCandidate({ ...baseInput(candidates), dayProfile: null });
+
+  assert.equal(withoutProfile.candidate.id, withExplicitNull.candidate.id);
+  assert.equal(withoutProfile.score, withExplicitNull.score);
+  assert.deepEqual(withoutProfile.reasons, withExplicitNull.reasons);
+});
+
+test("dagprofiel: een te vermijden eigenschap kost punten maar sluit niet uit", () => {
+  const extensive = candidate({
+    id: "extensive",
+    recipeTitle: "Lasagne",
+    recipeCategory: "COMFORT_FOOD",
+    recipeProperties: ["uitgebreid"],
+    contextFit: ["uitgebreid"],
+    variantType: "FRESH",
+  });
+  const simple = candidate({
+    id: "simple",
+    recipeTitle: "Omelet met groenten en kaas",
+    recipeCategory: "QUICK_AND_EASY",
+    variantType: "FAST",
+  });
+
+  const result = chooseMealPlanCandidate({
+    ...baseInput([extensive, simple]),
+    dayProfile: DAY_PROFILES.FAMILY_EASY,
+  });
+  assert.equal(result.candidate.id, "simple");
+
+  const onlyExtensive = chooseMealPlanCandidate({
+    ...baseInput([extensive]),
+    dayProfile: DAY_PROFILES.FAMILY_EASY,
+  });
+  assert.equal(onlyExtensive.candidate.id, "extensive", "één kandidaat blijft altijd kiesbaar");
+});
