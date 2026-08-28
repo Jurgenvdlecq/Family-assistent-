@@ -4,8 +4,8 @@ import { after } from "next/server";
 import { CalendarDays, ShoppingCart, CheckCircle2, Utensils, ChevronRight, Search, ClipboardList, Minus, Plus, X } from "lucide-react";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { ensureMealPlan } from "@/lib/mealPlan";
-import { getOrderDayWindow, nextDateForWeekday } from "@/lib/orderDays";
-import { DAY_ENUM, DAY_KEY_BY_ENUM, DAY_LABELS, getCurrentWeekStart } from "@/lib/week";
+import { buildOrderDay, getOrderDayWindow, nextDateForWeekday } from "@/lib/orderDays";
+import { DAY_ENUM, DAY_KEY_BY_ENUM, DAY_LABELS, dateForDay, getCurrentWeekStart } from "@/lib/week";
 import {
   describeLinePackaging,
   ensureShoppingList,
@@ -51,7 +51,6 @@ import {
 import { addManualProduct } from "./manualProductActions";
 import { addQuickOrderPickedProducts, addQuickOrderTrustedProducts } from "./quickOrderActions";
 import { updateInventoryStatus } from "./inventoryActions";
-import LooseListCard from "./LooseListCard";
 
 const UNIT_LABELS: Record<string, string> = { GRAM: "gram", ML: "ml", PIECE: "stuks" };
 const ACTION_BUTTON_FOCUS =
@@ -75,10 +74,10 @@ const STATUS_MESSAGES: Record<string, string> = {
   "manual-added": "Toegevoegd aan de lijst van deze week.",
   "quick-order-added": "Toegevoegd aan de lijst van deze week.",
   "quick-order-bulk-added": "Herkende producten toegevoegd aan de lijst van deze week.",
-  "loose-list-started": "Losse boodschappenlijst gestart — het weekmenu van deze week staat op \"uit eten\".",
-  "loose-list-week-changed": "De week is inmiddels doorgesprongen naar een nieuwe — herlaad de pagina en probeer het opnieuw.",
   "shopping-reviewed": "Lijst bevestigd — klaar om naar Picnic te gaan.",
   "meal-day-added": "Deze avond gaat mee: de boodschappen ervoor staan nu op de lijst.",
+  "meal-replaced": "Gerecht gewisseld — de boodschappen ervoor zijn bijgewerkt.",
+  "meal-wish-planned": "Ingepland — de boodschappen ervoor staan op de lijst.",
   "meal-day-removed": "Deze avond gaat niet mee. Het geplande gerecht blijft gewoon staan.",
   "order-day-out-of-range":
     "Die avond kan ik niet meer meenemen in deze bestelling — herlaad de pagina, dan zie je de dagen die nog wel kunnen.",
@@ -90,7 +89,6 @@ const STATUS_MESSAGES: Record<string, string> = {
 
 /** Meldingen die geen bevestiging zijn maar een blokkade/waarschuwing — amber i.p.v. groen. */
 const WARNING_STATUSES = new Set([
-  "loose-list-week-changed",
   "line-in-picnic-cart",
   "invalid-quantity",
   "order-day-out-of-range",
@@ -670,21 +668,36 @@ export default async function BoodschappenPage({
       .filter((plan) => plan !== null)
       .map((plan) => [plan.weekStart.getTime(), plan])
   );
-  const mealDayOptions: MealDayOption[] = getOrderDayWindow({
-    now: new Date(),
-    firstDeliveryDate,
-  }).map((day) => {
-    const entry = planByWeekStart
-      .get(day.weekStart.getTime())
-      ?.entries.find((candidate) => candidate.dayOfWeek === DAY_ENUM[day.dayKey]);
-    return {
-      ...day,
-      included: entry?.includedInGroceries ?? false,
-      skipped: entry?.skipped ?? false,
-      mealName: entry?.recipeVariant.recipe.title,
-      reason: entry?.reason ?? undefined,
-    };
-  });
+  const now = new Date();
+  const orderDays = getOrderDayWindow({ now, firstDeliveryDate });
+
+  // Een avond kan aanstaan terwijl hij buiten het venster valt — bijvoorbeeld
+  // eerder deze week, of doordat de migratie bestaande weken op "telt mee"
+  // zette. Die moeten zichtbaar blijven, anders staan er producten op de
+  // lijst die de gebruiker hier nergens meer uit kan halen.
+  const shownDates = new Set(orderDays.map((day) => day.isoDate));
+  const extraIncludedDays = [...planByWeekStart.values()]
+    .flatMap((plan) =>
+      plan.entries
+        .filter((entry) => entry.includedInGroceries)
+        .map((entry) => buildOrderDay(dateForDay(plan.weekStart, DAY_KEY_BY_ENUM[entry.dayOfWeek]), now))
+    )
+    .filter((day) => !shownDates.has(day.isoDate));
+
+  const mealDayOptions: MealDayOption[] = [...orderDays, ...extraIncludedDays]
+    .sort((a, b) => a.isoDate.localeCompare(b.isoDate))
+    .map((day) => {
+      const entry = planByWeekStart
+        .get(day.weekStart.getTime())
+        ?.entries.find((candidate) => candidate.dayOfWeek === DAY_ENUM[day.dayKey]);
+      return {
+        ...day,
+        included: entry?.includedInGroceries ?? false,
+        skipped: entry?.skipped ?? false,
+        mealName: entry?.recipeVariant.recipe.title,
+        reason: entry?.reason ?? undefined,
+      };
+    });
   if (shoppingList.lines.some((line) => line.product && !line.product.picnicImageId)) {
     after(() => enrichShoppingListProductImages(household.id, shoppingList.id));
   }
@@ -1948,11 +1961,6 @@ export default async function BoodschappenPage({
           </div>
         </details>
 
-        <LooseListCard
-          householdId={household.id}
-          weekStart={weekStart.toISOString()}
-          hasTransferredLines={hasTransferredLines}
-        />
 
       </div>
 

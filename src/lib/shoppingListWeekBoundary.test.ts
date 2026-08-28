@@ -12,7 +12,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { prisma } from "./prisma";
 import { ensureMealPlan } from "./mealPlan";
-import { ensureShoppingList, getGroceryMealEntries, invalidateShoppingList } from "./shoppingList";
+import {
+  ensureShoppingList,
+  getGroceryMealEntries,
+  invalidateShoppingList,
+  invalidateShoppingListForPlanChange,
+} from "./shoppingList";
 import { getCurrentWeekStart } from "./week";
 
 async function makeHousehold(name: string) {
@@ -115,6 +120,71 @@ test("een niet-aangevinkte avond in de volgende week levert niets op", async () 
       0,
       "zonder aangevinkte avonden komt er uit geen van beide weken een receptregel"
     );
+  } finally {
+    await cleanup(household.id);
+  }
+});
+
+test("een gerecht wisselen op een avond in de volgende week werkt de lijst van deze week bij", async () => {
+  // Code-reviewbevinding: `invalidateShoppingList(planVanDeVolgendeWeek)` doet
+  // niets, want dát plan heeft zelf geen boodschappenlijst. De lijst van de
+  // huidige week bleef daardoor stilzwijgend op het oude gerecht staan —
+  // verkeerde producten besteld, en de tekortcontrole ziet het niet omdat er
+  // voor het nieuwe gerecht helemaal geen regel bestaat.
+  const household = await makeHousehold("Weekgrens — gerecht wisselen");
+  try {
+    const thisWeek = await ensureMealPlan(household.id, getCurrentWeekStart());
+    const nextWeek = await ensureMealPlan(household.id, nextWeekStart());
+    assert.ok(thisWeek && nextWeek, "testopzet: beide weekplannen");
+
+    const entry = await prisma.mealPlanEntry.findFirstOrThrow({
+      where: { mealPlanId: nextWeek!.id },
+      orderBy: { dayOfWeek: "asc" },
+    });
+    await prisma.mealPlanEntry.update({ where: { id: entry.id }, data: { includedInGroceries: true } });
+    await invalidateShoppingList(thisWeek!.id);
+
+    const before = await ensureShoppingList(thisWeek!.id, household.id);
+    const ingredientsBefore = new Set(
+      before.lines.filter((line) => line.source === "MEAL").map((line) => line.ingredientId)
+    );
+    assert.ok(ingredientsBefore.size > 0, "testopzet: het oude gerecht moet regels opleveren");
+
+    // Een ander gerecht kiezen voor diezelfde avond, met andere ingrediënten.
+    const otherVariant = await prisma.recipeVariant.findFirstOrThrow({
+      where: {
+        id: { not: entry.recipeVariantId },
+        recipe: { ingredients: { none: { ingredientId: { in: [...ingredientsBefore] } } } },
+      },
+      include: { recipe: { include: { ingredients: true } } },
+    });
+    await prisma.mealPlanEntry.update({
+      where: { id: entry.id },
+      data: { recipeVariantId: otherVariant.id },
+    });
+
+    // Zo deed de code het vóór de fix: het gewijzigde plan invalideren.
+    await invalidateShoppingList(nextWeek!.id);
+    const stale = await ensureShoppingList(thisWeek!.id, household.id);
+    assert.deepEqual(
+      new Set(stale.lines.filter((line) => line.source === "MEAL").map((line) => line.ingredientId)),
+      ingredientsBefore,
+      "bewijst de bug: alleen het gewijzigde plan invalideren laat de lijst op het oude gerecht staan"
+    );
+
+    // En zo hoort het: de lijst die de behoefte draagt wordt herbouwd.
+    await invalidateShoppingListForPlanChange(household.id, nextWeek!.id);
+    const rebuilt = await ensureShoppingList(thisWeek!.id, household.id);
+    const ingredientsAfter = new Set(
+      rebuilt.lines.filter((line) => line.source === "MEAL").map((line) => line.ingredientId)
+    );
+    assert.notDeepEqual(ingredientsAfter, ingredientsBefore, "de lijst moet het nieuwe gerecht weerspiegelen");
+    for (const ingredient of otherVariant.recipe.ingredients) {
+      assert.ok(
+        ingredientsAfter.has(ingredient.ingredientId),
+        `ingrediënt van het nieuwe gerecht ontbreekt: ${ingredient.ingredientId}`
+      );
+    }
   } finally {
     await cleanup(household.id);
   }

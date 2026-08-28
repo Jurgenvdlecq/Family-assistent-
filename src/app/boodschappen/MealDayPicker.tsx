@@ -51,9 +51,9 @@ function DayButton({ day }: { day: MealDayOption }) {
  * "boodschappen eerst": vaste boodschappen staan altijd klaar, en avondeten
  * is opt-in per avond.
  *
- * De reeks begint bij het eerste bezorgmoment dat Picnic nog aanbiedt (zie
- * `getOrderDayWindow`), want koken vóór de bezorging kan niet met deze
- * boodschappen. Dagen in de volgende week doen gewoon mee.
+ * De reeks begint bij het verwachte bezorgmoment (zie `getOrderDayWindow`),
+ * want koken vóór de bezorging kan niet met deze boodschappen. Dagen in de
+ * volgende week doen gewoon mee.
  */
 export default function MealDayPicker({ days }: { days: MealDayOption[] }) {
   if (days.length === 0) return null;
@@ -86,18 +86,12 @@ export default function MealDayPicker({ days }: { days: MealDayOption[] }) {
             <div key={day.isoDate} className="rounded-lg border border-line bg-bg p-3">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="text-[10px] uppercase tracking-wide text-ink-faint">{day.fullLabel}</span>
-                {/* Wisselen kan voorlopig alleen binnen deze week: het
-                    gerechtenscherm werkt op de huidige weekplanning. Voor een
-                    avond in de volgende week bieden we die knop dus niet aan,
-                    in plaats van een link die iets anders doet dan hij zegt. */}
-                {!day.isNextWeek && (
-                  <Link
-                    href={`/gerechten?day=${day.dayKey}&direction=day`}
-                    className="rounded-md border border-line bg-surface px-2 py-0.5 text-[11px] font-medium text-ink hover:bg-surface-2"
-                  >
-                    Wissel
-                  </Link>
-                )}
+                <Link
+                  href={`/gerechten?day=${day.dayKey}&direction=day${day.isNextWeek ? "&week=next" : ""}`}
+                  className="rounded-md border border-line bg-surface px-2 py-0.5 text-[11px] font-medium text-ink hover:bg-surface-2"
+                >
+                  Wissel
+                </Link>
               </div>
 
               {day.skipped ? (

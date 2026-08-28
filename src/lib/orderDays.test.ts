@@ -107,3 +107,17 @@ test("nextDateForWeekday: de eerstvolgende bezorgdag volgens de eigen voorkeur",
   assert.equal(nextDateForWeekday("tuesday", WEDNESDAY).getDate(), 8, "dinsdag is pas volgende week");
   assert.equal(nextDateForWeekday("wednesday", WEDNESDAY).getDate(), 2, "vandaag telt mee als het die dag is");
 });
+
+test("isSelectableOrderDate: weghalen mag ook voor een avond die al geweest is deze week", () => {
+  // Na de migratie kunnen dagen eerder deze week op "telt mee" staan. Die
+  // moet de gebruiker er altijd weer af kunnen halen — toevoegen blijft wel
+  // beperkt tot vandaag en later.
+  const monday = new Date("2026-08-31T00:00:00");
+  assert.equal(isSelectableOrderDate(monday, WEDNESDAY, "remove"), true);
+  assert.equal(isSelectableOrderDate(monday, WEDNESDAY, "add"), false);
+});
+
+test("isSelectableOrderDate: weghalen blijft begrensd tot deze en de volgende week", () => {
+  assert.equal(isSelectableOrderDate(new Date("2026-08-30T00:00:00"), WEDNESDAY, "remove"), false, "vorige week");
+  assert.equal(isSelectableOrderDate(new Date("2026-09-14T00:00:00"), WEDNESDAY, "remove"), false, "te ver vooruit");
+});

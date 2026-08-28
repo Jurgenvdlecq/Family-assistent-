@@ -36,7 +36,7 @@ export async function setMealIncludedInGroceries(formData: FormData) {
   const date = parseOrderDate(String(formData.get("date") ?? ""));
   const included = String(formData.get("included") ?? "") === "true";
 
-  if (!date || !isSelectableOrderDate(date, new Date())) {
+  if (!date || !isSelectableOrderDate(date, new Date(), included ? "add" : "remove")) {
     // Bijvoorbeeld een tabblad dat sinds gisteren openstond: de dag die daar
     // nog getoond werd, ligt inmiddels in het verleden.
     backToPicker("order-day-out-of-range");

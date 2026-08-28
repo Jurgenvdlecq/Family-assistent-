@@ -365,13 +365,6 @@ export default async function Home({
           Dit is jullie week. Corrigeer alleen wat niet klopt, dan regel ik de
           rest.
         </p>
-        <Link
-          href="/boodschappen#loose-list"
-          className="mb-5 inline-block text-xs font-medium text-ink-faint underline decoration-dotted hover:text-accent"
-        >
-          Alleen boodschappen nodig? Start een losse lijst
-        </Link>
-
         <section className="mb-4 rounded-xl border border-accent/30 bg-surface p-4">
           <div className="flex min-w-0 gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-accent">
