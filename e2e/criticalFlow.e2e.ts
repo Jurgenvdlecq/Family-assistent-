@@ -48,8 +48,8 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
     await t.test("1. Onboarding: nieuw huishouden aanmaken", async () => {
       const household = await completeOnboardingViaUi(page, server.baseURL, HOUSEHOLD_NAME, USERNAME, PASSWORD);
       householdId = household.id;
-      assert.ok(householdId, "Onboarding moet een huishouden aanmaken en terugleiden naar /");
-      assert.equal(page.url(), `${server.baseURL}/`);
+      assert.ok(householdId, "Onboarding moet een huishouden aanmaken en terugleiden naar de startpagina");
+      assert.equal(page.url(), `${server.baseURL}/boodschappen`);
 
       // Fase 15: tests mogen niet van een live Picnic-account afhangen. Een
       // nep-token koppelen zorgt dat de Picnic-stappen hieronder (5, 8, 9)
@@ -66,7 +66,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       // zodat die stap zelf niet onnodig een trage cold start hoeft te
       // verdragen. Via `page` (niet een losse fetch): de sessiecookie van
       // de zojuist voltooide onboarding staat alleen in de browsercontext.
-      await page.goto(`${server.baseURL}/`, { waitUntil: "load", timeout: 90_000 });
+      await page.goto(`${server.baseURL}/week`, { waitUntil: "load", timeout: 90_000 });
 
       // /gerechten scoort en rangschikt onafhankelijk de hele receptcatalogus
       // (zie stap 3) en heeft dezelfde eerste-bezoek-cold-start als hierboven
@@ -151,7 +151,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
           // Bij een geslaagde koppeling redirect de tussenpagina zelf meteen
           // door naar "/" — geen apart "gekoppeld"-tussenscherm nodig (zie
           // onboarding/picnic/page.tsx: al gekoppeld -> redirect).
-          await onboardingPage.waitForURL(`${server.baseURL}/`, { timeout: 15_000 });
+          await onboardingPage.waitForURL(`${server.baseURL}/boodschappen`, { timeout: 15_000 });
 
           const picnicHousehold = await prisma.household.findFirstOrThrow({
             where: { name: picnicHouseholdName },
@@ -169,7 +169,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
     );
 
     await t.test("2. Weekmenu bekijken", async () => {
-      await page.goto(`${server.baseURL}/`, { waitUntil: "load" });
+      await page.goto(`${server.baseURL}/week`, { waitUntil: "load" });
       await page.locator("text=Jullie weekmenu").waitFor({ state: "visible", timeout: 20_000 });
       const replaceLinks = page.locator('a[aria-label^="Vervang "]');
       await replaceLinks.first().waitFor({ state: "visible" });
@@ -177,7 +177,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
     });
 
     await t.test("2b. Voorkeur zetten blijft op dezelfde dag i.p.v. terug naar boven springen (UX-bugfix)", async () => {
-      await page.goto(`${server.baseURL}/`, { waitUntil: "load" });
+      await page.goto(`${server.baseURL}/week`, { waitUntil: "load" });
       const tuesdayBlock = page.locator("#day-tuesday");
       await tuesdayBlock.waitFor({ state: "visible", timeout: 15_000 });
       await tuesdayBlock.getByText("Meer voor deze dag").click();
@@ -201,7 +201,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
     });
 
     await t.test("2c. 'Uit eten' scrollt terug naar de dag zonder ongevraagd 'Meer voor deze dag' te openen (UX-bugfix)", async () => {
-      await page.goto(`${server.baseURL}/`, { waitUntil: "load" });
+      await page.goto(`${server.baseURL}/week`, { waitUntil: "load" });
       const wednesdayBlock = page.locator("#day-wednesday");
       await wednesdayBlock.waitFor({ state: "visible", timeout: 15_000 });
 
@@ -246,7 +246,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       // Gebruikersverzoek: een voltooide gerechtwissel gaat terug naar het
       // weekmenu i.p.v. op /gerechten te blijven staan — en landt meteen op
       // de juiste dag (focusDay + #day-<dag>), niet bovenaan de pagina.
-      await page.waitForURL((url) => url.pathname === "/" && url.searchParams.get("focusDay") === "monday", {
+      await page.waitForURL((url) => url.pathname === "/week" && url.searchParams.get("focusDay") === "monday", {
         timeout: 15_000,
       });
       assert.ok(page.url().endsWith("#day-monday"), "Moet landen op de aangepaste dag, niet bovenaan de pagina");
@@ -262,7 +262,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       const secondKiesButton = page.getByRole("button", { name: "Kies" }).first();
       await secondKiesButton.waitFor({ state: "visible", timeout: 30_000 });
       await secondKiesButton.click();
-      await page.waitForURL((url) => url.pathname === "/" && url.searchParams.get("focusDay") === "tuesday", {
+      await page.waitForURL((url) => url.pathname === "/week" && url.searchParams.get("focusDay") === "tuesday", {
         timeout: 15_000,
       });
       assert.ok(page.url().endsWith("#day-tuesday"), "Moet ook de tweede keer op de juiste dag landen");
@@ -657,7 +657,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       // Verandert het weekmenu voor de rest van de testrun (alle dagen op
       // "uit eten") — bewust als laatste stap, zodat dit geen eerdere
       // stappen kan beïnvloeden.
-      await page.goto(`${server.baseURL}/`, { waitUntil: "load" });
+      await page.goto(`${server.baseURL}/week`, { waitUntil: "load" });
       await page.getByRole("link", { name: "Alleen boodschappen nodig? Start een losse lijst" }).click();
       await page.waitForURL((url) => url.pathname === "/boodschappen", { timeout: 15_000 });
 
@@ -750,7 +750,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
           data: { status: "REVIEWED", reviewedAt: new Date() },
         });
 
-        await page.goto(`${server.baseURL}/`, { waitUntil: "load" });
+        await page.goto(`${server.baseURL}/week`, { waitUntil: "load" });
         await page.locator("text=Klaar om naar Picnic te gaan").waitFor({ state: "visible", timeout: 15_000 });
 
         const addedBefore = mockPicnic.addedProducts.length;
@@ -772,8 +772,8 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         );
         assert.equal(
           new URL(page.url()).pathname,
-          "/",
-          "Moet op de startpagina blijven — geen navigatie naar /boodschappen nodig voor deze actie"
+          "/week",
+          "Moet op de weekpagina blijven — geen navigatie naar /boodschappen nodig voor deze actie"
         );
       }
     );
@@ -781,7 +781,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
     await t.test(
       "10d. Startpagina toont daarna 'Rond je bestelling af in Picnic' met werkende 'Ik heb besteld' (nieuwe functie)",
       async () => {
-        await page.goto(`${server.baseURL}/`, { waitUntil: "load" });
+        await page.goto(`${server.baseURL}/week`, { waitUntil: "load" });
         await page.locator("text=Rond je bestelling af in Picnic").waitFor({ state: "visible", timeout: 15_000 });
 
         const confirmOrderButton = page.getByRole("button", { name: "Ik heb besteld" });
@@ -801,7 +801,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         const shoppingList = await prisma.shoppingList.findFirstOrThrow({ where: { mealPlan: { householdId } } });
         assert.ok(shoppingList.orderConfirmedAt !== null, "orderConfirmedAt moet gezet zijn na 'Ik heb besteld'");
 
-        await page.goto(`${server.baseURL}/`, { waitUntil: "load" });
+        await page.goto(`${server.baseURL}/week`, { waitUntil: "load" });
         const stillShowingConfirmCard = await page
           .locator("text=Rond je bestelling af in Picnic")
           .isVisible()

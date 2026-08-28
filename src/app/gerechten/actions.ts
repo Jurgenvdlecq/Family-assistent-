@@ -30,7 +30,7 @@ const VALID_GERECHTEN_DIRECTIONS = new Set(["day", "all", "favorites", "quick"])
  */
 function redirectToGerechten(dayKey: DayKey, direction: string, wishText: string, status: string): never {
   revalidatePath("/gerechten");
-  revalidatePath("/");
+  revalidatePath("/week");
   const params = new URLSearchParams({
     day: dayKey,
     direction: VALID_GERECHTEN_DIRECTIONS.has(direction) ? direction : "all",

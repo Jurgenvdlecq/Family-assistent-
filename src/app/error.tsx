@@ -9,5 +9,5 @@ export default function AppError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  return <ErrorBoundaryScreen error={error} reset={reset} homeHref="/" homeLabel="Terug naar Jouw week" />;
+  return <ErrorBoundaryScreen error={error} reset={reset} homeHref="/" homeLabel="Terug naar de app" />;
 }

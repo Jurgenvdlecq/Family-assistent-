@@ -25,12 +25,12 @@ import type { DayKey } from "@/lib/week";
  * voor die dag ook meteen openklapt.
  */
 export function redirectToHome(status: string, focusDayKey?: DayKey, openDayDetails = true): never {
-  revalidatePath("/");
+  revalidatePath("/week");
   const params = new URLSearchParams({ status });
   if (focusDayKey) {
     params.set("focusDay", focusDayKey);
     if (!openDayDetails) params.set("openDetails", "0");
-    redirect(`/?${params.toString()}#day-${focusDayKey}`);
+    redirect(`/week?${params.toString()}#day-${focusDayKey}`);
   }
-  redirect(`/?${params.toString()}`);
+  redirect(`/week?${params.toString()}`);
 }

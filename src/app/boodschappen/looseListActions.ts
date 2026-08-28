@@ -49,6 +49,6 @@ export async function startLooseShoppingList(formData: FormData) {
 
   revalidatePath("/boodschappen");
   revalidatePath("/controle");
-  revalidatePath("/");
+  revalidatePath("/week");
   redirect("/boodschappen?status=loose-list-started#loose-list");
 }
