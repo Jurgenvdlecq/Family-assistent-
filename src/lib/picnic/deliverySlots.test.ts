@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   parseDeliverySlotsResponse,
   findPreferredDeliverySlotStatus,
+  formatSlotWindow,
+  groupDeliverySlotsByDay,
   shouldCheckDeliverySlotToday,
   type PicnicDeliverySlot,
 } from "./deliverySlots";
@@ -192,4 +194,54 @@ test("shouldCheckDeliverySlotToday: reminderDaysBefore=0 betekent 'controleer op
     now: new Date("2026-07-31T08:00:00Z"),
   });
   assert.equal(result, true);
+});
+
+// --- groupDeliverySlotsByDay (WP: bezorgmomenten-overzicht) ---
+
+function slot(id: string, startIso: string, endIso: string, isAvailable = true): PicnicDeliverySlot {
+  return { id, windowStart: new Date(startIso), windowEnd: new Date(endIso), isAvailable };
+}
+
+test("groupDeliverySlotsByDay: bundelt per bezorgdag en sorteert dagen én tijdvakken oplopend", () => {
+  // Bewust door elkaar aangeleverd, om te bewijzen dat we zelf sorteren.
+  const groups = groupDeliverySlotsByDay([
+    slot("za-mid", "2026-09-05T08:00:00Z", "2026-09-05T10:00:00Z"),
+    slot("do-laat", "2026-09-03T18:00:00Z", "2026-09-03T19:00:00Z"),
+    slot("do-vroeg", "2026-09-03T16:00:00Z", "2026-09-03T17:00:00Z"),
+  ]);
+
+  assert.deepEqual(
+    groups.map((group) => group.isoDate),
+    ["2026-09-03", "2026-09-05"]
+  );
+  assert.deepEqual(groups[0].availableSlots.map((s) => s.id), ["do-vroeg", "do-laat"]);
+  assert.equal(groups[0].dayKey, "thursday");
+  assert.equal(groups[0].label, "do 3 sep");
+});
+
+test("groupDeliverySlotsByDay: een dag waarop alles vol zit blijft zichtbaar, met 0 vrije tijdvakken", () => {
+  const groups = groupDeliverySlotsByDay([
+    slot("vol-1", "2026-09-04T16:00:00Z", "2026-09-04T17:00:00Z", false),
+    slot("vol-2", "2026-09-04T18:00:00Z", "2026-09-04T19:00:00Z", false),
+  ]);
+
+  assert.equal(groups.length, 1, "de dag zelf mag niet verdwijnen — anders lijkt hij simpelweg niet te bestaan");
+  assert.equal(groups[0].availableSlots.length, 0);
+  assert.equal(groups[0].unavailableCount, 2);
+});
+
+test("groupDeliverySlotsByDay: groepeert op Nederlandse kalenderdag, niet op UTC-dag", () => {
+  // 23:30 UTC op 3 sep = 01:30 Nederlandse tijd op 4 sep (zomertijd, UTC+2).
+  const groups = groupDeliverySlotsByDay([slot("nacht", "2026-09-03T23:30:00Z", "2026-09-04T00:30:00Z")]);
+
+  assert.equal(groups[0].isoDate, "2026-09-04");
+  assert.equal(groups[0].dayKey, "friday");
+});
+
+test("groupDeliverySlotsByDay: geen sloten geeft een lege lijst, geen crash", () => {
+  assert.deepEqual(groupDeliverySlotsByDay([]), []);
+});
+
+test("formatSlotWindow: toont het tijdvak in Nederlandse tijd", () => {
+  assert.equal(formatSlotWindow(slot("x", "2026-09-03T16:00:00Z", "2026-09-03T17:00:00Z")), "18:00–19:00");
 });

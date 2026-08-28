@@ -27,7 +27,7 @@ import NavBar from "@/components/NavBar";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
 import PicnicTransfer from "./PicnicTransfer";
 import AddToPicnicCart from "./AddToPicnicCart";
-import PicnicDeliveryStatusCard from "./PicnicDeliveryStatusCard";
+import DeliverySlotsCard from "./DeliverySlotsCard";
 import ShoppingChecklist, { type ChecklistLine } from "./ShoppingChecklist";
 import {
   acknowledgeShoppingListShortfall,
@@ -933,7 +933,7 @@ export default async function BoodschappenPage({
           </details>
         )}
 
-        <PicnicDeliveryStatusCard householdId={household.id} picnicAuthToken={household.picnicAuthToken} />
+        <DeliverySlotsCard householdId={household.id} picnicAuthToken={household.picnicAuthToken} />
 
         {!household.picnicAuthToken && (
           <PicnicTransfer

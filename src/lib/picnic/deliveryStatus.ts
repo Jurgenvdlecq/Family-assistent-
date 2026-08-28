@@ -1,8 +1,10 @@
 import { prisma } from "@/lib/prisma";
-import { PicnicClient } from "./client";
+import { PicnicAuthError, PicnicClient } from "./client";
 import {
   parseDeliverySlotsResponse,
   findPreferredDeliverySlotStatus,
+  groupDeliverySlotsByDay,
+  type DeliveryDayGroup,
   type PreferredDeliverySlotStatus,
 } from "./deliverySlots";
 import type { DayOfWeek } from "@/generated/prisma/enums";
@@ -55,6 +57,67 @@ export async function getPreferredDeliverySlotStatusForHousehold(input: {
       status: "UNKNOWN",
       nearbySlots: [],
       message: "Picnic kon nu niet worden gecontroleerd.",
+    };
+  }
+}
+
+export type DeliveryOverview = {
+  /** Wanneer deze gegevens bij Picnic zijn opgehaald — de UI toont dit, zodat
+   * een scherm dat al even openstaat niet doorgaat voor actueel. */
+  fetchedAt: Date;
+  groups: DeliveryDayGroup[];
+  /** Alleen gevuld als het huishouden een voorkeursmoment heeft ingesteld. */
+  preferred: PreferredDeliverySlotStatus | null;
+  error: "auth" | "other" | null;
+};
+
+/**
+ * Haalt in één Picnic-aanroep het volledige bezorgoverzicht op: alle dagen
+ * met hun nog vrije tijdvakken, plus — als het huishouden er een heeft
+ * ingesteld — de status van het voorkeursmoment. Bewust één aanroep voor
+ * beide, in plaats van `getPreferredDeliverySlotStatusForHousehold` ernaast
+ * (dat zou dezelfde lijst een tweede keer ophalen).
+ *
+ * Faalt nooit hard: een verlopen sessie of storing komt terug als `error`,
+ * zodat de pagina gewoon rendert met een herstelbanner (zelfde patroon als
+ * de zoekopdrachten op /boodschappen).
+ */
+export async function getDeliveryOverviewForHousehold(input: {
+  householdId: string;
+  picnicAuthToken: string;
+  preference: { preferredDayOfWeek: DayOfWeek; preferredTime: string; windowMinutes: number } | null;
+}): Promise<DeliveryOverview> {
+  const client = new PicnicClient(input.picnicAuthToken);
+  try {
+    const raw = await client.getDeliverySlots();
+    await persistRefreshedToken(client, input.householdId, input.picnicAuthToken);
+    const slots = parseDeliverySlotsResponse(raw);
+    return {
+      fetchedAt: new Date(),
+      groups: groupDeliverySlotsByDay(slots),
+      preferred: input.preference
+        ? findPreferredDeliverySlotStatus({
+            slots,
+            preferredDay: input.preference.preferredDayOfWeek,
+            preferredTime: input.preference.preferredTime,
+            windowMinutes: input.preference.windowMinutes,
+          })
+        : null,
+      error: null,
+    };
+  } catch (error) {
+    logEvent({
+      level: "warn",
+      area: "picnic_delivery_slots",
+      message: "Kon het Picnic-bezorgoverzicht niet ophalen",
+      correlationId: createCorrelationId(),
+      meta: { householdId: input.householdId, error: errorMessage(error) },
+    });
+    return {
+      fetchedAt: new Date(),
+      groups: [],
+      preferred: null,
+      error: error instanceof PicnicAuthError ? "auth" : "other",
     };
   }
 }
