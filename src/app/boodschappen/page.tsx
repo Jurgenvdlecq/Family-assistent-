@@ -808,7 +808,11 @@ export default async function BoodschappenPage({
     inactiveFixedProductPreferences.map((pref) => [pref.ingredientId, pref.product])
   );
   const mealLineByIngredientId = new Map(mealLines.map((line) => [line.ingredientId, line]));
-  const mealTotalCost = mealLines.reduce((total, line) => total + estimatedLineCost(line), 0);
+  // De prijs boven de lijst hoort te gaan over álles wat besteld wordt, niet
+  // alleen over de weekmenu-regels. Sinds avondeten opt-in is, is dat deel
+  // vaak leeg terwijl er wel vaste boodschappen klaarstaan — dan stond er
+  // "Prijs onbekend" bij een lijst met vijftien producten.
+  const listTotalCost = sortedLines.reduce((total, line) => total + estimatedLineCost(line), 0);
   const mealReviewIds = new Set(mealLines.filter((line) => line.needsReview).map((line) => line.ingredientId));
   const shortfallByLineId = new Map(
     findShoppingListShortfalls(groceryMeals, portionScaleByDay, inventoryMap, sortedLines)
@@ -1028,23 +1032,44 @@ export default async function BoodschappenPage({
         <div id="jullie-boodschappenlijst" className="mb-3 scroll-mt-6 flex items-baseline justify-between gap-3">
           <h2 className="text-sm font-semibold text-ink">Jullie boodschappenlijst</h2>
           <span className="text-xs font-medium text-ink-muted">
-            {mealTotalCost > 0 ? `€ ${mealTotalCost.toFixed(2)}` : "Prijs onbekend"}
+            {listTotalCost > 0 ? `€ ${listTotalCost.toFixed(2)}` : "Prijs onbekend"}
           </span>
         </div>
-        <div className="flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
-          {mealLines.map(renderShoppingLineRow)}
-        </div>
+        {/* Een leeg omkaderd blok rendert niet: zonder aangevinkte avonden zou
+            de lijst er dan uitzien alsof er niets besteld wordt, terwijl de
+            vaste boodschappen gewoon klaarstaan. */}
+        {mealLines.length > 0 && (
+          <div className="flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
+            {mealLines.map(renderShoppingLineRow)}
+          </div>
+        )}
 
         {activeFixedLines.length > 0 && (
-          <details id="alle-te-bestellen-producten" className="mt-3 scroll-mt-6">
+          <details
+            id="alle-te-bestellen-producten"
+            className={mealLines.length > 0 ? "mt-3 scroll-mt-6" : "scroll-mt-6"}
+            // Zijn de vaste boodschappen de hele lijst, dan staan ze meteen
+            // open — anders moet je klikken om te zien wat er besteld wordt.
+            open={mealLines.length === 0 || undefined}
+          >
             <summary className="cursor-pointer text-xs font-medium text-ink-muted hover:text-ink">
-              + {activeFixedLines.length} vaste boodschap{activeFixedLines.length === 1 ? "" : "pen"} worden ook
-              besteld — toon volledige lijst
+              {mealLines.length === 0
+                ? `${activeFixedLines.length} vaste boodschap${activeFixedLines.length === 1 ? "" : "pen"} staan klaar`
+                : `+ ${activeFixedLines.length} vaste boodschap${
+                    activeFixedLines.length === 1 ? "" : "pen"
+                  } worden ook besteld — toon volledige lijst`}
             </summary>
             <div className="mt-3 flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
               {activeFixedLines.map(renderShoppingLineRow)}
             </div>
           </details>
+        )}
+
+        {mealLines.length === 0 && activeFixedLines.length === 0 && (
+          <p className="rounded-xl border border-dashed border-line bg-surface p-4 text-xs text-ink-muted">
+            Je lijst is nog leeg. Tik hierboven een avond aan om er boodschappen voor mee te nemen, of voeg hieronder
+            zelf producten toe.
+          </p>
         )}
 
         <div id="quick-add-product" className="mb-6 scroll-mt-6 rounded-xl border border-line bg-surface p-4">
