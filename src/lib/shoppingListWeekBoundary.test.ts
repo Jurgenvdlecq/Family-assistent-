@@ -17,6 +17,7 @@ import {
   getGroceryMealEntries,
   invalidateShoppingList,
   invalidateShoppingListForPlanChange,
+  releaseNextWeekMealDays,
 } from "./shoppingList";
 import { getCurrentWeekStart } from "./week";
 
@@ -185,6 +186,62 @@ test("een gerecht wisselen op een avond in de volgende week werkt de lijst van d
         `ingrediënt van het nieuwe gerecht ontbreekt: ${ingredient.ingredientId}`
       );
     }
+  } finally {
+    await cleanup(household.id);
+  }
+});
+
+test("een besteld avondeten in de volgende week wordt niet opnieuw voorgesteld zodra die week aanbreekt", async () => {
+  // Het scenario uit de code-review: je vinkt in week W een avond van W+1 aan,
+  // bestelt en krijgt bezorgd. Zodra W+1 de huidige week wordt, krijgt die een
+  // verse lijst — zónder de overdrachtsmarkeringen van de vorige bestelling.
+  // Stond de avond dan nog op "telt mee", dan stelt de app hetzelfde gerecht
+  // doodleuk opnieuw voor.
+  const household = await makeHousehold("Weekgrens — niet opnieuw voorstellen");
+  try {
+    const thisWeek = await ensureMealPlan(household.id, getCurrentWeekStart());
+    const nextWeek = await ensureMealPlan(household.id, nextWeekStart());
+    assert.ok(thisWeek && nextWeek, "testopzet: beide weekplannen");
+
+    const nextWeekEntry = await prisma.mealPlanEntry.findFirstOrThrow({
+      where: { mealPlanId: nextWeek!.id },
+      orderBy: { dayOfWeek: "asc" },
+    });
+    const thisWeekEntry = await prisma.mealPlanEntry.findFirstOrThrow({
+      where: { mealPlanId: thisWeek!.id },
+      orderBy: { dayOfWeek: "asc" },
+    });
+    await prisma.mealPlanEntry.updateMany({
+      where: { id: { in: [nextWeekEntry.id, thisWeekEntry.id] } },
+      data: { includedInGroceries: true },
+    });
+    await invalidateShoppingList(thisWeek!.id);
+    const ordered = await ensureShoppingList(thisWeek!.id, household.id);
+    assert.ok(
+      ordered.lines.some((line) => line.source === "MEAL"),
+      "testopzet: er moeten maaltijdregels te bestellen zijn"
+    );
+
+    // Wat er gebeurt zodra de maaltijdregels naar het Picnic-mandje gaan.
+    await releaseNextWeekMealDays(household.id, thisWeek!.weekStart);
+
+    const afterNext = await prisma.mealPlanEntry.findUniqueOrThrow({ where: { id: nextWeekEntry.id } });
+    assert.equal(afterNext.includedInGroceries, false, "de bestelde avond van volgende week mag niet blijven staan");
+
+    const afterThis = await prisma.mealPlanEntry.findUniqueOrThrow({ where: { id: thisWeekEntry.id } });
+    assert.equal(
+      afterThis.includedInGroceries,
+      true,
+      "deze week blijft staan zoals de gebruiker 'm koos — daar kan niets dubbel besteld worden"
+    );
+
+    // De weekwissel simuleren: de lijst van W+1 wordt vanaf nul opgebouwd.
+    const nextWeekList = await ensureShoppingList(nextWeek!.id, household.id);
+    assert.equal(
+      nextWeekList.lines.filter((line) => line.source === "MEAL").length,
+      0,
+      "het al bestelde gerecht mag in de nieuwe week niet opnieuw op de lijst komen"
+    );
   } finally {
     await cleanup(household.id);
   }

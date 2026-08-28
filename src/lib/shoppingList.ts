@@ -338,6 +338,38 @@ async function buildShoppingListLines(mealPlanId: string, householdId: string) {
  * plan dat zelf helemaal geen lijst heeft, waarna de lijst van de huidige
  * week stilzwijgend op het oude gerecht bleef staan. Altijd allebei dus.
  */
+/**
+ * Zet de dagkeuze van de vólgende week terug nadat de boodschappen ervoor
+ * naar het Picnic-mandje zijn overgedragen.
+ *
+ * Waarom alleen de volgende week? De boodschappenlijst hangt aan het weekplan
+ * van de huidige week en wordt voor die week nooit meer vanaf nul opgebouwd
+ * zonder dat de al overgedragen regels bewaard blijven — binnen deze week kan
+ * er dus niets dubbel besteld worden, en blijft de dagkeuze gewoon tonen wat
+ * de gebruiker gekozen heeft. Het risico zit één week verderop: een avond in
+ * week W+1 die je in week W hebt aangevinkt en besteld, staat nog steeds op
+ * "telt mee" zodra W+1 de huidige week wordt. Die week krijgt dan een verse
+ * lijst — zónder de overdrachtsmarkeringen van de vorige bestelling — en zou
+ * hetzelfde gerecht doodleuk opnieuw voorstellen.
+ *
+ * Bekende beperking: leeg je daarna je Picnic-mandje, dan komen de
+ * overdrachtsmarkeringen terug maar deze keuze niet — welke avond bij welke
+ * regel hoorde is nergens vastgelegd. De regels blijven wel gewoon op de
+ * lijst staan; alleen een herbouw zou ze laten vervallen.
+ */
+export async function releaseNextWeekMealDays(householdId: string, weekStart: Date) {
+  const nextWeekStart = new Date(weekStart);
+  nextWeekStart.setDate(nextWeekStart.getDate() + 7);
+
+  await prisma.mealPlanEntry.updateMany({
+    where: {
+      includedInGroceries: true,
+      mealPlan: { householdId, weekStart: nextWeekStart },
+    },
+    data: { includedInGroceries: false },
+  });
+}
+
 export async function invalidateShoppingListForPlanChange(householdId: string, changedMealPlanId: string) {
   const currentWeekPlan = await prisma.mealPlan.findUnique({
     where: { householdId_weekStart: { householdId, weekStart: getCurrentWeekStart() } },

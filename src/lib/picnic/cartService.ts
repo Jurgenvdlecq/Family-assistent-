@@ -1,6 +1,6 @@
 import { prisma } from "../prisma";
 import { PicnicClient, PicnicAuthError, PicnicNetworkError } from "./client";
-import { describeLinePackaging, isUserChosenPackageCount } from "../shoppingList";
+import { describeLinePackaging, isUserChosenPackageCount, releaseNextWeekMealDays } from "../shoppingList";
 import { logEvent, createCorrelationId } from "../logger";
 import type { LineSource } from "@/generated/prisma/enums";
 
@@ -57,7 +57,7 @@ export async function addShoppingListToPicnicCart(
   const shoppingList = await prisma.shoppingList.findUniqueOrThrow({
     where: { id: shoppingListId },
     include: {
-      mealPlan: { select: { householdId: true } },
+      mealPlan: { select: { householdId: true, weekStart: true } },
       lines: { include: { ingredient: true, product: true } },
     },
   });
@@ -83,6 +83,10 @@ export async function addShoppingListToPicnicCart(
   const correlationId = createCorrelationId();
   const client = new PicnicClient(household.picnicAuthToken);
   const result: PicnicCartResult = { added: [], skipped: [], notFound: [], errors: [], stoppedEarly: false };
+  // Alleen tellen wat in déze aanroep echt is overgedragen — een "snelle
+  // bestelling" (alleen vaste boodschappen en losse toevoegingen) mag de
+  // dagkeuze niet aanraken.
+  let transferredMealLines = 0;
 
   for (const line of linesToTransfer) {
     if (line.transferredToPicnicAt) {
@@ -111,6 +115,7 @@ export async function addShoppingListToPicnicCart(
         where: { id: line.id },
         data: { transferredToPicnicAt: new Date() },
       });
+      if (line.source === "MEAL") transferredMealLines += 1;
     } catch (err) {
       if (err instanceof PicnicAuthError || err instanceof PicnicNetworkError) {
         result.errors.push({
@@ -125,6 +130,13 @@ export async function addShoppingListToPicnicCart(
         message: err instanceof Error ? err.message : "Onbekende fout",
       });
     }
+  }
+
+  // Zijn er maaltijdboodschappen overgedragen, dan is de dagkeuze voor de
+  // vólgende week afgehandeld: die avonden mogen niet opnieuw voorgesteld
+  // worden zodra die week aanbreekt (zie releaseNextWeekMealDays).
+  if (transferredMealLines > 0) {
+    await releaseNextWeekMealDays(shoppingList.mealPlan.householdId, shoppingList.mealPlan.weekStart);
   }
 
   await persistRefreshedToken(client, household.id, household.picnicAuthToken);
