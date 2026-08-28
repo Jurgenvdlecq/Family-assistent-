@@ -106,8 +106,11 @@ export async function startMockPicnicServer(port = DEFAULT_PORT): Promise<MockPi
     }
 
     if (url.pathname === "/cart") {
+      // Weerspiegelt de eigen mandje-inhoud: de app leest hieruit af of het
+      // echte mandje leeg is (en vraagt dán of er besteld is). Met een leeg
+      // object zou dat nooit te testen zijn.
       res.writeHead(200);
-      res.end("{}");
+      res.end(JSON.stringify({ total_count: addedProducts.length, items: [] }));
       return;
     }
 

@@ -615,6 +615,7 @@ export default async function BoodschappenPage({
   searchParams,
 }: {
   searchParams: Promise<{
+    bestelvraag?: string;
     fixedQ?: string;
     fixedLine?: string;
     fixedReplaceLineId?: string;
@@ -835,6 +836,10 @@ export default async function BoodschappenPage({
   // vaak leeg terwijl er wel vaste boodschappen klaarstaan — dan stond er
   // "Prijs onbekend" bij een lijst met vijftien producten.
   const listTotalCost = sortedLines.reduce((total, line) => total + estimatedLineCost(line), 0);
+  // Wat er daadwerkelijk naar het Picnic-mandje is gegaan — de basis voor het
+  // bonnetje hieronder.
+  const orderedLines = sortedLines.filter((line) => line.transferredToPicnicAt !== null);
+  const orderedTotalCost = orderedLines.reduce((total, line) => total + estimatedLineCost(line), 0);
   const mealReviewIds = new Set(mealLines.filter((line) => line.needsReview).map((line) => line.ingredientId));
   const shortfallByLineId = new Map(
     findShoppingListShortfalls(groceryMeals, portionScaleByDay, inventoryMap, sortedLines)
@@ -1107,6 +1112,12 @@ export default async function BoodschappenPage({
             householdId={household.id}
             picnicAuthToken={household.picnicAuthToken}
             preference={deliveryPreference}
+            shoppingListId={shoppingList.id}
+            mayAskOrderPlaced={
+              hasTransferredLines &&
+              shoppingList.orderConfirmedAt === null &&
+              String(params.bestelvraag ?? "") !== "later"
+            }
           />
         </Suspense>
 
@@ -1380,6 +1391,22 @@ export default async function BoodschappenPage({
             transferred={picnicTransfer.status === "TRANSFERRED"}
           />
         )}
+        {/* Een bonnetje achteraf: bestellen eindigde tot nu toe in stilte.
+            Bewust geen bezorgmoment erbij — dat kiest de gebruiker in de
+            Picnic-app en wij weten het niet, dus we zouden het verzinnen. */}
+        {shoppingList.orderConfirmedAt && orderedLines.length > 0 && (
+          <div className="mb-4 min-w-0 rounded-xl border border-tag-green-ink/25 bg-tag-green-bg p-3 text-xs text-tag-green-ink">
+            <p className="flex items-center gap-2 text-sm font-semibold">
+              <CheckCircle2 size={15} />
+              Besteld op {shoppingList.orderConfirmedAt.toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" })}
+            </p>
+            <p className="mt-1">
+              {orderedLines.length} product{orderedLines.length === 1 ? "" : "en"}
+              {orderedTotalCost > 0 ? ` · ongeveer € ${orderedTotalCost.toFixed(2)}` : ""}
+            </p>
+          </div>
+        )}
+
         <AddToPicnicCart
           shoppingListId={shoppingList.id}
           connected={Boolean(household.picnicAuthToken)}
