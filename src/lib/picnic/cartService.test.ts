@@ -519,6 +519,100 @@ test("mandje legen bouwt de lijst opnieuw op, zodat er niets van de vorige beste
       where: { shoppingList: { mealPlanId: shoppingList.mealPlanId }, source: "MEAL" },
     });
     assert.equal(remaining, 0, "na het legen mag er geen maaltijdregel meer staan zonder aangevinkte avond");
+
+    // De lijstrij zelf moet blijven bestaan (`keepListRow`): de knoppen op
+    // /boodschappen houden dat id vast, dus zou hij verdwijnen dan loopt de
+    // volgende klik stuk. Zonder deze assertie bewees de test dat niet.
+    const listAfter = await prisma.shoppingList.findUnique({ where: { id: shoppingList.id } });
+    assert.equal(listAfter?.id, shoppingList.id, "de boodschappenlijst zelf mag niet verdwijnen bij het legen");
+  } finally {
+    global.fetch = originalFetch;
+    await cleanup(household.id);
+  }
+});
+
+/** Laat de eerste add_product slagen en de volgende falen — een halve overdracht. */
+function fakePartialTransferFetch() {
+  let calls = 0;
+  return (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/cart/add_product")) {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(JSON.stringify({}), { headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ error: { code: "AUTH_ERROR", message: "sessie verlopen" } }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({}), { headers: { "Content-Type": "application/json" } });
+  }) as typeof fetch;
+}
+
+test("een half mislukte overdracht laat de dagkeuze van de volgende week staan", async () => {
+  // Code-reviewbevinding: de teller telde élke geslaagde regel, ook als de
+  // overdracht daarna afbrak. De avond werd dan vrijgegeven terwijl niet alle
+  // boodschappen ervoor in het mandje lagen — bij een volgende herbouw vielen
+  // die resterende regels geruisloos van de lijst en kreeg het huishouden
+  // niets bezorgd voor een avond waarvan het dacht besteld te hebben.
+  const { household, shoppingList } = await makeHouseholdWithShoppingListLine("Cart — halve overdracht");
+  const nextWeekPlan = await makeNextWeekPlanWithIncludedDay(household.id);
+
+  // Tweede regel, zodat er iets te mislukken valt ná een geslaagde regel.
+  const otherIngredient = await prisma.ingredient.findFirstOrThrow({
+    where: { id: { not: (await prisma.shoppingListLine.findFirstOrThrow({ where: { shoppingListId: shoppingList.id } })).ingredientId } },
+  });
+  const otherProduct = await prisma.product.create({
+    data: { name: "Tweede testproduct", externalRef: `picnic-test-2-${household.id}`, ingredientId: otherIngredient.id },
+  });
+  await prisma.shoppingListLine.create({
+    data: {
+      shoppingListId: shoppingList.id,
+      ingredientId: otherIngredient.id,
+      productId: otherProduct.id,
+      quantity: 1,
+      unit: "PIECE",
+      source: "MEAL",
+      matchStatus: "MATCHED_TRUSTED",
+      matchConfidence: 1,
+    },
+  });
+
+  const originalFetch = global.fetch;
+  global.fetch = fakePartialTransferFetch();
+  try {
+    const result = await addShoppingListToPicnicCart(shoppingList.id);
+    assert.ok(result.added.length >= 1, "testopzet: er moet minstens één regel geslaagd zijn");
+    assert.ok(result.stoppedEarly || result.errors.length > 0, "testopzet: de overdracht moet niet compleet zijn");
+
+    const entry = await prisma.mealPlanEntry.findUniqueOrThrow({ where: { id: nextWeekPlan.entries[0].id } });
+    assert.equal(
+      entry.includedInGroceries,
+      true,
+      "bij een halve overdracht blijft de gekozen avond staan — opnieuw proberen is idempotent"
+    );
+  } finally {
+    global.fetch = originalFetch;
+    await cleanup(household.id);
+  }
+});
+
+test("producten die ná een bevestigde bestelling worden overgedragen maken die bevestiging ongeldig", async () => {
+  // Anders claimt het bonnetje "besteld" voor producten die nog onbetaald in
+  // het mandje liggen, én blijft de herinnering "rond je bestelling af" weg.
+  const { household, shoppingList } = await makeHouseholdWithShoppingListLine("Cart — bevestiging vervalt");
+  const originalFetch = global.fetch;
+  global.fetch = fakeAddProductFetch([]);
+  try {
+    await prisma.shoppingList.update({
+      where: { id: shoppingList.id },
+      data: { orderConfirmedAt: new Date() },
+    });
+
+    await addShoppingListToPicnicCart(shoppingList.id);
+
+    const after = await prisma.shoppingList.findUniqueOrThrow({ where: { id: shoppingList.id } });
+    assert.equal(after.orderConfirmedAt, null, "een nieuwe overdracht dekt de eerdere bevestiging niet");
   } finally {
     global.fetch = originalFetch;
     await cleanup(household.id);

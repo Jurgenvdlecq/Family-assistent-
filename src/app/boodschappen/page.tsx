@@ -43,6 +43,8 @@ import PicnicTransfer from "./PicnicTransfer";
 import AddToPicnicCart from "./AddToPicnicCart";
 import DeliverySlotsSection, { DeliverySlotsPlaceholder } from "./DeliverySlotsSection";
 import MealDayPicker, { type MealDayOption } from "./MealDayPicker";
+import { repeatPreviousOrder } from "./repeatOrderActions";
+import { getPreviousOrderSummary } from "@/lib/repeatOrder";
 import ShoppingChecklist, { type ChecklistLine } from "./ShoppingChecklist";
 import {
   acknowledgeShoppingListShortfall,
@@ -82,6 +84,7 @@ const STATUS_MESSAGES: Record<string, string> = {
   "fixed-quantity-remembered": "Vaste boodschap bijgewerkt en onthouden.",
   "fixed-replaced": "Vaste boodschap vervangen.",
   "fixed-removed": "Vaste boodschap verwijderd.",
+  "repeat-none": "Ik kan geen eerdere bestelling vinden om te herhalen.",
   // Eigen status voor de route vanaf de lijst: anders zou het beheerblok
   // opengeklapt worden terwijl de gebruiker daar helemaal niet was.
   "fixed-removed-from-list": "Verwijderd — deze komt volgende week niet meer terug.",
@@ -103,6 +106,17 @@ const STATUS_MESSAGES: Record<string, string> = {
 };
 
 /** Meldingen die geen bevestiging zijn maar een blokkade/waarschuwing — amber i.p.v. groen. */
+/** Zegt met echte aantallen wat "herhalen" heeft gedaan, of eerlijk dat er niets te herhalen viel. */
+function describeRepeatResult(extras: number, avonden: number): string {
+  const delen: string[] = [];
+  if (extras > 0) delen.push(`${extras} los product${extras === 1 ? "" : "en"}`);
+  if (avonden > 0) delen.push(`${avonden} kookavond${avonden === 1 ? "" : "en"}`);
+  if (delen.length === 0) {
+    return "Er was niets nieuws over te nemen — alles van vorige keer stond er al, of die dagen zijn inmiddels voorbij.";
+  }
+  return `${delen.join(" en ")} overgenomen van je vorige bestelling. Loop even na of het klopt.`;
+}
+
 const WARNING_STATUSES = new Set([
   "line-in-picnic-cart",
   "invalid-quantity",
@@ -617,6 +631,8 @@ export default async function BoodschappenPage({
   searchParams: Promise<{
     bestelvraag?: string;
     fixedQ?: string;
+    herhaaldExtras?: string;
+    herhaaldeAvonden?: string;
     fixedLine?: string;
     fixedReplaceLineId?: string;
     bulkFixed?: string;
@@ -650,7 +666,12 @@ export default async function BoodschappenPage({
     params.status === "inventory-updated";
   const generalStatusMessage =
     params.status && !focusedLineId && !focusedShortfallLineId && !focusedFixedLineId && !focusedInventoryId
-      ? STATUS_MESSAGES[params.status]
+      ? // "Herhalen" krijgt een melding met de echte aantallen erin: een
+        // generieke "overgenomen" laat de gebruiker zelf zoeken wat er
+        // veranderd is.
+        params.status === "repeat-done"
+        ? describeRepeatResult(Number(params.herhaaldExtras ?? 0), Number(params.herhaaldeAvonden ?? 0))
+        : STATUS_MESSAGES[params.status]
       : undefined;
 
   const weekStart = getCurrentWeekStart();
@@ -673,6 +694,9 @@ export default async function BoodschappenPage({
   // tekortcontrole hieronder alleen deze week zien, dan meldt ze een tekort
   // op een gerecht dat wél gewoon in de lijst staat.
   const groceryMeals = await getGroceryMealEntries(mealPlan.id);
+  // Alleen tonen als er écht iets te herhalen valt: een vorige week waarin
+  // daadwerkelijk naar Picnic is overgedragen.
+  const previousOrder = await getPreviousOrderSummary(household.id);
 
   // Het dagvenster begint bij het verwachte bezorgmoment. Dat komt bewust uit
   // de opgeslagen voorkeur en niet uit de live slotenlijst van Picnic: die
@@ -1124,6 +1148,29 @@ export default async function BoodschappenPage({
         <MealDayPicker days={mealDayOptions} />
 
         <div id="quick-order" className="mb-6 scroll-mt-6 rounded-xl border border-line bg-surface p-4">
+          {/* Voor een huishouden dat elke week grotendeels hetzelfde bestelt is
+              dit de kortste route: dezelfde losse producten, dezelfde
+              kookavonden. De gerechten zelf worden bewust opnieuw voorgesteld —
+              twee weken achter elkaar hetzelfde eten is meestal niet de
+              bedoeling. */}
+          {previousOrder && (
+            <form action={repeatPreviousOrder} className="mb-3">
+              <PendingSubmitButton
+                pendingText="Bezig..."
+                className="w-full rounded-lg border border-line px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-surface-2"
+              >
+                Herhaal je vorige bestelling
+              </PendingSubmitButton>
+              <p className="mt-1 text-center text-[11px] text-ink-muted">
+                {previousOrder.extraCount > 0
+                  ? `${previousOrder.extraCount} los product${previousOrder.extraCount === 1 ? "" : "en"}`
+                  : "Geen losse producten"}
+                {previousOrder.cookingDayCount > 0
+                  ? ` en ${previousOrder.cookingDayCount} kookavond${previousOrder.cookingDayCount === 1 ? "" : "en"}`
+                  : ""}
+              </p>
+            </form>
+          )}
           <h2 className="mb-1 text-sm font-semibold text-ink">Nog iets nodig?</h2>
           <p className="mb-3 text-xs text-ink-muted">Eén product of een rijtje met komma&rsquo;s — allebei goed. Voor deze week alleen.</p>
           <form action="/boodschappen#quick-order" className="grid gap-2">

@@ -140,8 +140,27 @@ export async function addShoppingListToPicnicCart(
   // Zijn er maaltijdboodschappen overgedragen, dan is de dagkeuze voor de
   // vólgende week afgehandeld: die avonden mogen niet opnieuw voorgesteld
   // worden zodra die week aanbreekt (zie releaseNextWeekMealDays).
-  if (transferredMealLines > 0) {
+  //
+  // Alleen bij een volledig geslaagde overdracht, net zo streng als
+  // `markTransferred`. Bij een halve overdracht (sessie verlopen halverwege,
+  // een product dat faalde) liggen niet alle boodschappen van die avond in
+  // het mandje; de avond dan toch vrijgeven laat de resterende regels bij een
+  // volgende herbouw geruisloos van de lijst vallen — de gebruiker denkt
+  // besteld te hebben en krijgt niets. Opnieuw drukken is idempotent, dus
+  // "laten staan" is hier de veilige kant.
+  if (transferredMealLines > 0 && !result.stoppedEarly && result.errors.length === 0) {
     await releaseNextWeekMealDays(shoppingList.mealPlan.householdId, shoppingList.mealPlan.weekStart);
+  }
+
+  // Er zijn producten bijgekomen ná een eerder "ik heb besteld": die zaten
+  // niet in die bestelling. De bevestiging dekt ze dus niet, en het bonnetje
+  // zou ze anders meetellen als "besteld". Wissen zorgt bovendien dat de
+  // herinnering "rond je bestelling af in Picnic" weer verschijnt.
+  if (result.added.length > 0) {
+    await prisma.shoppingList.updateMany({
+      where: { id: shoppingListId, orderConfirmedAt: { not: null } },
+      data: { orderConfirmedAt: null },
+    });
   }
 
   await persistRefreshedToken(client, household.id, household.picnicAuthToken);
