@@ -18,7 +18,19 @@ import { confirmPicnicOrder } from "./actions";
  */
 export default function OrderPlacedQuestion({ shoppingListId }: { shoppingListId: string }) {
   const [pending, setPending] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Bewust een eigen "klaar"-toestand en niet wachten tot de revalidatie deze
+  // kaart laat verdwijnen: die constructie liet de knop op "Bezig…" hangen
+  // (zelfde bugklasse als eerder bij "Ik heb besteld" op de startpagina).
+  if (confirmed) {
+    return (
+      <p className="mb-4 rounded-xl border border-tag-green-ink/25 bg-tag-green-bg px-3 py-2 text-xs font-medium text-tag-green-ink">
+        Genoteerd — je bestelling staat als afgerond.
+      </p>
+    );
+  }
 
   return (
     <div className="mb-4 min-w-0 rounded-xl border border-accent bg-accent-soft p-3 text-xs">
@@ -41,6 +53,7 @@ export default function OrderPlacedQuestion({ shoppingListId }: { shoppingListId
             setError(null);
             try {
               await confirmPicnicOrder(shoppingListId);
+              setConfirmed(true);
             } catch {
               setError("Dat lukte niet. Probeer het zo nog eens.");
               setPending(false);
@@ -62,6 +75,10 @@ export default function OrderPlacedQuestion({ shoppingListId }: { shoppingListId
           Nee, nog niet
         </Link>
       </div>
+      <p className="mt-2 text-[11px] leading-snug text-ink-muted">
+        Nog niet besteld en wil je deze producten opnieuw in je mandje? Gebruik dan &ldquo;Picnic-mandje legen&rdquo;
+        hieronder — anders slaat de app ze over omdat ze volgens haar al in het mandje liggen.
+      </p>
     </div>
   );
 }

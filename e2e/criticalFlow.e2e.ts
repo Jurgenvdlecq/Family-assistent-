@@ -34,6 +34,15 @@ const USERNAME = "e2etest";
 const PASSWORD = "e2etest123";
 const MOCK_SEARCH_TERM = "aardappelen"; // bestaand, gedeeld seed-ingrediënt — voorkomt vervuiling van de ingrediëntencatalogus.
 
+/** De bezorgkaart streamt na (Suspense). Wachten tot dat klaar is voorkomt dat
+ *  een klik ernaast landt doordat de pagina onder je handen verschuift. */
+async function waitForBoodschappenSettled(target: Page) {
+  await target
+    .locator("text=Bezorgmomenten ophalen…")
+    .waitFor({ state: "hidden", timeout: 20_000 })
+    .catch(() => {});
+}
+
 /** Het beheerblok op /boodschappen staat ingeklapt; alles erbinnen is pas
  *  zichtbaar als het open staat. Idempotent: veilig meerdere keren aan te
  *  roepen, ook als een eerdere stap 'm al opende. */
@@ -410,6 +419,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         });
 
         await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
+        await waitForBoodschappenSettled(page);
         const lineBlock = page.locator(`#meal-line-${mealLine.id}`);
         await lineBlock.waitFor({ state: "visible", timeout: 10_000 });
         await lineBlock.locator('summary[aria-label^="Opties voor"]').click();
@@ -852,6 +862,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         mockPicnic.addedProducts.length = 0;
 
         await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
+        await waitForBoodschappenSettled(page);
         await page
           .locator("text=Je Picnic-mandje is leeg — heb je besteld?")
           .waitFor({ state: "visible", timeout: 15_000 });
@@ -870,6 +881,78 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
           .isVisible()
           .catch(() => false);
         assert.equal(stillAsking, false, "na bevestigen mag de vraag niet opnieuw verschijnen");
+      }
+    );
+
+    await t.test(
+      "12. Vorige bestelling herhalen neemt de losse producten en dezelfde kookavonden over (nieuwe functie)",
+      async () => {
+        // Een vorige week neerzetten waar écht uit besteld is: een losse
+        // toevoeging die naar Picnic is gegaan, en één aangevinkte kookavond.
+        const currentPlan = await prisma.mealPlan.findFirstOrThrow({
+          where: { householdId },
+          orderBy: { weekStart: "desc" },
+        });
+        const previousWeek = new Date(currentPlan.weekStart);
+        previousWeek.setDate(previousWeek.getDate() - 7);
+
+        const currentList = await prisma.shoppingList.findFirstOrThrow({
+          where: { mealPlanId: currentPlan.id },
+          include: { lines: true },
+        });
+        const usedIngredientIds = currentList.lines.map((line) => line.ingredientId);
+        const freshIngredient = await prisma.ingredient.findFirstOrThrow({
+          where: { id: { notIn: usedIngredientIds } },
+        });
+        const variant = await prisma.recipeVariant.findFirstOrThrow({});
+        const todayEnum = DAY_ENUM[currentDayKey()];
+
+        const previousPlan = await prisma.mealPlan.create({
+          data: {
+            householdId,
+            weekStart: previousWeek,
+            entries: { create: [{ dayOfWeek: todayEnum, recipeVariantId: variant.id, includedInGroceries: true }] },
+          },
+        });
+        await prisma.shoppingList.create({
+          data: {
+            mealPlanId: previousPlan.id,
+            lines: {
+              create: [
+                {
+                  ingredientId: freshIngredient.id,
+                  quantity: 1,
+                  unit: "PIECE",
+                  source: "MANUAL",
+                  matchStatus: "MATCHED_TRUSTED",
+                  matchConfidence: 1,
+                  transferredToPicnicAt: new Date(),
+                },
+              ],
+            },
+          },
+        });
+        // Vandaag stond misschien al aangevinkt door eerdere stappen — uitzetten,
+        // zodat het herhalen aantoonbaar zelf de avond aanvinkt.
+        await prisma.mealPlanEntry.updateMany({
+          where: { mealPlanId: currentPlan.id, dayOfWeek: todayEnum },
+          data: { includedInGroceries: false },
+        });
+
+        await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
+        await waitForBoodschappenSettled(page);
+        await page.getByRole("button", { name: "Herhaal je vorige bestelling" }).click();
+        await page.waitForURL((url) => url.searchParams.get("status") === "repeat-done", { timeout: 20_000 });
+
+        const copied = await prisma.shoppingListLine.findFirst({
+          where: { shoppingList: { mealPlanId: currentPlan.id }, ingredientId: freshIngredient.id, source: "MANUAL" },
+        });
+        assert.ok(copied, "het losse product van vorige keer moet zijn overgenomen");
+
+        const day = await prisma.mealPlanEntry.findFirstOrThrow({
+          where: { mealPlanId: currentPlan.id, dayOfWeek: todayEnum },
+        });
+        assert.equal(day.includedInGroceries, true, "dezelfde kookavond moet weer aangevinkt zijn");
       }
     );
 
@@ -898,6 +981,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
           data: { transferredToPicnicAt: new Date() },
         });
         await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
+        await waitForBoodschappenSettled(page);
         await page.locator("#alle-te-bestellen-producten > summary").click();
         const blockedBlock = page.locator(`#meal-line-${fixedLine.id}`);
         await blockedBlock.waitFor({ state: "visible", timeout: 10_000 });
@@ -918,6 +1002,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
           data: { transferredToPicnicAt: null },
         });
         await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
+        await waitForBoodschappenSettled(page);
         await page.locator("#alle-te-bestellen-producten > summary").click();
         const lineBlock = page.locator(`#meal-line-${fixedLine.id}`);
         await lineBlock.waitFor({ state: "visible", timeout: 10_000 });
