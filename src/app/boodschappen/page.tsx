@@ -28,9 +28,12 @@ import {
   isUserChosenPackageCount,
 } from "@/lib/shoppingList";
 import { prisma } from "@/lib/prisma";
-import { getHouseholdPortionScaleForDate } from "@/lib/household";
+import { getHouseholdHardRestrictions, getHouseholdPortionScaleForDate } from "@/lib/household";
 import { mealEntryNeeds, mealEntryTitle } from "@/domain/meal-planning/mealEntry";
 import { setIngredientFulfillment } from "./fulfillmentActions";
+import { getStorePricesForIngredients, type StorePriceForIngredient } from "@/lib/pricing/storePrices";
+import { PROVIDER_LABELS } from "@/domain/pricing/types";
+import type { ProductProvider } from "@/generated/prisma/enums";
 import { getFixedGroceries } from "@/lib/fixedGroceries";
 import { getInventoryChecklist, getInventoryMap } from "@/lib/inventory";
 import { enrichShoppingListProductImages } from "@/lib/picnic/productEnrichment";
@@ -375,6 +378,55 @@ function preparePicnicTransferText(lines: Array<{
       return `- ${label}${detail}`;
     })
     .join("\n");
+}
+
+/**
+ * Wat dit product bij een andere winkel kost, als we dat weten.
+ *
+ * Bewust terughoudend: één regel, met de verpakkingsgrootte erbij (anders zegt
+ * een bedrag niets — AH verkoopt liters waar een andere winkel halve liters
+ * verkoopt) en met een waarschuwing als de prijs oud is. Weten we het niet,
+ * dan staat er niets: een ontbrekende prijs mag nooit als nul of als
+ * "goedkoper" overkomen. Het doorrekenen van de hele lijst komt apart.
+ */
+function StorePriceHint({
+  prices,
+  hardRestrictions,
+}: {
+  prices: Map<ProductProvider, StorePriceForIngredient> | undefined;
+  hardRestrictions: string[];
+}) {
+  const known = prices ? [...prices.values()] : [];
+  if (known.length === 0) return null;
+
+  // Alleen een bevestiging tonen, nooit een waarschuwing: het ontbreken van
+  // "vrij van vis" betekent niet dat er vis in zit. Bij een allergie mag de
+  // app alleen iets zeggen als de winkel het expliciet garandeert.
+  const confirmed = [
+    ...new Set(
+      known.flatMap((store) => store.freeFromAllergens.filter((tag) => hardRestrictions.includes(tag)))
+    ),
+  ];
+
+  return (
+    <>
+      <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-ink-faint">
+        {known.map((store) => (
+          <span key={store.provider}>
+            {PROVIDER_LABELS[store.provider]} € {store.price.toFixed(2).replace(".", ",")}
+            {store.packageSize ? ` · ${store.packageSize}` : ""}
+            {store.promoLabel ? ` · ${store.promoLabel}` : ""}
+            {store.stale ? " · prijs is ouder dan een dag" : ""}
+          </span>
+        ))}
+      </p>
+      {confirmed.length > 0 && (
+        <p className="mt-0.5 text-xs text-tag-green-ink">
+          Albert Heijn bevestigt: vrij van {confirmed.join(" en ")}
+        </p>
+      )}
+    </>
+  );
 }
 
 function describePackage(product: { packageSize: string | null } | null | undefined) {
@@ -818,6 +870,8 @@ export default async function BoodschappenPage({
     quickSearch,
     portionScaleForDate,
     candidatesByIngredient,
+    storePricesByIngredient,
+    householdHardRestrictions,
     inventoryMap,
   ] =
     await Promise.all([
@@ -837,6 +891,15 @@ export default async function BoodschappenPage({
         : emptySearch<QuickOrderPreviewLine[]>([]),
       getHouseholdPortionScaleForDate(household.id),
       getShoppingListCandidatesByIngredient(household.id, mealLines.map((line) => line.ingredientId)),
+      // Alleen wat de laatste verversing heeft opgeslagen — deze pagina wacht
+      // nooit op een externe winkel.
+      getStorePricesForIngredients(
+        shoppingList.lines.map((line) => line.ingredientId),
+        ["AH"]
+      ),
+      // Alleen nodig om een bevestiging te kunnen tonen bij een harde regel
+      // van dit huishouden — nooit om er zelf iets uit te concluderen.
+      getHouseholdHardRestrictions(household.id),
       getInventoryMap(household.id),
     ]);
   const fixedProductResults = fixedSearch.value;
@@ -927,6 +990,10 @@ export default async function BoodschappenPage({
               {line.transferredToPicnicAt && (
                 <p className="mt-0.5 text-xs font-medium text-tag-green-ink">Staat al in je Picnic-mandje</p>
               )}
+              <StorePriceHint
+                prices={storePricesByIngredient.get(line.ingredientId)}
+                hardRestrictions={householdHardRestrictions}
+              />
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">

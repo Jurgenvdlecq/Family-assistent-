@@ -61,6 +61,7 @@ export function toPicnicProviderProduct(item: PicnicSearchItemLike): ProviderPro
     // barcode" heten, alleen "gelijkwaardig".
     gtin: null,
     labels: [],
+    freeFromAllergens: [],
     imageId: item.image_id ?? null,
   };
 }

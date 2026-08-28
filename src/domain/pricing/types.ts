@@ -48,6 +48,11 @@ export interface ProviderProduct {
   gtin: string | null;
   /** Keurmerken/labels zoals de winkel ze meegeeft — voer voor de klassebepaling. */
   labels: string[];
+  /**
+   * Waar dit product volgens de winkel gegarandeerd vrij van is, in de tags
+   * van de app zelf. Leeg betekent "onbekend", nooit "bevat het".
+   */
+  freeFromAllergens: string[];
   imageId: string | null;
 }
 
