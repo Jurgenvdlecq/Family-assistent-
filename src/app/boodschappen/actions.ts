@@ -76,8 +76,10 @@ export async function adjustBoodschappenLineQuantity(formData: FormData) {
   const lineId = String(formData.get("lineId"));
   const direction = String(formData.get("direction"));
   const { line } = await loadEditableShoppingLine(lineId);
-  if (line.source === "FIXED") throw new Error("Gebruik de vaste-boodschappenregel om vaste boodschappen aan te passen.");
-
+  // Ook vaste boodschappen mogen hier aangepast worden. Dit verandert alleen
+  // de regel van déze week, niet de vaste-boodschap-standaard zelf — precies
+  // wat "twee pakken melk deze week" hoort te doen. Wie het wil onthouden,
+  // gebruikt "onthouden als standaard" in het beheerscherm.
   const delta = quantityStep(line) * (direction === "decrease" ? -1 : 1);
   const nextQuantity = Math.max(quantityStep(line), line.quantity + delta);
   await prisma.shoppingListLine.update({

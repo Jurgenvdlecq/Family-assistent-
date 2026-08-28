@@ -1,7 +1,19 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { after } from "next/server";
-import { CalendarDays, ShoppingCart, CheckCircle2, Utensils, ChevronRight, Search, ClipboardList, Minus, Plus, X } from "lucide-react";
+import {
+  CalendarDays,
+  ShoppingCart,
+  CheckCircle2,
+  Utensils,
+  ChevronRight,
+  Search,
+  ClipboardList,
+  Minus,
+  MoreHorizontal,
+  Plus,
+  X,
+} from "lucide-react";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { ensureMealPlan } from "@/lib/mealPlan";
 import { buildOrderDay, getOrderDayWindow, nextDateForWeekday } from "@/lib/orderDays";
@@ -863,19 +875,96 @@ export default async function BoodschappenPage({
               )}
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="text-sm text-ink-muted">{formatOrderQuantity(line)}</span>
-            <form action={removeBoodschappenLineThisWeek}>
-              <input type="hidden" name="lineId" value={line.id} />
-              <PendingSubmitButton
-                pendingText="..."
-                ariaLabel="Verwijderen"
-                title="Verwijderen"
-                className={`flex h-7 w-7 items-center justify-center rounded-md text-ink-faint hover:bg-red-50 hover:text-red-600 ${ACTION_BUTTON_FOCUS}`}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {/* Het aantal aanpassen hoort op de regel zelf: "deze week twee
+                pakken melk" was voorheen een omweg via een apart beheerblok.
+                Een regel die al in het Picnic-mandje ligt krijgt geen knopjes —
+                die hoeveelheid ligt er immers al. */}
+            {!line.transferredToPicnicAt && (
+              <form action={adjustBoodschappenLineQuantity}>
+                <input type="hidden" name="lineId" value={line.id} />
+                <input type="hidden" name="direction" value="decrease" />
+                <PendingSubmitButton
+                  pendingText="·"
+                  ariaLabel={`Minder ${line.ingredient.name}`}
+                  className={`flex h-7 w-7 items-center justify-center rounded-md border border-line text-ink-muted hover:bg-surface-2 ${ACTION_BUTTON_FOCUS}`}
+                >
+                  <Minus size={13} />
+                </PendingSubmitButton>
+              </form>
+            )}
+            <span className="min-w-[2.5rem] text-center text-sm tabular-nums text-ink-muted">
+              {formatOrderQuantity(line)}
+            </span>
+            {!line.transferredToPicnicAt && (
+              <form action={adjustBoodschappenLineQuantity}>
+                <input type="hidden" name="lineId" value={line.id} />
+                <input type="hidden" name="direction" value="increase" />
+                <PendingSubmitButton
+                  pendingText="·"
+                  ariaLabel={`Meer ${line.ingredient.name}`}
+                  className={`flex h-7 w-7 items-center justify-center rounded-md border border-line text-ink-muted hover:bg-surface-2 ${ACTION_BUTTON_FOCUS}`}
+                >
+                  <Plus size={13} />
+                </PendingSubmitButton>
+              </form>
+            )}
+
+            {/* Eén menu in plaats van drie plekken die alle drie "weg"
+                betekenden: het kruisje hier, "uit" in het beheerblok en
+                "verwijder voorgoed" daarnaast. Nu staat er bij elke optie wat
+                hij doet. */}
+            <details className="relative">
+              <summary
+                aria-label={`Opties voor ${line.ingredient.name}`}
+                className={`flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-md text-ink-faint hover:bg-surface-2 hover:text-ink ${ACTION_BUTTON_FOCUS}`}
               >
-                <X size={14} />
-              </PendingSubmitButton>
-            </form>
+                <MoreHorizontal size={15} />
+              </summary>
+              <div className="absolute right-0 z-10 mt-1 w-56 rounded-lg border border-line bg-surface p-1.5 shadow-lg">
+                <form action={removeBoodschappenLineThisWeek}>
+                  <input type="hidden" name="lineId" value={line.id} />
+                  <PendingSubmitButton
+                    pendingText="Bezig..."
+                    ariaLabel="Verwijderen"
+                    className="w-full rounded-md px-2.5 py-2 text-left text-xs hover:bg-surface-2"
+                  >
+                    <span className="block font-semibold text-ink">
+                      {line.source === "FIXED" ? "Deze week niet" : "Van de lijst halen"}
+                    </span>
+                    <span className="block text-[11px] text-ink-muted">
+                      {line.source === "FIXED"
+                        ? "Blijft je vaste boodschap; volgende week staat hij er weer."
+                        : "Alleen deze bestelling."}
+                    </span>
+                  </PendingSubmitButton>
+                </form>
+
+                {line.source === "FIXED" && (
+                  <form action={removeFixedGroceryPermanently}>
+                    <input type="hidden" name="householdId" value={household.id} />
+                    <input type="hidden" name="ingredientId" value={line.ingredientId} />
+                    <input type="hidden" name="lineId" value={line.id} />
+                    <PendingSubmitButton
+                      pendingText="Bezig..."
+                      className="w-full rounded-md px-2.5 py-2 text-left text-xs hover:bg-red-50"
+                    >
+                      <span className="block font-semibold text-red-700">Nooit meer</span>
+                      <span className="block text-[11px] text-ink-muted">
+                        Haalt hem uit jullie vaste boodschappen.
+                      </span>
+                    </PendingSubmitButton>
+                  </form>
+                )}
+
+                {line.source === "MEAL" && (
+                  <p className="px-2.5 py-2 text-[11px] leading-snug text-ink-muted">
+                    Hoort bij een avond die je hebt aangevinkt. Vink die avond uit om alles ervan in één keer weg
+                    te halen.
+                  </p>
+                )}
+              </div>
+            </details>
           </div>
         </div>
         {statusMessage && (

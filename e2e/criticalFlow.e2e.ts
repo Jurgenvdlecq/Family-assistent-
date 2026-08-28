@@ -403,6 +403,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
         const lineBlock = page.locator(`#meal-line-${mealLine.id}`);
         await lineBlock.waitFor({ state: "visible", timeout: 10_000 });
+        await lineBlock.locator('summary[aria-label^="Opties voor"]').click();
         await lineBlock.getByRole("button", { name: "Verwijderen" }).click();
         await lineBlock.waitFor({ state: "detached", timeout: 15_000 });
 
@@ -840,9 +841,10 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
           data: { transferredToPicnicAt: new Date() },
         });
         await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
-        await page.locator("#alle-te-bestellen-producten summary").click();
+        await page.locator("#alle-te-bestellen-producten > summary").click();
         const blockedBlock = page.locator(`#meal-line-${fixedLine.id}`);
         await blockedBlock.waitFor({ state: "visible", timeout: 10_000 });
+        await blockedBlock.locator('summary[aria-label^="Opties voor"]').click();
         await blockedBlock.getByRole("button", { name: "Verwijderen" }).click();
         await page.locator("text=Dit product ligt al in je Picnic-mandje").waitFor({
           state: "visible",
@@ -859,9 +861,10 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
           data: { transferredToPicnicAt: null },
         });
         await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
-        await page.locator("#alle-te-bestellen-producten summary").click();
+        await page.locator("#alle-te-bestellen-producten > summary").click();
         const lineBlock = page.locator(`#meal-line-${fixedLine.id}`);
         await lineBlock.waitFor({ state: "visible", timeout: 10_000 });
+        await lineBlock.locator('summary[aria-label^="Opties voor"]').click();
         await lineBlock.getByRole("button", { name: "Verwijderen" }).click();
         await lineBlock.waitFor({ state: "detached", timeout: 15_000 });
 
