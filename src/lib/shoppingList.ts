@@ -382,13 +382,35 @@ export async function invalidateShoppingListForPlanChange(householdId: string, c
   }
 }
 
-export async function invalidateShoppingList(mealPlanId: string) {
+export async function invalidateShoppingList(
+  mealPlanId: string,
+  options?: {
+    /**
+     * Laat de `ShoppingList`-rij zelf staan en bouw alleen de regels opnieuw
+     * op. Nodig wanneer de aanroeper vanuit een scherm komt dat het id van
+     * die lijst al in handen heeft (zoals de knoppen op /boodschappen): zou
+     * de rij verdwijnen, dan wijst dat scherm naar een lijst die niet meer
+     * bestaat en loopt de volgende klik stuk.
+     */
+    keepListRow?: boolean;
+  }
+) {
+  // Twee soorten regels overleven een herbouw. Een al overgedragen regel,
+  // want die ligt echt in het Picnic-mandje. En een handmatig toegevoegd
+  // product: dat heeft niets met het weekmenu te maken, dus het zou een
+  // stille verrassing zijn als "bananen" verdwijnt omdat je een gerecht
+  // wisselt.
   const existing = await prisma.shoppingList.findUnique({
     where: { mealPlanId },
-    include: { lines: { where: { transferredToPicnicAt: { not: null } } } },
+    include: {
+      lines: { where: { OR: [{ transferredToPicnicAt: { not: null } }, { source: "MANUAL" }] } },
+    },
   });
 
-  if (!existing || existing.lines.length === 0) {
+  if (!existing) return;
+  if (existing.lines.length === 0 && !options?.keepListRow) {
+    // Niets om te bewaren: weggooien is goedkoper dan herbouwen, en de
+    // eerstvolgende `ensureShoppingList` maakt 'm gewoon opnieuw aan.
     await prisma.shoppingList.deleteMany({ where: { mealPlanId } });
     return;
   }
@@ -428,7 +450,11 @@ export async function invalidateShoppingList(mealPlanId: string) {
 
   await prisma.$transaction([
     prisma.shoppingListLine.deleteMany({
-      where: { shoppingListId: existing.id, transferredToPicnicAt: null },
+      where: {
+        shoppingListId: existing.id,
+        transferredToPicnicAt: null,
+        source: { not: "MANUAL" },
+      },
     }),
     prisma.shoppingListLine.createMany({
       data: newLines.map((line) => ({ ...line, shoppingListId: existing.id })),

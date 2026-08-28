@@ -224,3 +224,38 @@ test("een bevestigde lijst gaat terug naar 'controleren' als de herbouw nieuwe t
     await cleanup(household.id);
   }
 });
+
+test("een handmatig toegevoegd product overleeft een herbouw van de lijst", async () => {
+  // "Bananen" heeft niets met het weekmenu te maken; het zou een stille
+  // verrassing zijn als het verdwijnt omdat je een gerecht wisselt.
+  const household = await makeHousehold("Invalidate — handmatig product blijft");
+  try {
+    const mealPlan = await ensureMealPlan(household.id, getCurrentWeekStart());
+    await includeAllMeals(mealPlan!.id);
+    const shoppingList = await ensureShoppingList(mealPlan!.id, household.id);
+
+    const ingredient = await prisma.ingredient.findFirstOrThrow({
+      where: { id: { notIn: shoppingList.lines.map((line) => line.ingredientId) } },
+    });
+    const manualLine = await prisma.shoppingListLine.create({
+      data: {
+        shoppingListId: shoppingList.id,
+        ingredientId: ingredient.id,
+        quantity: 1,
+        unit: "PIECE",
+        source: "MANUAL",
+        matchStatus: "MATCHED_TRUSTED",
+        matchConfidence: 1,
+      },
+    });
+
+    await invalidateShoppingList(mealPlan!.id);
+    const rebuilt = await ensureShoppingList(mealPlan!.id, household.id);
+
+    const survivor = rebuilt.lines.find((line) => line.id === manualLine.id);
+    assert.ok(survivor, "het handmatig toegevoegde product mag niet stilzwijgend verdwijnen");
+    assert.equal(survivor!.source, "MANUAL");
+  } finally {
+    await cleanup(household.id);
+  }
+});

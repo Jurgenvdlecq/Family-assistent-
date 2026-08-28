@@ -1,6 +1,11 @@
 import { prisma } from "../prisma";
 import { PicnicClient, PicnicAuthError, PicnicNetworkError } from "./client";
-import { describeLinePackaging, isUserChosenPackageCount, releaseNextWeekMealDays } from "../shoppingList";
+import {
+  describeLinePackaging,
+  invalidateShoppingList,
+  isUserChosenPackageCount,
+  releaseNextWeekMealDays,
+} from "../shoppingList";
 import { logEvent, createCorrelationId } from "../logger";
 import type { LineSource } from "@/generated/prisma/enums";
 
@@ -209,6 +214,14 @@ export async function clearPicnicCartForShoppingList(shoppingListId: string): Pr
     where: { shoppingListId, transferredToPicnicAt: { not: null } },
     data: { transferredToPicnicAt: null },
   });
+
+  // Het mandje is nu leeg, dus niets houdt de lijst nog vast aan een eerdere
+  // bestelling: hij mag weer precies weerspiegelen wat er nú gekozen is.
+  // Zonder deze herbouw bleven producten van een vorige bestelling staan
+  // terwijl er geen enkele avond meer aangevinkt was — je kon ze dan alleen
+  // nog stuk voor stuk met het kruisje weghalen. Handmatig toegevoegde
+  // producten blijven staan (zie invalidateShoppingList).
+  await invalidateShoppingList(shoppingList.mealPlanId, { keepListRow: true });
 
   return { ok: true };
 }
