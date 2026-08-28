@@ -928,6 +928,29 @@ export default async function BoodschappenPage({
       </div>
 
       <div className="min-w-0 px-6">
+        {/* Volgorde sinds de koerswijziging "boodschappen eerst": de pagina
+            opent met wanneer er bezorgd kan worden en wat er klaarstaat, want
+            dat is waarvoor de app in de praktijk geopend wordt. De lijst zelf
+            en het beheer eronder blijven ongewijzigd — alleen verplaatst. */}
+        <DeliverySlotsCard householdId={household.id} picnicAuthToken={household.picnicAuthToken} />
+
+        {!household.picnicAuthToken && (
+          <PicnicTransfer
+            shoppingListId={shoppingList.id}
+            text={picnicTransfer.text}
+            itemCount={picnicTransfer.itemCount}
+            transferred={picnicTransfer.status === "TRANSFERRED"}
+          />
+        )}
+        <AddToPicnicCart
+          shoppingListId={shoppingList.id}
+          connected={Boolean(household.picnicAuthToken)}
+          hasTransferredLines={hasTransferredLines}
+          orderConfirmed={shoppingList.orderConfirmedAt !== null}
+          fixedCount={fixedPendingCount}
+          manualCount={manualPendingCount}
+        />
+
         <div id="jullie-boodschappenlijst" className="mb-3 scroll-mt-6 flex items-baseline justify-between gap-3">
           <h2 className="text-sm font-semibold text-ink">Jullie boodschappenlijst</h2>
           <span className="text-xs font-medium text-ink-muted">
@@ -949,31 +972,6 @@ export default async function BoodschappenPage({
             </div>
           </details>
         )}
-
-        <DeliverySlotsCard householdId={household.id} picnicAuthToken={household.picnicAuthToken} />
-
-        {!household.picnicAuthToken && (
-          <PicnicTransfer
-            shoppingListId={shoppingList.id}
-            text={picnicTransfer.text}
-            itemCount={picnicTransfer.itemCount}
-            transferred={picnicTransfer.status === "TRANSFERRED"}
-          />
-        )}
-        <AddToPicnicCart
-          shoppingListId={shoppingList.id}
-          connected={Boolean(household.picnicAuthToken)}
-          hasTransferredLines={hasTransferredLines}
-          orderConfirmed={shoppingList.orderConfirmedAt !== null}
-          fixedCount={fixedPendingCount}
-          manualCount={manualPendingCount}
-        />
-
-        <LooseListCard
-          householdId={household.id}
-          weekStart={weekStart.toISOString()}
-          hasTransferredLines={hasTransferredLines}
-        />
 
         <div id="quick-add-product" className="mb-6 scroll-mt-6 rounded-xl border border-line bg-surface p-4">
           <h2 className="mb-1 text-sm font-semibold text-ink">Product toevoegen</h2>
@@ -1888,6 +1886,12 @@ export default async function BoodschappenPage({
             <ShoppingChecklist lines={checklistLines} />
           </div>
         </details>
+
+        <LooseListCard
+          householdId={household.id}
+          weekStart={weekStart.toISOString()}
+          hasTransferredLines={hasTransferredLines}
+        />
 
       </div>
 
