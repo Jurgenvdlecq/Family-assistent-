@@ -73,6 +73,7 @@ model Household {
   learnedPatterns        LearnedPattern[]
   learningPrompts        LearningPrompt[]
   dayRoutines            DayRoutine[]
+  mealDayRules           MealDayRule[]
   pushSubscriptions      PushSubscription[]
   notificationPreferences NotificationPreference[]
   notificationDeliveryLogs NotificationDeliveryLog[]
@@ -98,6 +99,44 @@ model DayRoutine {
 
   @@unique([householdId, dayOfWeek])
   @@map("day_routines")
+}
+
+// Het weekritme van een huishouden: wat voor soort avond is dit, en geldt dat
+// elke week of alleen in oneven/even weken.
+//
+// Verhouding tot wat er al was:
+// - `DayRoutine` (één vast recept per weekdag) blijft bestaan en blijft
+//   werken. Een dagregel met `fixedRecipeVariantId` is de rijkere opvolger,
+//   maar een huishouden dat alleen DayRoutine-rijen heeft merkt niets.
+// - **Wie er mee-eet staat hier bewust níét in.** Dat is al vastgelegd in
+//   `PersonPresenceOverride` (inclusief pariteit) en `PersonPresenceDateOverride`.
+//   Het aantal eters hier herhalen zou een tweede bron van waarheid zijn die
+//   gegarandeerd gaat afwijken van de eerste.
+// - `profileKey` verwijst naar het register in
+//   `src/domain/meal-planning/dayProfiles.ts` — geen enum (elk nieuw profiel
+//   zou een migratie zijn) en geen tabel (er is geen scherm waarin je een
+//   eigen profiel samenstelt; die bouwen zou een lege belofte zijn).
+//   Een onbekende sleutel is geen fout: de planner valt dan terug op de
+//   gewone scoring.
+model MealDayRule {
+  id                   String         @id @default(uuid())
+  householdId          String         @map("household_id")
+  dayOfWeek            DayOfWeek      @map("day_of_week")
+  weekParity           WeekParity     @default(EVERY) @map("week_parity")
+  profileKey           String         @map("profile_key")
+  /// Optioneel: deze avond is altijd exact dit gerecht (zoals de patatdag).
+  fixedRecipeVariantId String?        @map("fixed_recipe_variant_id")
+  /// Optioneel: kies bij voorkeur uit deze categorie in plaats van een vast gerecht.
+  preferredCategory    RecipeCategory? @map("preferred_category")
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @updatedAt @map("updated_at")
+
+  household          Household      @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  fixedRecipeVariant RecipeVariant? @relation("MealDayRuleFixedVariant", fields: [fixedRecipeVariantId], references: [id], onDelete: SetNull)
+
+  @@unique([householdId, dayOfWeek, weekParity])
+  @@index([householdId])
+  @@map("meal_day_rules")
 }
 
 model HouseholdSession {
@@ -378,6 +417,7 @@ model RecipeVariant {
   mealSuggestions                 MealSuggestion[]
   mealPlanEntries                 MealPlanEntry[]
   dayRoutines                     DayRoutine[]
+  mealDayRules                    MealDayRule[]    @relation("MealDayRuleFixedVariant")
   mealPlanEntriesReplacedFromThis MealPlanEntry[]  @relation("MealPlanEntryReplacedFrom")
 
   @@unique([recipeId, variantType])

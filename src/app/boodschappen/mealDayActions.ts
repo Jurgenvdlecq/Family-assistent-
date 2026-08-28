@@ -9,8 +9,20 @@ import { invalidateShoppingList } from "@/lib/shoppingList";
 import { dayKeyForDate, isSelectableOrderDate, parseOrderDate } from "@/lib/orderDays";
 import { DAY_ENUM, getCurrentWeekStart } from "@/lib/week";
 
-function backToPicker(status: string): never {
-  redirect(`/boodschappen?status=${encodeURIComponent(status)}#avondeten`);
+/**
+ * Terug naar de dagkeuze, met de datum in de URL.
+ *
+ * Die datum staat er niet voor de sier: zonder iets unieks komt elke tik op
+ * exact dezelfde URL uit als de vorige, en dan slaat de router de navigatie
+ * over of serveert hij zijn eigen, inmiddels verouderde kopie. Gevolg: je tikt
+ * een dag aan, de server slaat het netjes op, en op je scherm gebeurt er
+ * niets. Aangetoond in de e2e (de derde dag op rij bleef "uit" staan terwijl
+ * de URL wél `status=meal-day-added` toonde).
+ */
+function backToPicker(status: string, isoDate?: string): never {
+  const params = new URLSearchParams({ status });
+  if (isoDate) params.set("dag", isoDate);
+  redirect(`/boodschappen?${params.toString()}#avondeten`);
 }
 
 /**
@@ -80,5 +92,5 @@ export async function setMealIncludedInGroceries(formData: FormData) {
   revalidatePath("/boodschappen");
   revalidatePath("/controle");
   revalidatePath("/week");
-  backToPicker(included ? "meal-day-added" : "meal-day-removed");
+  backToPicker(included ? "meal-day-added" : "meal-day-removed", String(formData.get("date") ?? ""));
 }

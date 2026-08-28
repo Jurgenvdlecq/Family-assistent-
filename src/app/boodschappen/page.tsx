@@ -94,6 +94,7 @@ const STATUS_MESSAGES: Record<string, string> = {
   "quick-order-bulk-added": "Herkende producten toegevoegd aan de lijst van deze week.",
   "shopping-reviewed": "Lijst bevestigd — klaar om naar Picnic te gaan.",
   "meal-day-added": "Deze avond gaat mee: de boodschappen ervoor staan nu op de lijst.",
+  "line-removed": "Product van de lijst gehaald.",
   "meal-day-removed": "Deze avond gaat niet mee. Het geplande gerecht blijft gewoon staan.",
   "meal-replaced": "Gerecht gewisseld — de boodschappen ervoor zijn bijgewerkt.",
   "meal-wish-planned": "Ingepland — de boodschappen ervoor staan op de lijst.",

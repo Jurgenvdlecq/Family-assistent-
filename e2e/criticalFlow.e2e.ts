@@ -56,7 +56,15 @@ async function openRowOptions(row: Locator) {
  *  zichtbaar als het open staat. Idempotent: veilig meerdere keren aan te
  *  roepen, ook als een eerdere stap 'm al opende. */
 async function openBeheer(target: Page) {
-  await target.locator("#beheer").evaluate((el) => {
+  await openDetails(target, "#beheer");
+}
+
+/** Elk ingeklapt blok openzetten via de DOM in plaats van op de samenvatting
+ *  te klikken. Een klik op een <summary> is idempotent noch stabiel: staat het
+ *  blok al open, dan klapt hij juist dicht, en het uitklappen zelf verschuift
+ *  de lay-out onder de volgende klik. */
+async function openDetails(target: Page, selector: string) {
+  await target.locator(selector).evaluate((el) => {
     (el as HTMLDetailsElement).open = true;
   });
 }
@@ -361,7 +369,11 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
           const next = page.locator('button[data-next-week="false"][aria-pressed="false"]').first();
           if ((await next.count()) === 0) break;
           const dayToSelect = await next.getAttribute("data-order-day");
-          await next.click();
+          // Bewust op de dag zelf klikken en niet nog een keer op `.first()`:
+          // dat is een tweede resolutie, en die kan een andere tegel opleveren
+          // dan de dag die we net hebben afgelezen. Dan tikken we dag A aan en
+          // wachten we op dag B — precies de wisselende fout op deze stap.
+          await page.locator(`button[data-order-day="${dayToSelect}"]`).click();
           await page
             .locator(`button[data-order-day="${dayToSelect}"][aria-pressed="true"]`)
             .waitFor({ state: "visible", timeout: 15_000 });
@@ -448,7 +460,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
 
     await t.test("5. Vaste boodschap / extra product toevoegen (via Picnic-zoeken)", async () => {
       await openBeheer(page);
-      await page.locator("#add-fixed-grocery summary").click();
+      await openDetails(page, "#add-fixed-grocery");
       const searchInput = page.getByPlaceholder("Zoek Picnic-product, bv. appels");
       await searchInput.waitFor({ state: "visible" });
       await searchInput.fill(MOCK_SEARCH_TERM);
@@ -997,7 +1009,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         });
         await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
         await waitForBoodschappenSettled(page);
-        await page.locator("#alle-te-bestellen-producten > summary").click();
+        await openDetails(page, "#alle-te-bestellen-producten");
         const blockedBlock = page.locator(`#meal-line-${fixedLine.id}`);
         await blockedBlock.waitFor({ state: "visible", timeout: 10_000 });
         await openRowOptions(blockedBlock);
@@ -1018,7 +1030,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         });
         await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
         await waitForBoodschappenSettled(page);
-        await page.locator("#alle-te-bestellen-producten > summary").click();
+        await openDetails(page, "#alle-te-bestellen-producten");
         const lineBlock = page.locator(`#meal-line-${fixedLine.id}`);
         await lineBlock.waitFor({ state: "visible", timeout: 10_000 });
         await openRowOptions(lineBlock);

@@ -1,6 +1,7 @@
 import type { ConfidenceLevel } from "@/generated/prisma/enums";
 import type { DayKey } from "@/lib/week";
-import { tagsForMealCandidate } from "@/domain/meal-tags/mealTags";
+import { tagsForMealCandidate, type MealTag } from "@/domain/meal-tags/mealTags";
+import type { DayProfileDefinition } from "./dayProfiles";
 
 type RecipeStatus = "FOUND" | "ADAPTED" | "PROVEN" | "SAFE_CHOICE";
 type VariantType = "FAST" | "FRESH" | "REHEATABLE" | "KID_FRIENDLY";
@@ -49,6 +50,12 @@ export interface MealPlanScoringInput {
   personalCategoryPreferences?: Map<string, PersonalSubjectPreference[]>;
   personalIngredientPreferences?: Map<string, PersonalSubjectPreference[]>;
   planningStyle?: PlanningStyle;
+  /**
+   * Het dagprofiel dat voor deze avond geldt (uit een `MealDayRule`).
+   * Ontbreekt bij een huishouden zonder weekritme — dan scoort alles precies
+   * zoals vóór het weekritme.
+   */
+  dayProfile?: DayProfileDefinition | null;
   lastPlannedByRecipeId: Map<string, Date>;
   usedRecipeIds: Set<string>;
   targetDate: Date;
@@ -85,6 +92,81 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 function labelCategory(category: string): string {
   return CATEGORY_LABELS[category] ?? category.toLowerCase().replaceAll("_", " ");
+}
+
+/** Voor de "waarom dit?"-tekst: een tag in gewone taal. */
+const TAG_LABELS: Partial<Record<MealTag, string>> = {
+  AVG: "aardappel, groente en vlees",
+  FAST: "snel klaar",
+  LOW_EFFORT: "weinig werk",
+  NORMAL_EFFORT: "een gewone kookavond",
+  EXTENSIVE: "uitgebreid koken",
+  KID_FRIENDLY: "kindvriendelijk",
+  AIRFRYER: "uit de airfryer",
+  PASTA: "pasta",
+  RICE: "rijst",
+  WRAPS: "wraps",
+  WEEKEND: "weekends",
+  LEFTOVER_FRIENDLY: "goed op te warmen",
+  VEGETARIAN: "vegetarisch",
+  COMFORT: "comfort food",
+  HEALTHY: "licht",
+  CHICKEN: "kip",
+  POTATO: "aardappel",
+  WORLD_FOOD: "een wereldgerecht",
+};
+
+function labelTag(tag: MealTag): string {
+  return TAG_LABELS[tag] ?? tag.toLowerCase().replaceAll("_", " ");
+}
+
+/**
+ * Het dagprofiel vertalen naar punten en naar een uitlegbare reden.
+ *
+ * Bewust een bonus per gewenste eigenschap en niet "alles of niets": een
+ * gerecht dat aan drie van de vier criteria voldoet moet winnen van een
+ * gerecht dat aan één voldoet, zonder dat de vierde een uitsluiting wordt.
+ * Te vermijden eigenschappen kosten punten maar sluiten nooit uit — dat is
+ * voorbehouden aan harde beperkingen.
+ */
+function applyDayProfile(
+  signal: { score: number; hasDoubt: boolean; reasons: string[] },
+  profile: DayProfileDefinition,
+  candidateTags: Set<MealTag>,
+  dayLabel: string
+) {
+  const matched = profile.desiredTags.filter((tag) => candidateTags.has(tag));
+  const missed = profile.desiredTags.filter((tag) => !candidateTags.has(tag));
+  const clashes = profile.avoidTags.filter((tag) => candidateTags.has(tag));
+
+  signal.score += matched.length * 16;
+  if (matched.length > 0) {
+    signal.reasons.push(
+      `past bij jullie ${dayLabel}: ${matched.slice(0, 2).map(labelTag).join(" en ")}`
+    );
+  }
+
+  // Alleen twijfel melden als het gerecht op niets van het profiel scoort —
+  // één gemist criterium is normaal en zou de uitleg alleen maar vertroebelen.
+  if (profile.desiredTags.length > 0 && matched.length === 0) {
+    signal.score -= 14;
+    signal.hasDoubt = true;
+    signal.reasons.push(`is niet wat jullie op ${dayLabel} meestal willen`);
+  } else if (missed.length > 0 && matched.length < profile.desiredTags.length / 2) {
+    signal.score -= 6;
+  }
+
+  if (clashes.length > 0) {
+    signal.score -= clashes.length * 18;
+    signal.hasDoubt = true;
+    signal.reasons.push(`is ${clashes.map(labelTag).join(" en ")} voor deze avond`);
+  }
+
+  if (profile.adultOnly && candidateTags.has("KID_FRIENDLY") && !candidateTags.has("LOW_EFFORT")) {
+    // Geen straf voor "lekker", wel voor "speciaal voor de kinderen" op een
+    // avond waarop er geen kinderen mee-eten.
+    signal.score -= 8;
+  }
 }
 
 function daysBetween(from: Date, to: Date): number {
@@ -139,6 +221,7 @@ function scoreCandidate(input: MealPlanScoringInput, candidate: MealPlanCandidat
   const candidateTags = new Set(
     tagsForMealCandidate({
       recipeCategory: candidate.recipeCategory,
+      recipeTitle: candidate.recipeTitle,
       recipeProperties: candidate.recipeProperties,
       variantType: candidate.variantType,
       contextFit: candidate.contextFit,
@@ -166,6 +249,10 @@ function scoreCandidate(input: MealPlanScoringInput, candidate: MealPlanCandidat
   } else if (candidate.variantType === "FRESH") {
     signal.score += 5;
     reasons.push(`er is op ${dayLabel} ruimte voor vers koken`);
+  }
+
+  if (input.dayProfile) {
+    applyDayProfile(signal, input.dayProfile, candidateTags, dayLabel);
   }
 
   if (input.preferredCategories.size > 0) {
