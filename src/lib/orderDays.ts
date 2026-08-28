@@ -1,4 +1,14 @@
-import { DAY_KEYS, DAY_LABELS, DAY_SHORT_LABELS, formatDayShort, getCurrentWeekStart, type DayKey } from "./week";
+import {
+  DAY_KEYS,
+  DAY_LABELS,
+  DAY_SHORT_LABELS,
+  dayKeyForDate,
+  formatDayShort,
+  getCurrentWeekStart,
+  type DayKey,
+} from "./week";
+
+export { dayKeyForDate };
 
 /** Hoeveel avonden de dagkeuze standaard aanbiedt vanaf het bezorgmoment. */
 export const ORDER_DAY_WINDOW_DAYS = 7;
@@ -53,11 +63,6 @@ function lastSelectableDate(now: Date): Date {
   const last = getCurrentWeekStart(now);
   last.setDate(last.getDate() + 13);
   return last;
-}
-
-/** Welke dag van de week is dit? (maandag = eerste, net als DAY_KEYS.) */
-export function dayKeyForDate(date: Date): DayKey {
-  return DAY_KEYS[(date.getDay() + 6) % 7];
 }
 
 function toOrderDay(date: Date, currentWeekStart: Date): OrderDay {

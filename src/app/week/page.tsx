@@ -36,8 +36,8 @@ import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
 import { getPendingLearningPrompts } from "@/domain/learning/patterns";
 import { mealEntryTitle } from "@/domain/meal-planning/mealEntry";
-import { calendarDateKey } from "@/domain/week/isoWeek";
-import { clearDatePresence, setDatePresence } from "./presenceActions";
+import { calendarDateKey, calendarDateKeyFromColumn } from "@/domain/week/isoWeek";
+import { clearDatePresence, confirmPresencePatternPrompt, setDatePresence } from "./presenceActions";
 import {
   answerSmartLearningPrompt,
   dismissSmartLearningPrompt,
@@ -72,6 +72,7 @@ const STATUS_MESSAGES: Record<string, string> = {
   "day-restored": "Deze dag telt weer gewoon mee.",
   "date-presence-saved": "Genoteerd — alleen voor deze keer.",
   "date-presence-cleared": "Deze dag volgt weer jullie gewone ritme.",
+  "presence-pattern-applied": "Onthouden — dit staat nu in jullie weekritme.",
 };
 
 /** Meldingen die geen bevestiging zijn maar een blokkade/fout — amber i.p.v. groen. */
@@ -203,7 +204,7 @@ export default async function Home({
       select: { date: true },
     }),
   ]);
-  const dateOverrideDays = new Set(dateOverrides.map((override) => calendarDateKey(override.date)));
+  const dateOverrideDays = new Set(dateOverrides.map((override) => calendarDateKeyFromColumn(override.date)));
 
   const [participantsByDay, learningPrompts, dayRoutines] = await Promise.all([
     getHouseholdMealParticipantsForWeek(household.id, weekStart),
@@ -349,6 +350,21 @@ export default async function Home({
                 </p>
                 <p className="mb-3 text-sm text-ink-muted">{prompt.question}</p>
                 <div className="grid gap-2">
+                  {/* Een aanwezigheidsvraag is een ja/nee-vraag: één knop die
+                      het patroon in het weekritme zet. Hem tussen de
+                      smaakredenen proppen zou de vraag onbeantwoordbaar maken. */}
+                  {prompt.kind === "presence" && (
+                    <form action={confirmPresencePatternPrompt}>
+                      <input type="hidden" name="householdId" value={household.id} />
+                      <input type="hidden" name="promptId" value={prompt.id} />
+                      <button
+                        type="submit"
+                        className="w-full rounded-lg border border-accent bg-accent px-2 py-2 text-xs font-medium text-accent-ink hover:opacity-90"
+                      >
+                        Ja, zet dat zo in ons weekritme
+                      </button>
+                    </form>
+                  )}
                   <div className="grid grid-cols-2 gap-2">
                     {prompt.answerOptions.map((reason) => (
                       <form

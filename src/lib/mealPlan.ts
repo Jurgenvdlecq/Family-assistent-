@@ -52,6 +52,10 @@ const MEAL_PLAN_INCLUDE = {
       // gekozen componenten in plaats van in een recept.
       mealTemplate: true,
       components: { include: { option: { include: { group: true, ingredient: true } } } },
+      // Ook een verdeelde avond hoort hier compleet uit te komen: anders zou
+      // een scherm de naam van het onderliggende gerecht tonen in plaats van
+      // de delen die er echt op tafel staan.
+      assignments: { include: { persons: true, items: true } },
     },
   },
 } as const;

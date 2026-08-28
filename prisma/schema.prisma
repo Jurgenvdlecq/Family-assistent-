@@ -1081,6 +1081,9 @@ enum LearnedPatternType {
   MEAL_CATEGORY_REPLACED_ON_DAY
   MEAL_VARIANT_REPLACED_ON_DAY
   MEAL_CATEGORY_ACCEPTED_ON_DAY
+  /// "De afgelopen keren at deze persoon op woensdag niet mee." Pas na
+  /// herhaling; één afwijking mag het patroon nooit veranderen.
+  PRESENCE_CHANGED_ON_DAY
 
   @@map("learned_pattern_type")
 }
@@ -1088,6 +1091,8 @@ enum LearnedPatternType {
 enum LearningPromptType {
   EXPLAIN_REPEATED_REPLACEMENT
   CONFIRM_REPEATED_ACCEPTANCE
+  /// "Zal ik dat als standaard houden?" — ja/nee, geen smaakvraag.
+  CONFIRM_PRESENCE_PATTERN
 
   @@map("learning_prompt_type")
 }

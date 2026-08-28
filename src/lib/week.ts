@@ -64,6 +64,17 @@ export function getCurrentWeekStart(reference: Date = new Date()): Date {
   return d;
 }
 
+/**
+ * Welke dag van de week is dit? (maandag eerst, net als `DAY_KEYS`.)
+ *
+ * Stond eerst twee keer in de codebase — in `orderDays.ts` en in
+ * `domain/household/presence.ts` — met identieke inhoud. Eén plek, want twee
+ * kopieën van een datumberekening lopen vroeg of laat uiteen.
+ */
+export function dayKeyForDate(date: Date): DayKey {
+  return DAY_KEYS[(date.getDay() + 6) % 7];
+}
+
 export function dateForDay(weekStart: Date, dayKey: DayKey): Date {
   const idx = DAY_KEYS.indexOf(dayKey);
   const d = new Date(weekStart);

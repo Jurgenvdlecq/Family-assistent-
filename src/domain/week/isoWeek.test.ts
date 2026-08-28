@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   calendarDateKey,
+  calendarDateKeyFromColumn,
+  toCalendarDate,
   isoWeekNumber,
   isoWeekYear,
   parityAppliesToDate,
@@ -81,4 +83,23 @@ test("isoWeekNumber: zomertijdgrens verschuift geen dag", () => {
 test("calendarDateKey: lokale kalenderdag, met voorloopnullen", () => {
   assert.equal(calendarDateKey(d("2026-09-07")), "2026-09-07");
   assert.equal(calendarDateKey(d("2026-01-05")), "2026-01-05");
+});
+
+test("toCalendarDate: een datum voor een @db.Date-kolom is altijd middernacht UTC", () => {
+  // Zonder dit zou een lokaal uitgerekende middernacht in Europe/Amsterdam
+  // als 22:00 UTC op de dág ervoor worden opgeslagen — en dan staat er een
+  // dag te vroeg in de database.
+  const stored = toCalendarDate(d("2026-09-11"));
+  assert.equal(stored.toISOString(), "2026-09-11T00:00:00.000Z");
+});
+
+test("calendarDateKeyFromColumn: leest een opgeslagen datum met UTC-ogen", () => {
+  const stored = new Date("2026-09-11T00:00:00.000Z");
+  assert.equal(calendarDateKeyFromColumn(stored), "2026-09-11");
+});
+
+test("toCalendarDate en calendarDateKeyFromColumn zijn elkaars tegenhanger", () => {
+  for (const iso of ["2026-01-01", "2026-03-29", "2026-09-11", "2026-12-31"]) {
+    assert.equal(calendarDateKeyFromColumn(toCalendarDate(d(iso))), iso);
+  }
 });
