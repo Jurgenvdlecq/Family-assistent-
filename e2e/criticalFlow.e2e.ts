@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chromium, type Browser, type Page } from "playwright";
+import { chromium, type Browser, type Locator, type Page } from "playwright";
 import { prisma } from "@/lib/prisma";
 import { currentDayKey, DAY_LABELS, DAY_ENUM } from "@/lib/week";
 import { startMockPicnicServer, type MockPicnicServer } from "./fixtures/mockPicnicServer";
@@ -41,6 +41,15 @@ async function waitForBoodschappenSettled(target: Page) {
     .locator("text=Bezorgmomenten ophalen…")
     .waitFor({ state: "hidden", timeout: 20_000 })
     .catch(() => {});
+}
+
+/** Het optiemenu op een productregel is een native <details>. Openzetten via de
+ *  DOM in plaats van op de samenvatting klikken: idempotent, en niet gevoelig
+ *  voor de layoutverschuiving die het uitklappen zelf veroorzaakt. */
+async function openRowOptions(row: Locator) {
+  await row.locator('details:has(summary[aria-label^="Opties voor"])').evaluate((el) => {
+    (el as HTMLDetailsElement).open = true;
+  });
 }
 
 /** Het beheerblok op /boodschappen staat ingeklapt; alles erbinnen is pas
@@ -328,6 +337,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         // bewijst dat, tikt daarna de avonden van déze week aan, en bewijst dat
         // er dan wél receptregels op de lijst komen.
         await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
+        await waitForBoodschappenSettled(page);
         await page.locator("text=Kook je zelf?").waitFor({ state: "visible", timeout: 15_000 });
 
         const mealLinesBefore = await prisma.shoppingListLine.count({
@@ -422,7 +432,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         await waitForBoodschappenSettled(page);
         const lineBlock = page.locator(`#meal-line-${mealLine.id}`);
         await lineBlock.waitFor({ state: "visible", timeout: 10_000 });
-        await lineBlock.locator('summary[aria-label^="Opties voor"]').click();
+        await openRowOptions(lineBlock);
         await lineBlock.getByRole("button", { name: "Verwijderen" }).click();
         await lineBlock.waitFor({ state: "detached", timeout: 15_000 });
 
@@ -985,7 +995,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         await page.locator("#alle-te-bestellen-producten > summary").click();
         const blockedBlock = page.locator(`#meal-line-${fixedLine.id}`);
         await blockedBlock.waitFor({ state: "visible", timeout: 10_000 });
-        await blockedBlock.locator('summary[aria-label^="Opties voor"]').click();
+        await openRowOptions(blockedBlock);
         await blockedBlock.getByRole("button", { name: "Verwijderen" }).click();
         await page.locator("text=Dit product ligt al in je Picnic-mandje").waitFor({
           state: "visible",
@@ -1006,7 +1016,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         await page.locator("#alle-te-bestellen-producten > summary").click();
         const lineBlock = page.locator(`#meal-line-${fixedLine.id}`);
         await lineBlock.waitFor({ state: "visible", timeout: 10_000 });
-        await lineBlock.locator('summary[aria-label^="Opties voor"]').click();
+        await openRowOptions(lineBlock);
         await lineBlock.getByRole("button", { name: "Verwijderen" }).click();
         await lineBlock.waitFor({ state: "detached", timeout: 15_000 });
 

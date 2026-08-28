@@ -69,6 +69,14 @@ export async function setMealIncludedInGroceries(formData: FormData) {
     await invalidateShoppingList(currentWeekPlan.id);
   }
 
+  // De redirect blijft staan, ook al kost hij een tweede serveraanroep.
+  // Uitgeprobeerd én gemeten: met alleen `revalidatePath` werkt deze
+  // `force-dynamic`-pagina zichzelf niet bij — de tegel bleef op de oude
+  // stand staan en de producten verschenen niet, aangetoond door e2e-stap
+  // "3d" die daar prompt op faalde. Een knop die niets doet is erger dan een
+  // knop die een fractie trager is. De winst zit hier in de directe
+  // terugkoppeling op de tegel zelf (zie DayToggleButton), niet in het
+  // besparen van een aanroep.
   revalidatePath("/boodschappen");
   revalidatePath("/controle");
   revalidatePath("/week");
