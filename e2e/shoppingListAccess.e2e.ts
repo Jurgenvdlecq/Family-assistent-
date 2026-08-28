@@ -2,7 +2,7 @@ import "dotenv/config";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { chromium, type Browser } from "playwright";
+import { chromium, type Browser, type Page } from "playwright";
 import { prisma } from "@/lib/prisma";
 import { startMockPicnicServer, type MockPicnicServer } from "./fixtures/mockPicnicServer";
 import { startTestServer, type TestServer } from "./fixtures/testServer";
@@ -36,6 +36,15 @@ import { clearLoginAttempts } from "@/lib/loginRateLimit";
  * hier bewezen `assertShoppingListAccess`/`loadFixedLine`-patronen.
  */
 const TEST_PORT = 3179;
+
+/** Het beheerblok op /boodschappen staat ingeklapt; alles erbinnen is pas
+ *  zichtbaar als het open staat. Idempotent: veilig meerdere keren aan te
+ *  roepen, ook als een eerdere stap 'm al opende. */
+async function openBeheer(target: Page) {
+  await target.locator("#beheer").evaluate((el) => {
+    (el as HTMLDetailsElement).open = true;
+  });
+}
 
 test("addManualProduct weigert een shoppingListId van een ander huishouden", { timeout: 120_000 }, async (t) => {
   await cleanupMockProducts();
@@ -255,6 +264,7 @@ test("addManualProduct weigert een shoppingListId van een ander huishouden", { t
       await pageA.waitForURL(`${server.baseURL}/`, { timeout: 15_000 });
 
       await pageA.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load", timeout: 90_000 });
+      await openBeheer(pageA);
       await pageA.locator("#fixed-groceries summary").click();
 
       // Het formulier voor A's EIGEN actieve vaste boodschap bestaat echt op
@@ -302,6 +312,7 @@ test("addManualProduct weigert een shoppingListId van een ander huishouden", { t
       await pageA.waitForURL(`${server.baseURL}/`, { timeout: 15_000 });
 
       await pageA.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load", timeout: 90_000 });
+      await openBeheer(pageA);
       await pageA.locator("#fixed-groceries summary").click();
       const form = pageA
         .locator('#fixed-groceries form:has(input[name="householdId"]):has(input[name="lineId"])')

@@ -82,6 +82,9 @@ const STATUS_MESSAGES: Record<string, string> = {
   "fixed-quantity-remembered": "Vaste boodschap bijgewerkt en onthouden.",
   "fixed-replaced": "Vaste boodschap vervangen.",
   "fixed-removed": "Vaste boodschap verwijderd.",
+  // Eigen status voor de route vanaf de lijst: anders zou het beheerblok
+  // opengeklapt worden terwijl de gebruiker daar helemaal niet was.
+  "fixed-removed-from-list": "Verwijderd — deze komt volgende week niet meer terug.",
   "inventory-updated": "Voorraadstatus opgeslagen.",
   "manual-added": "Toegevoegd aan de lijst van deze week.",
   "quick-order-added": "Toegevoegd aan de lijst van deze week.",
@@ -637,6 +640,13 @@ export default async function BoodschappenPage({
   const focusedLineId = String(params.focusLine ?? "").trim();
   const focusedShortfallLineId = String(params.shortfallLine ?? "").trim();
   const focusedInventoryId = String(params.inventory ?? "").trim();
+  // Meldingen en focus vanuit de beheeracties wijzen naar ankers binnen het
+  // ingeklapte blok — dan moet dat blok wel openstaan, anders landt de
+  // gebruiker op een pagina waar zijn regel nergens te zien is.
+  const beheerFocused =
+    Boolean(focusedFixedLineId || fixedReplaceLineId || focusedLineId || focusedInventoryId) ||
+    (params.status ?? "").startsWith("fixed-") ||
+    params.status === "inventory-updated";
   const generalStatusMessage =
     params.status && !focusedLineId && !focusedShortfallLineId && !focusedFixedLineId && !focusedInventoryId
       ? STATUS_MESSAGES[params.status]
@@ -945,6 +955,7 @@ export default async function BoodschappenPage({
                     <input type="hidden" name="householdId" value={household.id} />
                     <input type="hidden" name="ingredientId" value={line.ingredientId} />
                     <input type="hidden" name="lineId" value={line.id} />
+                    <input type="hidden" name="returnTo" value="list" />
                     <PendingSubmitButton
                       pendingText="Bezig..."
                       className="w-full rounded-md px-2.5 py-2 text-left text-xs hover:bg-red-50"
@@ -1421,663 +1432,688 @@ export default async function BoodschappenPage({
           </p>
         )}
 
-        <details id="daily-review" className="mb-8 mt-4 min-w-0 scroll-mt-6" open={focusedLineId ? true : undefined}>
-          <summary className="cursor-pointer text-sm font-semibold text-ink">Bekijk per dag</summary>
-          <div className="mt-3 grid gap-4">
-            {mealPlan.entries.map((entry) => {
-              const dayKey = DAY_KEY_BY_ENUM[entry.dayOfWeek];
-              const scale = portionScaleByDay[dayKey]?.scale ?? 1;
-              const dayReviewCount = dayReviewCounts.get(entry.id) ?? 0;
-              const dayCost = entry.recipeVariant.recipe.ingredients.reduce((total, ri) => {
-                const line = mealLineByIngredientId.get(ri.ingredientId);
-                const scaledNeed = { quantity: ri.quantity * scale, unit: ri.unit };
-                return total + estimatedDayIngredientCost(scaledNeed, line?.product);
-              }, 0);
-              return (
-                <article key={entry.id} className="rounded-xl border border-line bg-surface p-4">
-                  <div className="mb-3 flex min-w-0 items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium uppercase tracking-wide text-accent">{DAY_LABELS[dayKey]}</p>
-                      <h3 className="mt-0.5 line-clamp-2 font-semibold text-ink">
-                        {entry.recipeVariant.recipe.title}
-                      </h3>
-                      <p className="mt-1 text-xs text-ink-faint">
-                        {scale === 1 ? "Normale porties" : `${Math.round(scale * 100)}% van normale porties`}
-                      </p>
-                      <p className="mt-1 text-xs font-medium text-ink-muted">
-                        Daginschatting: {dayCost > 0 ? `€ ${dayCost.toFixed(2)}` : "prijs onbekend"}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-2">
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                          dayReviewCount > 0
-                            ? "bg-tag-amber-bg text-tag-amber-ink"
-                            : "bg-tag-green-bg text-tag-green-ink"
-                        }`}
-                      >
-                        {dayReviewCount > 0 ? `${dayReviewCount} controleren` : "Compleet"}
-                      </span>
-                      <Link
-                        href={`/gerechten?day=${dayKey}`}
-                        className="text-xs font-medium text-accent underline decoration-dotted"
-                      >
-                        Ander gerecht
-                      </Link>
-                    </div>
-                  </div>
-                  <div className="grid gap-2">
-                    {entry.recipeVariant.recipe.ingredients.map((ri) => {
-                      const line = mealLineByIngredientId.get(ri.ingredientId);
-                      const scaledNeed = { quantity: ri.quantity * scale, unit: ri.unit };
-                      const candidates = line ? candidatesByIngredient.get(line.ingredientId) ?? [] : [];
-                      const alternatives = candidates.filter((candidate) => candidate.id !== line?.product?.id).slice(0, 5);
-                      const statusMessage =
-                        line?.id === focusedLineId && params.status ? STATUS_MESSAGES[params.status] : undefined;
-                      return (
-                        <div
-                          key={ri.id}
-                          id={line ? `day-line-${line.id}` : undefined}
-                          className={`scroll-mt-6 rounded-lg border bg-surface-2 p-3 transition-colors ${
-                            line?.id === focusedLineId ? "border-accent ring-2 ring-accent/20" : "border-line"
-                          }`}
-                        >
-                          {statusMessage && (
-                            <p
-                              className={`mb-2 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
-                                WARNING_STATUSES.has(params.status ?? "")
-                                  ? "border-tag-amber-ink/25 bg-tag-amber-bg text-tag-amber-ink"
-                                  : "border-tag-green-ink/20 bg-tag-green-bg text-tag-green-ink"
-                              }`}
-                            >
-                              {statusMessage}
-                            </p>
-                          )}
-                          <div className="flex min-w-0 items-center justify-between gap-3">
-                            <div className="flex min-w-0 items-center gap-3">
-                              <ProductImage product={line?.product} label={ri.ingredient.name} />
-                              <div className="min-w-0">
-                                <p className="line-clamp-2 text-sm font-medium text-ink">
-                                  {line?.product?.name ?? ri.ingredient.name}
-                                </p>
-                                <p className="mt-0.5 text-xs text-ink-faint">
-                                  {describePackage(line?.product)}
-                                </p>
-                                <p className="mt-0.5 text-[11px] text-ink-faint">
-                                  Voor dit gerecht: {formatQuantity(scaledNeed.quantity, scaledNeed.unit)}
-                                </p>
-                                {line?.product?.price && (
-                                  <p className="mt-0.5 text-[11px] font-medium text-ink-muted">
-                                    Maaltijdkosten: € {estimatedDayIngredientCost(scaledNeed, line.product).toFixed(2)}
-                                  </p>
-                                )}
-                                {line?.needsReview && (
-                                  <p className="mt-1 text-xs font-medium text-tag-amber-ink">Nog te bevestigen</p>
-                                )}
-                              </div>
-                            </div>
-                            <div className="shrink-0 text-right">
-                              <p className="font-semibold text-ink">
-                                {formatNeededOrderQuantity(scaledNeed, line?.product)}
-                              </p>
-                              {line && (
-                                <p className="text-[11px] text-ink-faint">voor deze maaltijd</p>
-                              )}
-                              {line ? (
-                                <Link
-                                  href={`/controle?focus=${line.id}#line-${line.id}`}
-                                  className="mt-1 block text-xs font-medium text-accent underline decoration-dotted"
-                                >
-                                  Product
-                                </Link>
-                              ) : (
-                                <Link
-                                  href="/controle"
-                                  className="mt-1 block text-xs font-medium text-tag-amber-ink underline decoration-dotted"
-                                >
-                                  Controleren
-                                </Link>
-                              )}
-                            </div>
-                          </div>
-                          {line && (
-                            <div className="mt-3 grid gap-2">
-                              <details className="rounded-lg border border-line bg-surface p-2">
-                                <summary className="cursor-pointer text-xs font-medium text-ink">
-                                  Weektotaal aanpassen: {formatOrderQuantity(line)}
-                                </summary>
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
-                                  <form action={adjustBoodschappenLineQuantity}>
-                                    <input type="hidden" name="lineId" value={line.id} />
-                                    <input type="hidden" name="direction" value="decrease" />
-                                    <PendingSubmitButton
-                                      pendingText="..."
-                                      ariaLabel="Minder voor de week bestellen"
-                                      title="Minder voor de week bestellen"
-                                      className={`flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink hover:border-accent/70 hover:bg-white ${ACTION_BUTTON_FOCUS}`}
-                                    >
-                                      <Minus size={14} />
-                                    </PendingSubmitButton>
-                                  </form>
-                                  <form action={adjustBoodschappenLineQuantity}>
-                                    <input type="hidden" name="lineId" value={line.id} />
-                                    <input type="hidden" name="direction" value="increase" />
-                                    <PendingSubmitButton
-                                      pendingText="..."
-                                      ariaLabel="Meer voor de week bestellen"
-                                      title="Meer voor de week bestellen"
-                                      className={`flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink hover:border-accent/70 hover:bg-white ${ACTION_BUTTON_FOCUS}`}
-                                    >
-                                      <Plus size={14} />
-                                    </PendingSubmitButton>
-                                  </form>
-                                  <form action={removeBoodschappenLineThisWeek}>
-                                    <input type="hidden" name="lineId" value={line.id} />
-                                    <PendingSubmitButton
-                                      pendingText="..."
-                                      ariaLabel="Uit de hele weeklijst verwijderen"
-                                      title="Uit de hele weeklijst verwijderen"
-                                      className={`flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink-faint hover:border-red-300 hover:bg-red-50 hover:text-red-600 ${ACTION_BUTTON_FOCUS}`}
-                                    >
-                                      <X size={14} />
-                                    </PendingSubmitButton>
-                                  </form>
-                                  <form action={setBoodschappenLinePackageCount} className="flex items-center gap-1 rounded-md border border-line bg-surface px-2 py-1">
-                                    <input type="hidden" name="lineId" value={line.id} />
-                                    <input
-                                      type="number"
-                                      name="packageCount"
-                                      defaultValue={orderPackageCount(line)}
-                                      min="0.01"
-                                      step="any"
-                                      aria-label="Aantal verpakkingen voor de week"
-                                      className="w-14 bg-transparent text-sm font-medium text-ink outline-none"
-                                    />
-                                    <span className="text-[11px] text-ink-faint">x per week</span>
-                                    <PendingSubmitButton
-                                      pendingText="..."
-                                      className={`rounded px-1.5 py-0.5 text-[11px] font-medium text-accent hover:bg-accent-soft ${ACTION_BUTTON_FOCUS}`}
-                                    >
-                                      OK
-                                    </PendingSubmitButton>
-                                  </form>
-                                </div>
-                              </details>
-                              {line.product && line.needsReview && (
-                                <DayProductChoice line={line} product={line.product} selected />
-                              )}
-                            </div>
-                          )}
-                          {line && alternatives.length > 0 && (
-                            <details className="mt-3 rounded-lg border border-line bg-surface p-2">
-                              <summary className="cursor-pointer text-xs font-medium text-ink">
-                                {alternatives.length} {alternatives.length === 1 ? "alternatief" : "alternatieven"}
-                              </summary>
-                              <div className="mt-2 grid gap-2">
-                                {alternatives.map((candidate) => (
-                                  <DayProductChoice key={candidate.id} line={line} product={candidate} />
-                                ))}
-                              </div>
-                            </details>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </details>
-
+        {/* Alles wat beheer is, zit achter één ingang. Het stond hier
+            allemaal permanent onder de boodschappenlijst, terwijl je het
+            tijdens het bestellen bijna nooit nodig hebt — en het duwde de
+            bestelpagina tot twaalf blokken lang. Er verdwijnt niets: de
+            secties hieronder zijn ongewijzigd, ze staan alleen ingeklapt.
+            Wijst een melding of focus naar iets hierbinnen, dan klapt de
+            hele boel vanzelf open. */}
         <details
-          id="fixed-groceries"
-          className="mt-8 scroll-mt-6 rounded-xl border border-line bg-surface p-4"
-          open={focusedFixedLineId || fixedReplaceLineId ? true : undefined}
+          id="beheer"
+          className="mb-6 min-w-0 scroll-mt-6 rounded-xl border border-line bg-surface p-4"
+          open={beheerFocused || undefined}
         >
-          <summary className="cursor-pointer text-sm font-semibold text-ink">
-            {activeFixedLines.length + inactiveFixedItems.length} vaste boodschap
-            {activeFixedLines.length + inactiveFixedItems.length === 1 ? "" : "pen"}
-          </summary>
-          {focusedFixedLineId && params.status && STATUS_MESSAGES[params.status] && (
-            <p className="mt-3 rounded-md border border-tag-green-ink/20 bg-tag-green-bg px-2.5 py-1.5 text-xs font-medium text-tag-green-ink">
-              {STATUS_MESSAGES[params.status]}
-            </p>
-          )}
-          <div className="mt-3 flex min-w-0 flex-col divide-y divide-line">
-          {activeFixedLines.length === 0 && inactiveFixedItems.length === 0 && (
-            <p className="p-4 text-sm text-ink-muted">
-              Nog geen vaste boodschappen ingesteld — voeg hieronder je eerste toe.
-            </p>
-          )}
-          {activeFixedLines.map((line) => {
-            const editQuantity = fixedLineEditQuantity(line);
-            return (
-              <div
-                key={line.id}
-                id={`fixed-line-${line.id}`}
-                className="flex min-w-0 scroll-mt-6 flex-col gap-2 p-4 transition-colors target:bg-accent/10"
-              >
-              <div className="flex min-w-0 items-center gap-3">
-                <ProductThumb line={line} />
-                <div className="min-w-0 flex-1">
-                  <p className="min-w-0 truncate text-ink">{line.product?.name ?? line.ingredient.name}</p>
-                  {line.product?.packageSize && (
-                    <p className="mt-0.5 text-xs text-ink-faint">{line.product.packageSize}</p>
-                  )}
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <form action="/boodschappen#add-fixed-grocery">
-                  <input type="hidden" name="fixedQ" value={line.ingredient.name} />
-                  <input type="hidden" name="fixedReplaceLineId" value={line.id} />
-                  <button
-                    type="submit"
-                    className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink transition-colors hover:border-accent/60 hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:scale-[0.98]"
-                  >
-                    Wijzigen
-                  </button>
-                </form>
-                <form action={removeFixedLineThisWeek}>
-                  <input type="hidden" name="lineId" value={line.id} />
-                  <button
-                    type="submit"
-                    className="shrink-0 text-xs font-medium text-ink-faint transition-colors hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:scale-[0.98]"
-                  >
-                    Deze week niet nodig
-                  </button>
-                </form>
-                <form action={removeFixedGroceryPermanently}>
-                  <input type="hidden" name="householdId" value={household.id} />
-                  <input type="hidden" name="ingredientId" value={line.ingredientId} />
-                  <input type="hidden" name="lineId" value={line.id} />
-                  <button
-                    type="submit"
-                    className="shrink-0 text-xs font-medium text-ink-faint transition-colors hover:text-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:scale-[0.98]"
-                  >
-                    Verwijder voorgoed
-                  </button>
-                </form>
-              </div>
-              <form action={updateFixedLineQuantity} className="flex flex-wrap items-center gap-2">
-                <input type="hidden" name="lineId" value={line.id} />
-                <input
-                  type="number"
-                  name="quantity"
-                  defaultValue={editQuantity.quantity}
-                  step="any"
-                  min="0.01"
-                  className="w-20 rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink"
-                />
-                <input type="hidden" name="unit" value={editQuantity.unit} />
-                <span className="text-xs text-ink-faint">{UNIT_LABELS[editQuantity.unit] ?? editQuantity.unit}</span>
-                <label className="flex items-center gap-1 text-xs text-ink-muted">
-                  <input type="checkbox" name="rememberAsDefault" value="true" />
-                  onthouden
-                </label>
-                <button
-                  type="submit"
-                  className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink hover:border-accent/50"
-                >
-                  Bijwerken
-                </button>
-              </form>
-              </div>
-            );
-          })}
-          {inactiveFixedItems.map((item) => (
-            <div key={item.id} className="flex min-w-0 flex-col gap-2 p-4">
-              <div className="flex min-w-0 items-center gap-3 opacity-60">
-                <ProductImage product={inactiveFixedProductByIngredientId.get(item.ingredientId)} label={item.ingredient.name} />
-                <p className="min-w-0 flex-1 truncate text-ink-faint line-through">{item.ingredient.name}</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <form action={restoreFixedLineThisWeek}>
-                  <input type="hidden" name="shoppingListId" value={shoppingList.id} />
-                  <input type="hidden" name="ingredientId" value={item.ingredientId} />
-                  <button type="submit" className="text-xs font-medium text-accent hover:opacity-80">
-                    Toch toevoegen
-                  </button>
-                </form>
-                <form action={removeFixedGroceryPermanently}>
-                  <input type="hidden" name="householdId" value={household.id} />
-                  <input type="hidden" name="ingredientId" value={item.ingredientId} />
-                  <button type="submit" className="text-xs font-medium text-ink-faint hover:text-red-600">
-                    Verwijder voorgoed
-                  </button>
-                </form>
-              </div>
-            </div>
-          ))}
-          </div>
-        </details>
-
-        <details
-          id="add-fixed-grocery"
-          className="mt-4 scroll-mt-6 rounded-xl border border-line bg-surface p-4"
-          open={fixedSearchQuery || fixedReplaceLineId || bulkFixedText ? true : undefined}
-        >
-          <summary className="cursor-pointer text-sm font-medium text-ink">
-            {fixedReplacementLine ? "Vaste boodschap wijzigen" : "Nieuwe vaste boodschap toevoegen"}
-          </summary>
-
-          {!fixedReplacementLine && (
-            <section id="bulk-fixed-groceries" className="mt-4 rounded-lg border border-line bg-surface-2 p-3">
-              <div className="mb-3 flex items-start gap-2">
-                <ClipboardList size={17} className="mt-0.5 shrink-0 text-accent" />
-                <div className="min-w-0">
-                  <h2 className="text-sm font-semibold text-ink">Plak je vaste boodschappenlijst</h2>
-                  <p className="mt-1 text-xs text-ink-muted">Ik zoek elke regel op bij Picnic.</p>
-                </div>
-              </div>
-              <form action="/boodschappen#bulk-fixed-groceries" className="grid gap-2">
-                <textarea
-                  name="bulkFixed"
-                  defaultValue={bulkFixedText}
-                  rows={4}
-                  placeholder={"2 pakken magere melk\ndrinkyoghurt framboos\nbananen\nappels"}
-                  className="min-h-28 min-w-0 resize-y rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-                />
-                <button
-                  type="submit"
-                  className="w-fit rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
-                >
-                  Zoek mijn lijst
-                </button>
-              </form>
-
-              {bulkFixedText && !household.picnicAuthToken && (
-                <p className="mt-3 text-sm text-ink-muted">
-                  Koppel eerst Picnic om een hele lijst automatisch op te zoeken.
-                </p>
-              )}
-
-              {bulkFixedPreviewLines.length > 0 && (
-                <div className="mt-4 grid gap-4">
-                  <form action={addBulkFixedPicnicProducts} className="rounded-lg border border-accent/30 bg-accent-soft p-3">
-                    <input type="hidden" name="householdId" value={household.id} />
-                    {bulkFixedPreviewLines
-                      .filter((line) => line.results[0])
-                      .map((line) => {
-                        const item = line.results[0]!;
-                        return (
-                          <input
-                            key={`${line.raw}-${item.externalRef}`}
-                            type="hidden"
-                            name="choice"
-                            value={JSON.stringify({
-                              householdId: household.id,
-                              shoppingListId: shoppingList.id,
-                              searchTerm: line.searchTerm,
-                              productName: item.name ?? "",
-                              externalRef: item.externalRef,
-                              packageSize: item.unit_quantity ?? "",
-                              picnicImageId: item.image_id ?? "",
-                              quantity: item.suggestedQuantity,
-                              unit: item.fixedUnit,
-                              price: picnicPriceToEuros(item.display_price ?? item.price),
-                            })}
-                          />
-                        );
-                      })}
-                    <button
-                      type="submit"
-                      className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
-                    >
-                      Beste keuzes opslaan
-                    </button>
-                    <p className="mt-2 text-xs text-ink-muted">
-                      Controleer hieronder of de beste keuze per regel klopt. Afwijkingen kun je los kiezen.
-                    </p>
-                  </form>
-
-                  {bulkFixedPreviewLines.map((line) => (
-                    <div key={line.raw} className="rounded-lg border border-line bg-surface p-3">
-                      <div className="mb-3">
-                        <p className="text-sm font-semibold text-ink">{line.raw}</p>
-                        <p className="text-xs text-ink-faint">
-                          Zoekterm: {line.searchTerm}
-                          {line.multiplier !== 1 ? ` · aantal/verpakking: ${line.multiplier}x` : ""}
+          <summary className="cursor-pointer text-sm font-semibold text-ink">Instellen &amp; beheren</summary>
+          <p className="mt-1 text-xs text-ink-muted">
+            Vaste boodschappen, voorraad, per dag bekijken en de winkelchecklist.
+          </p>
+          <div className="mt-4">
+          <details id="daily-review" className="mb-8 mt-4 min-w-0 scroll-mt-6" open={focusedLineId ? true : undefined}>
+            <summary className="cursor-pointer text-sm font-semibold text-ink">Bekijk per dag</summary>
+            <div className="mt-3 grid gap-4">
+              {mealPlan.entries.map((entry) => {
+                const dayKey = DAY_KEY_BY_ENUM[entry.dayOfWeek];
+                const scale = portionScaleByDay[dayKey]?.scale ?? 1;
+                const dayReviewCount = dayReviewCounts.get(entry.id) ?? 0;
+                const dayCost = entry.recipeVariant.recipe.ingredients.reduce((total, ri) => {
+                  const line = mealLineByIngredientId.get(ri.ingredientId);
+                  const scaledNeed = { quantity: ri.quantity * scale, unit: ri.unit };
+                  return total + estimatedDayIngredientCost(scaledNeed, line?.product);
+                }, 0);
+                return (
+                  <article key={entry.id} className="rounded-xl border border-line bg-surface p-4">
+                    <div className="mb-3 flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium uppercase tracking-wide text-accent">{DAY_LABELS[dayKey]}</p>
+                        <h3 className="mt-0.5 line-clamp-2 font-semibold text-ink">
+                          {entry.recipeVariant.recipe.title}
+                        </h3>
+                        <p className="mt-1 text-xs text-ink-faint">
+                          {scale === 1 ? "Normale porties" : `${Math.round(scale * 100)}% van normale porties`}
+                        </p>
+                        <p className="mt-1 text-xs font-medium text-ink-muted">
+                          Daginschatting: {dayCost > 0 ? `€ ${dayCost.toFixed(2)}` : "prijs onbekend"}
                         </p>
                       </div>
-                      {line.results.length === 0 ? (
-                        <p className="text-sm text-ink-muted">Geen Picnic-product gevonden. Probeer deze regel los te zoeken.</p>
-                      ) : (
-                        <div className="grid gap-2">
-                          {line.results.map((item, index) => (
-                            <form key={item.externalRef} action={addFixedPicnicProduct} className="rounded-lg border border-line p-3">
-                              <input type="hidden" name="householdId" value={household.id} />
-                              <input type="hidden" name="shoppingListId" value={shoppingList.id} />
-                              <input type="hidden" name="searchTerm" value={line.searchTerm} />
-                              <input type="hidden" name="externalRef" value={item.externalRef} />
-                              <input type="hidden" name="productName" value={item.name ?? ""} />
-                              <input type="hidden" name="packageSize" value={item.unit_quantity ?? ""} />
-                              <input type="hidden" name="picnicImageId" value={item.image_id ?? ""} />
-                              <input type="hidden" name="price" value={picnicPriceToEuros(item.display_price ?? item.price) ?? ""} />
-                              <input type="hidden" name="bulkFixed" value={bulkFixedText} />
-                              <input type="hidden" name="bulkFixedRaw" value={line.raw} />
-                              <div className="flex min-w-0 gap-3">
-                                <FixedProductImage item={item} />
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex min-w-0 items-start justify-between gap-2">
-                                    <div className="min-w-0">
-                                      <p className="line-clamp-2 text-sm font-medium text-ink">
-                                        {index === 0 ? "Beste keuze: " : ""}
-                                        {item.name}
-                                      </p>
-                                      <p className="text-xs text-ink-faint">{item.unit_quantity ?? "Geen verpakkingsinfo"}</p>
-                                    </div>
-                                    <span className="shrink-0 text-sm font-semibold text-ink">
-                                      {picnicPriceToEuros(item.display_price ?? item.price) != null
-                                        ? `€ ${picnicPriceToEuros(item.display_price ?? item.price)!.toFixed(2)}`
-                                        : "Prijs onbekend"}
-                                    </span>
-                                  </div>
-                                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                                    <input
-                                      type="number"
-                                      name="quantity"
-                                      defaultValue={item.suggestedQuantity}
-                                      min="0.01"
-                                      step="any"
-                                      className="w-24 rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
-                                    />
-                                    <select
-                                      name="unit"
-                                      defaultValue={item.fixedUnit}
-                                      className="rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
-                                    >
-                                      <option value="PIECE">stuks</option>
-                                      <option value="GRAM">gram</option>
-                                      <option value="ML">ml</option>
-                                    </select>
-                                    <button
-                                      type="submit"
-                                      className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:border-accent/70 hover:bg-surface-2"
-                                    >
-                                      Deze opslaan
-                                    </button>
-                                  </div>
+                      <div className="flex shrink-0 flex-col items-end gap-2">
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                            dayReviewCount > 0
+                              ? "bg-tag-amber-bg text-tag-amber-ink"
+                              : "bg-tag-green-bg text-tag-green-ink"
+                          }`}
+                        >
+                          {dayReviewCount > 0 ? `${dayReviewCount} controleren` : "Compleet"}
+                        </span>
+                        <Link
+                          href={`/gerechten?day=${dayKey}`}
+                          className="text-xs font-medium text-accent underline decoration-dotted"
+                        >
+                          Ander gerecht
+                        </Link>
+                      </div>
+                    </div>
+                    <div className="grid gap-2">
+                      {entry.recipeVariant.recipe.ingredients.map((ri) => {
+                        const line = mealLineByIngredientId.get(ri.ingredientId);
+                        const scaledNeed = { quantity: ri.quantity * scale, unit: ri.unit };
+                        const candidates = line ? candidatesByIngredient.get(line.ingredientId) ?? [] : [];
+                        const alternatives = candidates.filter((candidate) => candidate.id !== line?.product?.id).slice(0, 5);
+                        const statusMessage =
+                          line?.id === focusedLineId && params.status ? STATUS_MESSAGES[params.status] : undefined;
+                        return (
+                          <div
+                            key={ri.id}
+                            id={line ? `day-line-${line.id}` : undefined}
+                            className={`scroll-mt-6 rounded-lg border bg-surface-2 p-3 transition-colors ${
+                              line?.id === focusedLineId ? "border-accent ring-2 ring-accent/20" : "border-line"
+                            }`}
+                          >
+                            {statusMessage && (
+                              <p
+                                className={`mb-2 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
+                                  WARNING_STATUSES.has(params.status ?? "")
+                                    ? "border-tag-amber-ink/25 bg-tag-amber-bg text-tag-amber-ink"
+                                    : "border-tag-green-ink/20 bg-tag-green-bg text-tag-green-ink"
+                                }`}
+                              >
+                                {statusMessage}
+                              </p>
+                            )}
+                            <div className="flex min-w-0 items-center justify-between gap-3">
+                              <div className="flex min-w-0 items-center gap-3">
+                                <ProductImage product={line?.product} label={ri.ingredient.name} />
+                                <div className="min-w-0">
+                                  <p className="line-clamp-2 text-sm font-medium text-ink">
+                                    {line?.product?.name ?? ri.ingredient.name}
+                                  </p>
+                                  <p className="mt-0.5 text-xs text-ink-faint">
+                                    {describePackage(line?.product)}
+                                  </p>
+                                  <p className="mt-0.5 text-[11px] text-ink-faint">
+                                    Voor dit gerecht: {formatQuantity(scaledNeed.quantity, scaledNeed.unit)}
+                                  </p>
+                                  {line?.product?.price && (
+                                    <p className="mt-0.5 text-[11px] font-medium text-ink-muted">
+                                      Maaltijdkosten: € {estimatedDayIngredientCost(scaledNeed, line.product).toFixed(2)}
+                                    </p>
+                                  )}
+                                  {line?.needsReview && (
+                                    <p className="mt-1 text-xs font-medium text-tag-amber-ink">Nog te bevestigen</p>
+                                  )}
                                 </div>
                               </div>
-                            </form>
-                          ))}
-                        </div>
-                      )}
+                              <div className="shrink-0 text-right">
+                                <p className="font-semibold text-ink">
+                                  {formatNeededOrderQuantity(scaledNeed, line?.product)}
+                                </p>
+                                {line && (
+                                  <p className="text-[11px] text-ink-faint">voor deze maaltijd</p>
+                                )}
+                                {line ? (
+                                  <Link
+                                    href={`/controle?focus=${line.id}#line-${line.id}`}
+                                    className="mt-1 block text-xs font-medium text-accent underline decoration-dotted"
+                                  >
+                                    Product
+                                  </Link>
+                                ) : (
+                                  <Link
+                                    href="/controle"
+                                    className="mt-1 block text-xs font-medium text-tag-amber-ink underline decoration-dotted"
+                                  >
+                                    Controleren
+                                  </Link>
+                                )}
+                              </div>
+                            </div>
+                            {line && (
+                              <div className="mt-3 grid gap-2">
+                                <details className="rounded-lg border border-line bg-surface p-2">
+                                  <summary className="cursor-pointer text-xs font-medium text-ink">
+                                    Weektotaal aanpassen: {formatOrderQuantity(line)}
+                                  </summary>
+                                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    <form action={adjustBoodschappenLineQuantity}>
+                                      <input type="hidden" name="lineId" value={line.id} />
+                                      <input type="hidden" name="direction" value="decrease" />
+                                      <PendingSubmitButton
+                                        pendingText="..."
+                                        ariaLabel="Minder voor de week bestellen"
+                                        title="Minder voor de week bestellen"
+                                        className={`flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink hover:border-accent/70 hover:bg-white ${ACTION_BUTTON_FOCUS}`}
+                                      >
+                                        <Minus size={14} />
+                                      </PendingSubmitButton>
+                                    </form>
+                                    <form action={adjustBoodschappenLineQuantity}>
+                                      <input type="hidden" name="lineId" value={line.id} />
+                                      <input type="hidden" name="direction" value="increase" />
+                                      <PendingSubmitButton
+                                        pendingText="..."
+                                        ariaLabel="Meer voor de week bestellen"
+                                        title="Meer voor de week bestellen"
+                                        className={`flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink hover:border-accent/70 hover:bg-white ${ACTION_BUTTON_FOCUS}`}
+                                      >
+                                        <Plus size={14} />
+                                      </PendingSubmitButton>
+                                    </form>
+                                    <form action={removeBoodschappenLineThisWeek}>
+                                      <input type="hidden" name="lineId" value={line.id} />
+                                      <PendingSubmitButton
+                                        pendingText="..."
+                                        ariaLabel="Uit de hele weeklijst verwijderen"
+                                        title="Uit de hele weeklijst verwijderen"
+                                        className={`flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink-faint hover:border-red-300 hover:bg-red-50 hover:text-red-600 ${ACTION_BUTTON_FOCUS}`}
+                                      >
+                                        <X size={14} />
+                                      </PendingSubmitButton>
+                                    </form>
+                                    <form action={setBoodschappenLinePackageCount} className="flex items-center gap-1 rounded-md border border-line bg-surface px-2 py-1">
+                                      <input type="hidden" name="lineId" value={line.id} />
+                                      <input
+                                        type="number"
+                                        name="packageCount"
+                                        defaultValue={orderPackageCount(line)}
+                                        min="0.01"
+                                        step="any"
+                                        aria-label="Aantal verpakkingen voor de week"
+                                        className="w-14 bg-transparent text-sm font-medium text-ink outline-none"
+                                      />
+                                      <span className="text-[11px] text-ink-faint">x per week</span>
+                                      <PendingSubmitButton
+                                        pendingText="..."
+                                        className={`rounded px-1.5 py-0.5 text-[11px] font-medium text-accent hover:bg-accent-soft ${ACTION_BUTTON_FOCUS}`}
+                                      >
+                                        OK
+                                      </PendingSubmitButton>
+                                    </form>
+                                  </div>
+                                </details>
+                                {line.product && line.needsReview && (
+                                  <DayProductChoice line={line} product={line.product} selected />
+                                )}
+                              </div>
+                            )}
+                            {line && alternatives.length > 0 && (
+                              <details className="mt-3 rounded-lg border border-line bg-surface p-2">
+                                <summary className="cursor-pointer text-xs font-medium text-ink">
+                                  {alternatives.length} {alternatives.length === 1 ? "alternatief" : "alternatieven"}
+                                </summary>
+                                <div className="mt-2 grid gap-2">
+                                  {alternatives.map((candidate) => (
+                                    <DayProductChoice key={candidate.id} line={line} product={candidate} />
+                                  ))}
+                                </div>
+                              </details>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
+                  </article>
+                );
+              })}
+            </div>
+          </details>
+
+          <details
+            id="fixed-groceries"
+            className="mt-8 scroll-mt-6 rounded-xl border border-line bg-surface p-4"
+            open={focusedFixedLineId || fixedReplaceLineId ? true : undefined}
+          >
+            <summary className="cursor-pointer text-sm font-semibold text-ink">
+              {activeFixedLines.length + inactiveFixedItems.length} vaste boodschap
+              {activeFixedLines.length + inactiveFixedItems.length === 1 ? "" : "pen"}
+            </summary>
+            {focusedFixedLineId && params.status && STATUS_MESSAGES[params.status] && (
+              <p className="mt-3 rounded-md border border-tag-green-ink/20 bg-tag-green-bg px-2.5 py-1.5 text-xs font-medium text-tag-green-ink">
+                {STATUS_MESSAGES[params.status]}
+              </p>
+            )}
+            <div className="mt-3 flex min-w-0 flex-col divide-y divide-line">
+            {activeFixedLines.length === 0 && inactiveFixedItems.length === 0 && (
+              <p className="p-4 text-sm text-ink-muted">
+                Nog geen vaste boodschappen ingesteld — voeg hieronder je eerste toe.
+              </p>
+            )}
+            {activeFixedLines.map((line) => {
+              const editQuantity = fixedLineEditQuantity(line);
+              return (
+                <div
+                  key={line.id}
+                  id={`fixed-line-${line.id}`}
+                  className="flex min-w-0 scroll-mt-6 flex-col gap-2 p-4 transition-colors target:bg-accent/10"
+                >
+                <div className="flex min-w-0 items-center gap-3">
+                  <ProductThumb line={line} />
+                  <div className="min-w-0 flex-1">
+                    <p className="min-w-0 truncate text-ink">{line.product?.name ?? line.ingredient.name}</p>
+                    {line.product?.packageSize && (
+                      <p className="mt-0.5 text-xs text-ink-faint">{line.product.packageSize}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <form action="/boodschappen#add-fixed-grocery">
+                    <input type="hidden" name="fixedQ" value={line.ingredient.name} />
+                    <input type="hidden" name="fixedReplaceLineId" value={line.id} />
+                    <button
+                      type="submit"
+                      className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink transition-colors hover:border-accent/60 hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:scale-[0.98]"
+                    >
+                      Wijzigen
+                    </button>
+                  </form>
+                  <form action={removeFixedLineThisWeek}>
+                    <input type="hidden" name="lineId" value={line.id} />
+                    <button
+                      type="submit"
+                      className="shrink-0 text-xs font-medium text-ink-faint transition-colors hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:scale-[0.98]"
+                    >
+                      Deze week niet nodig
+                    </button>
+                  </form>
+                  <form action={removeFixedGroceryPermanently}>
+                    <input type="hidden" name="householdId" value={household.id} />
+                    <input type="hidden" name="ingredientId" value={line.ingredientId} />
+                    <input type="hidden" name="lineId" value={line.id} />
+                    <button
+                      type="submit"
+                      className="shrink-0 text-xs font-medium text-ink-faint transition-colors hover:text-red-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent active:scale-[0.98]"
+                    >
+                      Verwijder voorgoed
+                    </button>
+                  </form>
+                </div>
+                <form action={updateFixedLineQuantity} className="flex flex-wrap items-center gap-2">
+                  <input type="hidden" name="lineId" value={line.id} />
+                  <input
+                    type="number"
+                    name="quantity"
+                    defaultValue={editQuantity.quantity}
+                    step="any"
+                    min="0.01"
+                    className="w-20 rounded-md border border-line bg-surface px-2 py-1 text-sm text-ink"
+                  />
+                  <input type="hidden" name="unit" value={editQuantity.unit} />
+                  <span className="text-xs text-ink-faint">{UNIT_LABELS[editQuantity.unit] ?? editQuantity.unit}</span>
+                  <label className="flex items-center gap-1 text-xs text-ink-muted">
+                    <input type="checkbox" name="rememberAsDefault" value="true" />
+                    onthouden
+                  </label>
+                  <button
+                    type="submit"
+                    className="rounded-md border border-line px-2 py-1 text-xs font-medium text-ink hover:border-accent/50"
+                  >
+                    Bijwerken
+                  </button>
+                </form>
+                </div>
+              );
+            })}
+            {inactiveFixedItems.map((item) => (
+              <div key={item.id} className="flex min-w-0 flex-col gap-2 p-4">
+                <div className="flex min-w-0 items-center gap-3 opacity-60">
+                  <ProductImage product={inactiveFixedProductByIngredientId.get(item.ingredientId)} label={item.ingredient.name} />
+                  <p className="min-w-0 flex-1 truncate text-ink-faint line-through">{item.ingredient.name}</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <form action={restoreFixedLineThisWeek}>
+                    <input type="hidden" name="shoppingListId" value={shoppingList.id} />
+                    <input type="hidden" name="ingredientId" value={item.ingredientId} />
+                    <button type="submit" className="text-xs font-medium text-accent hover:opacity-80">
+                      Toch toevoegen
+                    </button>
+                  </form>
+                  <form action={removeFixedGroceryPermanently}>
+                    <input type="hidden" name="householdId" value={household.id} />
+                    <input type="hidden" name="ingredientId" value={item.ingredientId} />
+                    <button type="submit" className="text-xs font-medium text-ink-faint hover:text-red-600">
+                      Verwijder voorgoed
+                    </button>
+                  </form>
+                </div>
+              </div>
+            ))}
+            </div>
+          </details>
+
+          <details
+            id="add-fixed-grocery"
+            className="mt-4 scroll-mt-6 rounded-xl border border-line bg-surface p-4"
+            open={fixedSearchQuery || fixedReplaceLineId || bulkFixedText ? true : undefined}
+          >
+            <summary className="cursor-pointer text-sm font-medium text-ink">
+              {fixedReplacementLine ? "Vaste boodschap wijzigen" : "Nieuwe vaste boodschap toevoegen"}
+            </summary>
+
+            {!fixedReplacementLine && (
+              <section id="bulk-fixed-groceries" className="mt-4 rounded-lg border border-line bg-surface-2 p-3">
+                <div className="mb-3 flex items-start gap-2">
+                  <ClipboardList size={17} className="mt-0.5 shrink-0 text-accent" />
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-semibold text-ink">Plak je vaste boodschappenlijst</h2>
+                    <p className="mt-1 text-xs text-ink-muted">Ik zoek elke regel op bij Picnic.</p>
+                  </div>
+                </div>
+                <form action="/boodschappen#bulk-fixed-groceries" className="grid gap-2">
+                  <textarea
+                    name="bulkFixed"
+                    defaultValue={bulkFixedText}
+                    rows={4}
+                    placeholder={"2 pakken magere melk\ndrinkyoghurt framboos\nbananen\nappels"}
+                    className="min-h-28 min-w-0 resize-y rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+                  />
+                  <button
+                    type="submit"
+                    className="w-fit rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
+                  >
+                    Zoek mijn lijst
+                  </button>
+                </form>
+
+                {bulkFixedText && !household.picnicAuthToken && (
+                  <p className="mt-3 text-sm text-ink-muted">
+                    Koppel eerst Picnic om een hele lijst automatisch op te zoeken.
+                  </p>
+                )}
+
+                {bulkFixedPreviewLines.length > 0 && (
+                  <div className="mt-4 grid gap-4">
+                    <form action={addBulkFixedPicnicProducts} className="rounded-lg border border-accent/30 bg-accent-soft p-3">
+                      <input type="hidden" name="householdId" value={household.id} />
+                      {bulkFixedPreviewLines
+                        .filter((line) => line.results[0])
+                        .map((line) => {
+                          const item = line.results[0]!;
+                          return (
+                            <input
+                              key={`${line.raw}-${item.externalRef}`}
+                              type="hidden"
+                              name="choice"
+                              value={JSON.stringify({
+                                householdId: household.id,
+                                shoppingListId: shoppingList.id,
+                                searchTerm: line.searchTerm,
+                                productName: item.name ?? "",
+                                externalRef: item.externalRef,
+                                packageSize: item.unit_quantity ?? "",
+                                picnicImageId: item.image_id ?? "",
+                                quantity: item.suggestedQuantity,
+                                unit: item.fixedUnit,
+                                price: picnicPriceToEuros(item.display_price ?? item.price),
+                              })}
+                            />
+                          );
+                        })}
+                      <button
+                        type="submit"
+                        className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
+                      >
+                        Beste keuzes opslaan
+                      </button>
+                      <p className="mt-2 text-xs text-ink-muted">
+                        Controleer hieronder of de beste keuze per regel klopt. Afwijkingen kun je los kiezen.
+                      </p>
+                    </form>
+
+                    {bulkFixedPreviewLines.map((line) => (
+                      <div key={line.raw} className="rounded-lg border border-line bg-surface p-3">
+                        <div className="mb-3">
+                          <p className="text-sm font-semibold text-ink">{line.raw}</p>
+                          <p className="text-xs text-ink-faint">
+                            Zoekterm: {line.searchTerm}
+                            {line.multiplier !== 1 ? ` · aantal/verpakking: ${line.multiplier}x` : ""}
+                          </p>
+                        </div>
+                        {line.results.length === 0 ? (
+                          <p className="text-sm text-ink-muted">Geen Picnic-product gevonden. Probeer deze regel los te zoeken.</p>
+                        ) : (
+                          <div className="grid gap-2">
+                            {line.results.map((item, index) => (
+                              <form key={item.externalRef} action={addFixedPicnicProduct} className="rounded-lg border border-line p-3">
+                                <input type="hidden" name="householdId" value={household.id} />
+                                <input type="hidden" name="shoppingListId" value={shoppingList.id} />
+                                <input type="hidden" name="searchTerm" value={line.searchTerm} />
+                                <input type="hidden" name="externalRef" value={item.externalRef} />
+                                <input type="hidden" name="productName" value={item.name ?? ""} />
+                                <input type="hidden" name="packageSize" value={item.unit_quantity ?? ""} />
+                                <input type="hidden" name="picnicImageId" value={item.image_id ?? ""} />
+                                <input type="hidden" name="price" value={picnicPriceToEuros(item.display_price ?? item.price) ?? ""} />
+                                <input type="hidden" name="bulkFixed" value={bulkFixedText} />
+                                <input type="hidden" name="bulkFixedRaw" value={line.raw} />
+                                <div className="flex min-w-0 gap-3">
+                                  <FixedProductImage item={item} />
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex min-w-0 items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <p className="line-clamp-2 text-sm font-medium text-ink">
+                                          {index === 0 ? "Beste keuze: " : ""}
+                                          {item.name}
+                                        </p>
+                                        <p className="text-xs text-ink-faint">{item.unit_quantity ?? "Geen verpakkingsinfo"}</p>
+                                      </div>
+                                      <span className="shrink-0 text-sm font-semibold text-ink">
+                                        {picnicPriceToEuros(item.display_price ?? item.price) != null
+                                          ? `€ ${picnicPriceToEuros(item.display_price ?? item.price)!.toFixed(2)}`
+                                          : "Prijs onbekend"}
+                                      </span>
+                                    </div>
+                                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                                      <input
+                                        type="number"
+                                        name="quantity"
+                                        defaultValue={item.suggestedQuantity}
+                                        min="0.01"
+                                        step="any"
+                                        className="w-24 rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
+                                      />
+                                      <select
+                                        name="unit"
+                                        defaultValue={item.fixedUnit}
+                                        className="rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
+                                      >
+                                        <option value="PIECE">stuks</option>
+                                        <option value="GRAM">gram</option>
+                                        <option value="ML">ml</option>
+                                      </select>
+                                      <button
+                                        type="submit"
+                                        className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors hover:border-accent/70 hover:bg-surface-2"
+                                      >
+                                        Deze opslaan
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </form>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            <form action="/boodschappen#add-fixed-grocery" className="mt-3 flex min-w-0 gap-2">
+              {fixedReplaceLineId && (
+                <input type="hidden" name="fixedReplaceLineId" value={fixedReplaceLineId} />
+              )}
+              <input
+                name="fixedQ"
+                defaultValue={fixedSearchQuery}
+                placeholder="Zoek Picnic-product, bv. appels"
+                className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+              />
+              <button
+                type="submit"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-line bg-surface text-ink transition-colors hover:border-accent/70 hover:bg-surface-2"
+                aria-label="Zoeken bij Picnic"
+                title="Zoeken bij Picnic"
+              >
+                <Search size={16} />
+              </button>
+            </form>
+
+            {fixedReplacementLine && (
+              <p className="mt-3 rounded-lg bg-surface-2 px-3 py-2 text-sm text-ink-muted">
+                Je wijzigt nu:{" "}
+                <span className="font-medium text-ink">
+                  {fixedReplacementLine.product?.name ?? fixedReplacementLine.ingredient.name}
+                </span>
+                . Kies hieronder het product dat voortaan standaard gebruikt moet worden.
+              </p>
+            )}
+
+            {!household.picnicAuthToken && (
+              <p className="mt-3 text-sm text-ink-muted">
+                Koppel eerst Picnic om live producten te zoeken.
+              </p>
+            )}
+
+            {fixedSearchQuery && household.picnicAuthToken && fixedProductResults.length === 0 && (
+              <p className="mt-3 text-sm text-ink-muted">
+                Geen Picnic-producten gevonden voor {fixedSearchQuery}. Probeer een andere zoekterm.
+              </p>
+            )}
+
+            {fixedProductResults.length > 0 && (
+              <div className="mt-4 grid gap-2">
+                {fixedProductResults.map((item) => (
+                  <form key={item.externalRef} action={addFixedPicnicProduct} className="rounded-lg border border-line p-3">
+                    <input type="hidden" name="householdId" value={household.id} />
+                    <input type="hidden" name="shoppingListId" value={shoppingList.id} />
+                    {fixedReplaceLineId && (
+                      <input type="hidden" name="replaceLineId" value={fixedReplaceLineId} />
+                    )}
+                    <input type="hidden" name="searchTerm" value={fixedSearchQuery} />
+                    <input type="hidden" name="externalRef" value={item.externalRef} />
+                    <input type="hidden" name="productName" value={item.name ?? ""} />
+                    <input type="hidden" name="packageSize" value={item.unit_quantity ?? ""} />
+                    <input type="hidden" name="picnicImageId" value={item.image_id ?? ""} />
+                    <input type="hidden" name="price" value={picnicPriceToEuros(item.display_price ?? item.price) ?? ""} />
+
+                    <div className="flex min-w-0 gap-3">
+                      <FixedProductImage item={item} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="line-clamp-2 text-sm font-medium text-ink">{item.name}</p>
+                            <p className="text-xs text-ink-faint">{item.unit_quantity ?? "Geen verpakkingsinfo"}</p>
+                          </div>
+                          <span className="shrink-0 text-sm font-semibold text-ink">
+                            {picnicPriceToEuros(item.display_price ?? item.price) != null
+                              ? `€ ${picnicPriceToEuros(item.display_price ?? item.price)!.toFixed(2)}`
+                              : "Prijs onbekend"}
+                          </span>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <input
+                            type="number"
+                            name="quantity"
+                            defaultValue={item.fixedQuantity}
+                            min="0.01"
+                            step="any"
+                            className="w-24 rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
+                          />
+                          <select
+                            name="unit"
+                            defaultValue={item.fixedUnit}
+                            className="rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
+                          >
+                            <option value="PIECE">stuks</option>
+                            <option value="GRAM">gram</option>
+                            <option value="ML">ml</option>
+                          </select>
+                          <button
+                            type="submit"
+                            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
+                          >
+                            {fixedReplacementLine ? "Vervang vaste boodschap" : "Kies als vaste boodschap"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </form>
+                ))}
+              </div>
+            )}
+          </details>
+
+          <details
+            id="inventory-check"
+            className="mt-6 scroll-mt-6 rounded-xl border border-line bg-surface p-4"
+            open={focusedInventoryId || inventoryAttentionItems.length > 0 ? true : undefined}
+          >
+            <summary className="cursor-pointer text-sm font-semibold text-ink">
+              {inventoryAttentionItems.length > 0
+                ? `Voorraadcheck: ${inventoryAttentionItems.length} basisproducten`
+                : "Voorraad ziet er goed uit"}
+            </summary>
+            {focusedInventoryId && params.status && STATUS_MESSAGES[params.status] && (
+              <p className="mt-3 rounded-md border border-tag-green-ink/20 bg-tag-green-bg px-2.5 py-1.5 text-xs font-medium text-tag-green-ink">
+                {STATUS_MESSAGES[params.status]}
+              </p>
+            )}
+            {inventoryAttentionItems.length > 0 ? (
+              <>
+                <p className="mt-2 text-sm text-ink-muted">
+                  Hoe staat het met deze basisproducten? Ik onthoud je antwoord voor volgende keren.
+                </p>
+                <div className="mt-3 flex min-w-0 flex-col divide-y divide-line">
+                  {inventoryAttentionItems.map((item) => (
+                    <InventoryRow
+                      key={item.ingredientId}
+                      item={item}
+                      householdId={household.id}
+                      focused={item.ingredientId === focusedInventoryId}
+                    />
                   ))}
                 </div>
-              )}
-            </section>
-          )}
-
-          <form action="/boodschappen#add-fixed-grocery" className="mt-3 flex min-w-0 gap-2">
-            {fixedReplaceLineId && (
-              <input type="hidden" name="fixedReplaceLineId" value={fixedReplaceLineId} />
-            )}
-            <input
-              name="fixedQ"
-              defaultValue={fixedSearchQuery}
-              placeholder="Zoek Picnic-product, bv. appels"
-              className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-            />
-            <button
-              type="submit"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-line bg-surface text-ink transition-colors hover:border-accent/70 hover:bg-surface-2"
-              aria-label="Zoeken bij Picnic"
-              title="Zoeken bij Picnic"
-            >
-              <Search size={16} />
-            </button>
-          </form>
-
-          {fixedReplacementLine && (
-            <p className="mt-3 rounded-lg bg-surface-2 px-3 py-2 text-sm text-ink-muted">
-              Je wijzigt nu:{" "}
-              <span className="font-medium text-ink">
-                {fixedReplacementLine.product?.name ?? fixedReplacementLine.ingredient.name}
-              </span>
-              . Kies hieronder het product dat voortaan standaard gebruikt moet worden.
-            </p>
-          )}
-
-          {!household.picnicAuthToken && (
-            <p className="mt-3 text-sm text-ink-muted">
-              Koppel eerst Picnic om live producten te zoeken.
-            </p>
-          )}
-
-          {fixedSearchQuery && household.picnicAuthToken && fixedProductResults.length === 0 && (
-            <p className="mt-3 text-sm text-ink-muted">
-              Geen Picnic-producten gevonden voor {fixedSearchQuery}. Probeer een andere zoekterm.
-            </p>
-          )}
-
-          {fixedProductResults.length > 0 && (
-            <div className="mt-4 grid gap-2">
-              {fixedProductResults.map((item) => (
-                <form key={item.externalRef} action={addFixedPicnicProduct} className="rounded-lg border border-line p-3">
-                  <input type="hidden" name="householdId" value={household.id} />
-                  <input type="hidden" name="shoppingListId" value={shoppingList.id} />
-                  {fixedReplaceLineId && (
-                    <input type="hidden" name="replaceLineId" value={fixedReplaceLineId} />
-                  )}
-                  <input type="hidden" name="searchTerm" value={fixedSearchQuery} />
-                  <input type="hidden" name="externalRef" value={item.externalRef} />
-                  <input type="hidden" name="productName" value={item.name ?? ""} />
-                  <input type="hidden" name="packageSize" value={item.unit_quantity ?? ""} />
-                  <input type="hidden" name="picnicImageId" value={item.image_id ?? ""} />
-                  <input type="hidden" name="price" value={picnicPriceToEuros(item.display_price ?? item.price) ?? ""} />
-
-                  <div className="flex min-w-0 gap-3">
-                    <FixedProductImage item={item} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex min-w-0 items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="line-clamp-2 text-sm font-medium text-ink">{item.name}</p>
-                          <p className="text-xs text-ink-faint">{item.unit_quantity ?? "Geen verpakkingsinfo"}</p>
-                        </div>
-                        <span className="shrink-0 text-sm font-semibold text-ink">
-                          {picnicPriceToEuros(item.display_price ?? item.price) != null
-                            ? `€ ${picnicPriceToEuros(item.display_price ?? item.price)!.toFixed(2)}`
-                            : "Prijs onbekend"}
-                        </span>
-                      </div>
-                      <div className="mt-3 flex flex-wrap items-center gap-2">
-                        <input
-                          type="number"
-                          name="quantity"
-                          defaultValue={item.fixedQuantity}
-                          min="0.01"
-                          step="any"
-                          className="w-24 rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
-                        />
-                        <select
-                          name="unit"
-                          defaultValue={item.fixedUnit}
-                          className="rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
-                        >
-                          <option value="PIECE">stuks</option>
-                          <option value="GRAM">gram</option>
-                          <option value="ML">ml</option>
-                        </select>
-                        <button
-                          type="submit"
-                          className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
-                        >
-                          {fixedReplacementLine ? "Vervang vaste boodschap" : "Kies als vaste boodschap"}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </form>
-              ))}
-            </div>
-          )}
-        </details>
-
-        <details
-          id="inventory-check"
-          className="mt-6 scroll-mt-6 rounded-xl border border-line bg-surface p-4"
-          open={focusedInventoryId || inventoryAttentionItems.length > 0 ? true : undefined}
-        >
-          <summary className="cursor-pointer text-sm font-semibold text-ink">
-            {inventoryAttentionItems.length > 0
-              ? `Voorraadcheck: ${inventoryAttentionItems.length} basisproducten`
-              : "Voorraad ziet er goed uit"}
-          </summary>
-          {focusedInventoryId && params.status && STATUS_MESSAGES[params.status] && (
-            <p className="mt-3 rounded-md border border-tag-green-ink/20 bg-tag-green-bg px-2.5 py-1.5 text-xs font-medium text-tag-green-ink">
-              {STATUS_MESSAGES[params.status]}
-            </p>
-          )}
-          {inventoryAttentionItems.length > 0 ? (
-            <>
+              </>
+            ) : (
               <p className="mt-2 text-sm text-ink-muted">
-                Hoe staat het met deze basisproducten? Ik onthoud je antwoord voor volgende keren.
+                Geen van jullie basisproducten heeft deze week een check nodig.
               </p>
-              <div className="mt-3 flex min-w-0 flex-col divide-y divide-line">
-                {inventoryAttentionItems.map((item) => (
-                  <InventoryRow
-                    key={item.ingredientId}
-                    item={item}
-                    householdId={household.id}
-                    focused={item.ingredientId === focusedInventoryId}
-                  />
-                ))}
-              </div>
-            </>
-          ) : (
-            <p className="mt-2 text-sm text-ink-muted">
-              Geen van jullie basisproducten heeft deze week een check nodig.
-            </p>
-          )}
-          {inventoryConfirmedItems.length > 0 && (
-            <details className="mt-4" open={focusedInventoryIsConfirmed ? true : undefined}>
-              <summary className="cursor-pointer text-xs font-medium text-ink-muted">
-                {inventoryConfirmedItems.length} recent bevestigd
-              </summary>
-              <div className="mt-2 flex min-w-0 flex-col divide-y divide-line">
-                {inventoryConfirmedItems.map((item) => (
-                  <InventoryRow
-                    key={item.ingredientId}
-                    item={item}
-                    householdId={household.id}
-                    focused={item.ingredientId === focusedInventoryId}
-                  />
-                ))}
-              </div>
-            </details>
-          )}
-        </details>
+            )}
+            {inventoryConfirmedItems.length > 0 && (
+              <details className="mt-4" open={focusedInventoryIsConfirmed ? true : undefined}>
+                <summary className="cursor-pointer text-xs font-medium text-ink-muted">
+                  {inventoryConfirmedItems.length} recent bevestigd
+                </summary>
+                <div className="mt-2 flex min-w-0 flex-col divide-y divide-line">
+                  {inventoryConfirmedItems.map((item) => (
+                    <InventoryRow
+                      key={item.ingredientId}
+                      item={item}
+                      householdId={household.id}
+                      focused={item.ingredientId === focusedInventoryId}
+                    />
+                  ))}
+                </div>
+              </details>
+            )}
+          </details>
 
-        <details className="mb-6 min-w-0 rounded-xl border border-line bg-surface p-4">
-          <summary className="cursor-pointer text-sm font-semibold text-ink">
-            Zelf boodschappen doen {checklistLines.length > 0 && `(${checklistPickedUpCount}/${checklistLines.length})`}
-          </summary>
-          <div className="mt-3">
-            <ShoppingChecklist lines={checklistLines} />
+          <details className="mb-6 min-w-0 rounded-xl border border-line bg-surface p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-ink">
+              Zelf boodschappen doen {checklistLines.length > 0 && `(${checklistPickedUpCount}/${checklistLines.length})`}
+            </summary>
+            <div className="mt-3">
+              <ShoppingChecklist lines={checklistLines} />
+            </div>
+          </details>
           </div>
+          <Link
+            href="/recepten"
+            className="mt-2 inline-flex text-xs font-medium text-accent underline decoration-dotted"
+          >
+            Receptenbeheer →
+          </Link>
         </details>
 
 
