@@ -302,6 +302,77 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       }
     );
 
+    await t.test(
+      "3d. Avondeten aanzetten via de dagkeuze zet de boodschappen ervoor op de lijst (nieuwe functie)",
+      async () => {
+        // Sinds de koerswijziging "boodschappen eerst" is avondeten opt-in per
+        // avond: een verse week levert alleen vaste boodschappen op. Deze stap
+        // bewijst dat, tikt daarna de avonden van déze week aan, en bewijst dat
+        // er dan wél receptregels op de lijst komen.
+        await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
+        await page.locator("text=Kook je zelf?").waitFor({ state: "visible", timeout: 15_000 });
+
+        const mealLinesBefore = await prisma.shoppingListLine.count({
+          where: { shoppingList: { mealPlan: { householdId } }, source: "MEAL" },
+        });
+        assert.equal(mealLinesBefore, 0, "Zonder aangevinkte avonden horen er geen weekmenu-regels op de lijst te staan");
+
+        // Alleen de dagen van deze week: een dag in de volgende week zou een
+        // compleet nieuw weekplan laten genereren, wat deze stap traag maakt
+        // en niets extra's bewijst (de weekgrens heeft een eigen stap).
+        // Bewust wachten op de knop zelf en niet op ?status= in de URL: die
+        // staat er na de eerste klik al, waardoor een volgende wachtactie
+        // meteen terugkeert op een pagina die nog niet herladen is.
+        let clicked = 0;
+        for (let guard = 0; guard < 7; guard += 1) {
+          const next = page.locator('button[data-next-week="false"][aria-pressed="false"]').first();
+          if ((await next.count()) === 0) break;
+          const dayToSelect = await next.getAttribute("data-order-day");
+          await next.click();
+          await page
+            .locator(`button[data-order-day="${dayToSelect}"][aria-pressed="true"]`)
+            .waitFor({ state: "visible", timeout: 15_000 });
+          clicked += 1;
+        }
+        assert.ok(clicked > 0, "Er moet minstens één avond van deze week aan te tikken zijn");
+
+        const mealLinesAfter = await prisma.shoppingListLine.count({
+          where: { shoppingList: { mealPlan: { householdId } }, source: "MEAL" },
+        });
+        assert.ok(
+          mealLinesAfter > 0,
+          "Na het aantikken van de avonden moeten de boodschappen voor die gerechten op de lijst staan"
+        );
+
+        // Uitzetten moet het ook echt terugdraaien — en het geplande gerecht
+        // laten staan (dat is het verschil met "uit eten").
+        const firstSelected = page.locator('button[data-next-week="false"][aria-pressed="true"]').first();
+        const isoDate = await firstSelected.getAttribute("data-order-day");
+        await firstSelected.click();
+        await page
+          .locator(`button[data-order-day="${isoDate}"][aria-pressed="false"]`)
+          .waitFor({ state: "visible", timeout: 15_000 });
+
+        const mealLinesAfterRemoval = await prisma.shoppingListLine.count({
+          where: { shoppingList: { mealPlan: { householdId } }, source: "MEAL" },
+        });
+        assert.ok(
+          mealLinesAfterRemoval < mealLinesAfter,
+          "Een avond weer uitzetten moet de bijbehorende boodschappen van de lijst halen"
+        );
+        const stillPlanned = await prisma.mealPlanEntry.findFirst({
+          where: { mealPlan: { householdId }, includedInGroceries: false, skipped: false },
+        });
+        assert.ok(stillPlanned, "Het geplande gerecht blijft staan — niet meenemen is iets anders dan uit eten");
+
+        // Weer aanzetten, zodat de rest van de flow een gevulde lijst heeft.
+        await page.locator(`button[data-order-day="${isoDate}"]`).click();
+        await page
+          .locator(`button[data-order-day="${isoDate}"][aria-pressed="true"]`)
+          .waitFor({ state: "visible", timeout: 15_000 });
+      }
+    );
+
     await t.test("4. Boodschappen opbouwen", async () => {
       await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
       await page.locator("text=Jullie boodschappenlijst").waitFor({ state: "visible" });

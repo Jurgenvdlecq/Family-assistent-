@@ -27,6 +27,12 @@ interface MealPlanWithEntries {
     dayOfWeek: DayOfWeek;
     /** Huishouden eet deze dag niet thuis — telt niet mee in de behoefte. */
     skipped: boolean;
+    /**
+     * Neemt de gebruiker deze avond mee in de eerstvolgende bestelling? Los
+     * van `skipped`: je kunt thuis koken van wat er al ligt. Beide moeten
+     * kloppen voordat een avond boodschappen oplevert.
+     */
+    includedInGroceries: boolean;
     recipeVariant: {
       recipe: {
         ingredients: Array<{ ingredientId: string; quantity: number; unit: Unit }>;
@@ -48,7 +54,10 @@ function aggregateMealNeeds(
 ): Map<string, { ingredientId: string; quantity: number; unit: Unit }> {
   const totals = new Map<string, { ingredientId: string; quantity: number; unit: Unit }>();
   for (const entry of mealPlan.entries) {
-    if (entry.skipped) continue;
+    // Twee losse redenen om een avond niet mee te tellen: het huishouden eet
+    // niet thuis (`skipped`), of de gebruiker heeft deze avond niet
+    // aangevinkt voor de eerstvolgende bestelling (`includedInGroceries`).
+    if (entry.skipped || !entry.includedInGroceries) continue;
     const dayKey = DAY_KEY_BY_ENUM[entry.dayOfWeek];
     const scale = portionScaleByDay[dayKey]?.scale ?? 1;
     for (const ri of entry.recipeVariant.recipe.ingredients) {
@@ -156,22 +165,52 @@ export async function ensureShoppingList(mealPlanId: string, householdId: string
  * kan samenstellen wanneer er al regels naar Picnic zijn overgedragen (die
  * mogen dan niet zomaar verdwijnen, zie daar).
  */
+const MEAL_ENTRY_INCLUDE = {
+  recipeVariant: {
+    include: {
+      recipe: { include: { ingredients: { include: { ingredient: true } } } },
+    },
+  },
+} as const;
+
+/**
+ * De maaltijden die meetellen voor de eerstvolgende bestelling.
+ *
+ * Dat zijn niet alleen de avonden van déze week: sinds de dagkeuze mag de
+ * gebruiker ook avonden aanvinken die ná de weekgrens vallen (bezorging op
+ * zaterdag, koken op dinsdag). Een boodschappenlijst hangt aan één weekplan,
+ * maar de behoefte mag dus uit twee plannen komen. Filteren op
+ * `skipped`/`includedInGroceries` gebeurt bewust niet hier maar in
+ * `aggregateMealNeeds`, zodat er één plek is waar die regel staat.
+ *
+ * Gedeeld door de lijstopbouw, de tekortcontrole en de voorraadsynchronisatie
+ * — die moeten per definitie dezelfde maaltijden zien, anders meldt de één
+ * een tekort op een gerecht dat de ander niet in de lijst heeft gezet.
+ */
+export async function getGroceryMealEntries(mealPlanId: string) {
+  const mealPlan = await prisma.mealPlan.findUniqueOrThrow({
+    where: { id: mealPlanId },
+    include: { entries: { include: MEAL_ENTRY_INCLUDE } },
+  });
+
+  const nextWeekStart = new Date(mealPlan.weekStart);
+  nextWeekStart.setDate(nextWeekStart.getDate() + 7);
+  const nextWeekPlan = await prisma.mealPlan.findUnique({
+    where: { householdId_weekStart: { householdId: mealPlan.householdId, weekStart: nextWeekStart } },
+    include: { entries: { include: MEAL_ENTRY_INCLUDE } },
+  });
+
+  return {
+    mealPlan,
+    /** Kan `null` zijn: de volgende week wordt pas gepland zodra iemand er een avond voor aanvinkt. */
+    nextWeekPlan,
+    entries: [...mealPlan.entries, ...(nextWeekPlan?.entries ?? [])],
+  };
+}
+
 async function buildShoppingListLines(mealPlanId: string, householdId: string) {
   const [mealPlan, fixedGroceries, inventory, likelyInStockIngredients, portionScaleByDay, household] = await Promise.all([
-    prisma.mealPlan.findUniqueOrThrow({
-      where: { id: mealPlanId },
-      include: {
-        entries: {
-          include: {
-            recipeVariant: {
-              include: {
-                recipe: { include: { ingredients: { include: { ingredient: true } } } },
-              },
-            },
-          },
-        },
-      },
-    }),
+    getGroceryMealEntries(mealPlanId),
     prisma.fixedGrocery.findMany({ where: { householdId } }),
     getInventoryMap(householdId),
     prisma.ingredient.findMany({ where: { likelyInStock: true }, select: { id: true, unit: true } }),
@@ -400,9 +439,14 @@ export async function syncShoppingListForInventoryChange(householdId: string, in
     getHouseholdPortionScaleByDay(householdId),
   ]);
 
+  // Zelfde maaltijdenverzameling als de lijstopbouw (inclusief aangevinkte
+  // avonden in de volgende week), anders zou een voorraadwijziging een regel
+  // herberekenen op een andere behoefte dan waarmee die is aangemaakt.
+  const { entries: groceryEntries } = await getGroceryMealEntries(mealPlan.id);
+
   let rawNeed: BaseQuantity | null = null;
-  for (const entry of mealPlan.entries) {
-    if (entry.skipped) continue;
+  for (const entry of groceryEntries) {
+    if (entry.skipped || !entry.includedInGroceries) continue;
     const dayKey = DAY_KEY_BY_ENUM[entry.dayOfWeek];
     const scale = portionScaleByDay[dayKey]?.scale ?? 1;
     for (const ri of entry.recipeVariant.recipe.ingredients) {

@@ -54,7 +54,7 @@ async function makeHouseholdWithMealPlan(name: string, recipeTitle: string) {
       householdId: household.id,
       weekStart,
       status: "CONFIRMED",
-      entries: { create: [{ dayOfWeek: "MONDAY", recipeVariantId: variant.id }] },
+      entries: { create: [{ dayOfWeek: "MONDAY", recipeVariantId: variant.id, includedInGroceries: true }] },
     },
   });
   return { household, mealPlan, variant };
@@ -303,7 +303,7 @@ test("een overgeslagen dag (uit eten) levert geen boodschappenregels op voor die
 
   try {
     await prisma.mealPlanEntry.create({
-      data: { mealPlanId: mealPlan.id, dayOfWeek: "TUESDAY", recipeVariantId: wrapsVariant.id, skipped: true },
+      data: { mealPlanId: mealPlan.id, dayOfWeek: "TUESDAY", recipeVariantId: wrapsVariant.id, skipped: true, includedInGroceries: true },
     });
 
     const shoppingList = await ensureShoppingList(mealPlan.id, household.id);

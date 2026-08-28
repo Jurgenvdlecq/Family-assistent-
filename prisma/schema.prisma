@@ -396,6 +396,18 @@ model MealPlanEntry {
   // voorkeuren/geleerde patronen beïnvloeden voor een maaltijd die nooit
   // gekookt is).
   skipped                     Boolean             @default(false) @map("skipped")
+  // Neemt deze avond mee in de boodschappen van de eerstvolgende bestelling.
+  // Bewust een ander veld dan `skipped`: "we gaan uit eten" en "hier koop ik
+  // nu geen boodschappen voor" zijn twee verschillende dingen (je kunt thuis
+  // koken van wat er al ligt). Ze delen alleen het gevolg dat de dag niet
+  // meetelt in de lijst.
+  //
+  // Standaard `false`, want de app is sinds de koerswijziging "boodschappen
+  // eerst" opt-in per avond: een nieuwe week begint met alleen de vaste
+  // boodschappen, en de gebruiker tikt zelf aan voor welke avonden er
+  // gekookt wordt. De migratie zet bestaande rijen op `true`, zodat al
+  // geplande weken zich blijven gedragen zoals de gebruiker ze achterliet.
+  includedInGroceries         Boolean             @default(false) @map("included_in_groceries")
   updatedAt                   DateTime            @updatedAt @map("updated_at")
 
   mealPlan            MealPlan       @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)

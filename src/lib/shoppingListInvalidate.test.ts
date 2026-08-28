@@ -16,6 +16,16 @@ import { ensureMealPlan } from "./mealPlan";
 import { ensureShoppingList, invalidateShoppingList } from "./shoppingList";
 import { getCurrentWeekStart } from "./week";
 
+/**
+ * Vinkt alle avonden van dit weekplan aan voor de boodschappen. Sinds de
+ * dagkeuze is meenemen opt-in per avond (`includedInGroceries` staat standaard
+ * uit); deze tests gaan over een week waarin voor elke avond gekookt wordt.
+ */
+async function includeAllMeals(mealPlanId: string) {
+  await prisma.mealPlanEntry.updateMany({ where: { mealPlanId }, data: { includedInGroceries: true } });
+}
+
+
 async function makeHousehold(name: string) {
   return prisma.household.create({ data: { name, persons: { create: [{ name: "Test", role: "PARENT" }] } } });
 }
@@ -35,6 +45,7 @@ test("invalidateShoppingList gooit de lijst gewoon weg zolang er niets is overge
   const household = await makeHousehold("Invalidate — niets overgedragen");
   try {
     const mealPlan = await ensureMealPlan(household.id, getCurrentWeekStart());
+    await includeAllMeals(mealPlan!.id);
     await ensureShoppingList(mealPlan!.id, household.id);
 
     await invalidateShoppingList(mealPlan!.id);
@@ -50,6 +61,7 @@ test("een al naar Picnic overgedragen regel overleeft een weekmenuwijziging", as
   const household = await makeHousehold("Invalidate — overgedragen regel blijft");
   try {
     const mealPlan = await ensureMealPlan(household.id, getCurrentWeekStart());
+    await includeAllMeals(mealPlan!.id);
     const shoppingList = await ensureShoppingList(mealPlan!.id, household.id);
     assert.ok(shoppingList.lines.length > 0, "testopzet: de lijst moet regels hebben");
 
@@ -110,6 +122,7 @@ test("een overgedragen vaste boodschap onderdrukt de receptbehoefte voor hetzelf
   const household = await makeHousehold("Invalidate — FIXED verdringt MEAL niet");
   try {
     const mealPlan = await ensureMealPlan(household.id, getCurrentWeekStart());
+    await includeAllMeals(mealPlan!.id);
     const firstList = await ensureShoppingList(mealPlan!.id, household.id);
 
     const mealLine = firstList.lines.find((line) => line.source === "MEAL");
@@ -168,6 +181,7 @@ test("een bevestigde lijst gaat terug naar 'controleren' als de herbouw nieuwe t
   const household = await makeHousehold("Invalidate — bevestiging vervalt");
   try {
     const mealPlan = await ensureMealPlan(household.id, getCurrentWeekStart());
+    await includeAllMeals(mealPlan!.id);
     const shoppingList = await ensureShoppingList(mealPlan!.id, household.id);
 
     // Eén regel als "al in het mandje" markeren, zodat de herbouwtak draait.

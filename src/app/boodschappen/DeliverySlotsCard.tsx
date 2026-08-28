@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { AlertCircle, Truck } from "lucide-react";
-import { prisma } from "@/lib/prisma";
-import { getDeliveryOverviewForHousehold } from "@/lib/picnic/deliveryStatus";
+import type { DeliveryOverview } from "@/lib/picnic/deliveryStatus";
 import { formatSlotWindow, type DeliveryDayGroup } from "@/lib/picnic/deliverySlots";
+import type { PicnicDeliveryPreference } from "@/generated/prisma/client";
 import { DAY_KEY_BY_ENUM, DAY_LABELS } from "@/lib/week";
 import DeliverySlotsRefreshButton from "./DeliverySlotsRefreshButton";
 
@@ -60,19 +60,19 @@ function DayRow({ group, isPreferredDay }: { group: DeliveryDayGroup; isPreferre
  * dat zegt de kaart er expliciet bij, zodat "beschikbaar" niet als reservering
  * gelezen wordt.
  */
-export default async function DeliverySlotsCard({
-  householdId,
-  picnicAuthToken,
+export default function DeliverySlotsCard({
+  preference,
+  overview,
 }: {
-  householdId: string;
-  picnicAuthToken: string | null;
+  preference: PicnicDeliveryPreference | null;
+  /** `null` wanneer er geen Picnic-koppeling is — dan valt er niets op te halen. */
+  overview: DeliveryOverview | null;
 }) {
-  const preference = await prisma.picnicDeliveryPreference.findUnique({ where: { householdId } });
   const preferenceLine = preference
     ? `Jullie voorkeur: ${DAY_LABELS[DAY_KEY_BY_ENUM[preference.preferredDayOfWeek]].toLowerCase()} rond ${preference.preferredTime}`
     : null;
 
-  if (!picnicAuthToken) {
+  if (!overview) {
     return (
       <div className={CARD}>
         <p className="flex items-center gap-2 font-medium text-ink">
@@ -89,12 +89,6 @@ export default async function DeliverySlotsCard({
       </div>
     );
   }
-
-  const overview = await getDeliveryOverviewForHousehold({
-    householdId,
-    picnicAuthToken,
-    preference,
-  });
 
   const preferredDayKey = preference ? DAY_KEY_BY_ENUM[preference.preferredDayOfWeek] : null;
   const directDays = overview.groups.slice(0, DAYS_SHOWN_DIRECTLY);

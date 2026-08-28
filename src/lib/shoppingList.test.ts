@@ -20,12 +20,16 @@ function mealPlanWithNeed(
     quantity: number;
     unit: "GRAM" | "PIECE";
     skipped?: boolean;
+    includedInGroceries?: boolean;
   }>
 ) {
   return {
     entries: entries.map((e) => ({
       dayOfWeek: e.dayOfWeek,
       skipped: e.skipped ?? false,
+      // Deze fixture beschrijft avonden die de gebruiker heeft aangevinkt;
+      // niet-aangevinkte avonden zijn een expliciet testgeval hieronder.
+      includedInGroceries: e.includedInGroceries ?? true,
       recipeVariant: { recipe: { ingredients: [{ ingredientId: e.ingredientId, quantity: e.quantity, unit: e.unit }] } },
     })),
   };
@@ -154,4 +158,27 @@ test("isUserChosenPackageCount: MEAL met unit PIECE -> false, moet door de verpa
 test("isUserChosenPackageCount: FIXED/MANUAL met unit GRAM of ML -> false, dat is een letterlijke hoeveelheid, geen aantal", () => {
   assert.equal(isUserChosenPackageCount({ source: "FIXED", unit: "GRAM" }), false);
   assert.equal(isUserChosenPackageCount({ source: "MANUAL", unit: "ML" }), false);
+});
+
+test("findShoppingListShortfalls: een avond die niet is aangevinkt telt niet mee in de behoefte", () => {
+  // Los van "uit eten": het gerecht staat gepland en het huishouden eet
+  // gewoon thuis, maar deze avond gaat niet mee in déze bestelling.
+  const mealPlan = mealPlanWithNeed([
+    { dayOfWeek: "MONDAY", ingredientId: "aardappelen", quantity: 800, unit: "GRAM" },
+    { dayOfWeek: "TUESDAY", ingredientId: "aardappelen", quantity: 800, unit: "GRAM", includedInGroceries: false },
+  ]);
+  const lines = [line({ id: "l1", ingredientId: "aardappelen", quantity: 800, unit: "GRAM" })];
+  const result = findShoppingListShortfalls(mealPlan, NORMAL_SCALE, NO_INVENTORY, lines);
+  assert.deepEqual(result, [], "alleen de aangevinkte maandag telt mee, dus 800 g is precies genoeg");
+});
+
+test("findShoppingListShortfalls: aangevinkt maar 'uit eten' telt evengoed niet mee", () => {
+  // Beide vlaggen moeten kloppen; ze zijn bewust twee verschillende dingen.
+  const mealPlan = mealPlanWithNeed([
+    { dayOfWeek: "MONDAY", ingredientId: "aardappelen", quantity: 800, unit: "GRAM" },
+    { dayOfWeek: "TUESDAY", ingredientId: "aardappelen", quantity: 800, unit: "GRAM", skipped: true },
+  ]);
+  const lines = [line({ id: "l1", ingredientId: "aardappelen", quantity: 800, unit: "GRAM" })];
+  const result = findShoppingListShortfalls(mealPlan, NORMAL_SCALE, NO_INVENTORY, lines);
+  assert.deepEqual(result, []);
 });
