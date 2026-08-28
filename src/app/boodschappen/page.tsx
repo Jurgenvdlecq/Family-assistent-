@@ -3,11 +3,14 @@ import { after } from "next/server";
 import { CalendarDays, ShoppingCart, CheckCircle2, Utensils, ChevronRight, Search, ClipboardList, Minus, Plus, X } from "lucide-react";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { ensureMealPlan } from "@/lib/mealPlan";
-import { DAY_KEY_BY_ENUM, DAY_LABELS, getCurrentWeekStart } from "@/lib/week";
+import { getDeliveryOverviewForHousehold } from "@/lib/picnic/deliveryStatus";
+import { getOrderDayWindow } from "@/lib/orderDays";
+import { DAY_ENUM, DAY_KEY_BY_ENUM, DAY_LABELS, getCurrentWeekStart } from "@/lib/week";
 import {
   describeLinePackaging,
   ensureShoppingList,
   findShoppingListShortfalls,
+  getGroceryMealEntries,
   getShoppingListCandidatesByIngredient,
   isUserChosenPackageCount,
 } from "@/lib/shoppingList";
@@ -27,6 +30,7 @@ import PendingSubmitButton from "@/components/PendingSubmitButton";
 import PicnicTransfer from "./PicnicTransfer";
 import AddToPicnicCart from "./AddToPicnicCart";
 import DeliverySlotsCard from "./DeliverySlotsCard";
+import MealDayPicker, { type MealDayOption } from "./MealDayPicker";
 import ShoppingChecklist, { type ChecklistLine } from "./ShoppingChecklist";
 import {
   acknowledgeShoppingListShortfall,
@@ -74,13 +78,24 @@ const STATUS_MESSAGES: Record<string, string> = {
   "loose-list-started": "Losse boodschappenlijst gestart — het weekmenu van deze week staat op \"uit eten\".",
   "loose-list-week-changed": "De week is inmiddels doorgesprongen naar een nieuwe — herlaad de pagina en probeer het opnieuw.",
   "shopping-reviewed": "Lijst bevestigd — klaar om naar Picnic te gaan.",
+  "meal-day-added": "Deze avond gaat mee: de boodschappen ervoor staan nu op de lijst.",
+  "meal-day-removed": "Deze avond gaat niet mee. Het geplande gerecht blijft gewoon staan.",
+  "order-day-out-of-range":
+    "Die avond kan ik niet meer meenemen in deze bestelling — herlaad de pagina, dan zie je de dagen die nog wel kunnen.",
+  "order-day-plan-missing": "Ik kon de weekplanning voor die dag niet laden. Probeer het zo nog eens.",
   "line-in-picnic-cart":
     "Dit product ligt al in je Picnic-mandje, dus ik kan het hier niet van de lijst halen. Leeg je Picnic-mandje hieronder als je het toch niet wilt bestellen.",
   "invalid-quantity": "Vul een geldig aantal groter dan 0 in.",
 };
 
 /** Meldingen die geen bevestiging zijn maar een blokkade/waarschuwing — amber i.p.v. groen. */
-const WARNING_STATUSES = new Set(["loose-list-week-changed", "line-in-picnic-cart", "invalid-quantity"]);
+const WARNING_STATUSES = new Set([
+  "loose-list-week-changed",
+  "line-in-picnic-cart",
+  "invalid-quantity",
+  "order-day-out-of-range",
+  "order-day-plan-missing",
+]);
 
 const INVENTORY_STATUS_OPTIONS = [
   { value: "SUFFICIENT", label: "Genoeg" },
@@ -632,6 +647,47 @@ export default async function BoodschappenPage({
   }
 
   const shoppingList = await ensureShoppingList(mealPlan.id, household.id);
+  // Dezelfde maaltijdenverzameling als waarmee de lijst is opgebouwd — dus
+  // inclusief aangevinkte avonden die in de volgende week vallen. Zou de
+  // tekortcontrole hieronder alleen deze week zien, dan meldt ze een tekort
+  // op een gerecht dat wél gewoon in de lijst staat.
+  const groceryMeals = await getGroceryMealEntries(mealPlan.id);
+
+  // Eén Picnic-aanroep voor zowel de bezorgkaart als de dagkeuze: het venster
+  // met avonden begint bij het eerste moment waarop Picnic nog kan bezorgen.
+  const deliveryPreference = await prisma.picnicDeliveryPreference.findUnique({
+    where: { householdId: household.id },
+  });
+  const deliveryOverview = household.picnicAuthToken
+    ? await getDeliveryOverviewForHousehold({
+        householdId: household.id,
+        picnicAuthToken: household.picnicAuthToken,
+        preference: deliveryPreference,
+      })
+    : null;
+  const firstDeliveryIsoDate =
+    deliveryOverview?.groups.find((group) => group.availableSlots.length > 0)?.isoDate ?? null;
+
+  const planByWeekStart = new Map(
+    [groceryMeals.mealPlan, groceryMeals.nextWeekPlan]
+      .filter((plan) => plan !== null)
+      .map((plan) => [plan.weekStart.getTime(), plan])
+  );
+  const mealDayOptions: MealDayOption[] = getOrderDayWindow({
+    now: new Date(),
+    firstDeliveryIsoDate,
+  }).map((day) => {
+    const entry = planByWeekStart
+      .get(day.weekStart.getTime())
+      ?.entries.find((candidate) => candidate.dayOfWeek === DAY_ENUM[day.dayKey]);
+    return {
+      ...day,
+      included: entry?.includedInGroceries ?? false,
+      skipped: entry?.skipped ?? false,
+      mealName: entry?.recipeVariant.recipe.title,
+      reason: entry?.reason ?? undefined,
+    };
+  });
   if (shoppingList.lines.some((line) => line.product && !line.product.picnicImageId)) {
     after(() => enrichShoppingListProductImages(household.id, shoppingList.id));
   }
@@ -745,7 +801,7 @@ export default async function BoodschappenPage({
   const mealTotalCost = mealLines.reduce((total, line) => total + estimatedLineCost(line), 0);
   const mealReviewIds = new Set(mealLines.filter((line) => line.needsReview).map((line) => line.ingredientId));
   const shortfallByLineId = new Map(
-    findShoppingListShortfalls(mealPlan, portionScaleByDay, inventoryMap, sortedLines)
+    findShoppingListShortfalls(groceryMeals, portionScaleByDay, inventoryMap, sortedLines)
       .filter((s) => !sortedLines.find((l) => l.id === s.lineId)?.shortfallAcknowledged)
       .map((s) => [s.lineId, s])
   );
@@ -932,7 +988,9 @@ export default async function BoodschappenPage({
             opent met wanneer er bezorgd kan worden en wat er klaarstaat, want
             dat is waarvoor de app in de praktijk geopend wordt. De lijst zelf
             en het beheer eronder blijven ongewijzigd — alleen verplaatst. */}
-        <DeliverySlotsCard householdId={household.id} picnicAuthToken={household.picnicAuthToken} />
+        <DeliverySlotsCard preference={deliveryPreference} overview={deliveryOverview} />
+
+        <MealDayPicker days={mealDayOptions} />
 
         {!household.picnicAuthToken && (
           <PicnicTransfer

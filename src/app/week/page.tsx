@@ -484,6 +484,16 @@ export default async function Home({
             {mealPlan.entries.length} maaltijden
           </span>
         </div>
+        {/* Sinds de dagkeuze levert een gepland gerecht niet vanzelf
+            boodschappen op — dat zou de gebruiker hier ten onrechte kunnen
+            aannemen, want zo werkte het voorheen wél. */}
+        <p className="mt-2 text-xs text-ink-muted">
+          Dit is het menu. Voor welke avonden ik boodschappen meeneem, kies je bij{" "}
+          <Link href="/boodschappen#avondeten" className="underline">
+            Boodschappen
+          </Link>
+          .
+        </p>
       </div>
 
       <div className="flex min-w-0 flex-col divide-y divide-line border-y border-line bg-surface">

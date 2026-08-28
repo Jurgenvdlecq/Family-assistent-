@@ -43,7 +43,7 @@ async function makeHouseholdWithShoppingListLine(name: string) {
       householdId: household.id,
       weekStart: getCurrentWeekStart(),
       status: "CONFIRMED",
-      entries: { create: [{ dayOfWeek: "MONDAY", recipeVariantId: variant.id }] },
+      entries: { create: [{ dayOfWeek: "MONDAY", recipeVariantId: variant.id, includedInGroceries: true }] },
     },
   });
   const shoppingList = await prisma.shoppingList.create({
@@ -222,7 +222,7 @@ async function makeHouseholdWithMealAndFixedLine(name: string) {
       householdId: household.id,
       weekStart: getCurrentWeekStart(),
       status: "CONFIRMED",
-      entries: { create: [{ dayOfWeek: "MONDAY", recipeVariantId: variant.id }] },
+      entries: { create: [{ dayOfWeek: "MONDAY", recipeVariantId: variant.id, includedInGroceries: true }] },
     },
   });
   const shoppingList = await prisma.shoppingList.create({
@@ -365,7 +365,7 @@ test("addShoppingListToPicnicCart: geeft een resultaat terug i.p.v. te gooien zo
         householdId: household.id,
         weekStart: getCurrentWeekStart(),
         status: "CONFIRMED",
-        entries: { create: [{ dayOfWeek: "MONDAY", recipeVariantId: variant.id }] },
+        entries: { create: [{ dayOfWeek: "MONDAY", recipeVariantId: variant.id, includedInGroceries: true }] },
       },
     });
     const shoppingList = await prisma.shoppingList.create({
@@ -403,7 +403,7 @@ test("clearPicnicCartForShoppingList: geeft een resultaat terug i.p.v. te gooien
         householdId: household.id,
         weekStart: getCurrentWeekStart(),
         status: "CONFIRMED",
-        entries: { create: [{ dayOfWeek: "MONDAY", recipeVariantId: variant.id }] },
+        entries: { create: [{ dayOfWeek: "MONDAY", recipeVariantId: variant.id, includedInGroceries: true }] },
       },
     });
     const shoppingList = await prisma.shoppingList.create({
