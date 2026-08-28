@@ -100,7 +100,7 @@ async function invalidateCurrentShoppingList(householdId: string) {
 
 function revalidateRecipeManagementPaths() {
   revalidatePath("/recepten");
-  revalidatePath("/");
+  revalidatePath("/week");
   revalidatePath("/gerechten");
   revalidatePath("/boodschappen");
   revalidatePath("/controle");

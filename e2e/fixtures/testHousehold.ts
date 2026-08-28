@@ -61,7 +61,7 @@ export async function completeOnboardingViaUi(
   // zelf later via een directe Prisma-update), dus gewoon overslaan.
   await page.waitForURL(`${baseURL}/onboarding/picnic`, { timeout: 30_000 });
   await page.getByRole("link", { name: "Overslaan, dit doe ik later →" }).click();
-  await page.waitForURL(`${baseURL}/`, { timeout: 30_000 });
+  await page.waitForURL(`${baseURL}/boodschappen`, { timeout: 30_000 });
 
   const household = await prisma.household.findFirstOrThrow({
     where: { name: householdName },

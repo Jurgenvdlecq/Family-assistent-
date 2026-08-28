@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, ShoppingCart, Users, Loader2 } from "lucide-react";
+import { CalendarDays, ShoppingCart, Users, Loader2 } from "lucide-react";
 
 // label is de volledige naam (voor aria-label); shortLabel is wat er
 // echt staat. Op een gewone telefoonbreedte (~375-390px) werden "Jouw
@@ -17,9 +17,16 @@ import { Home, ShoppingCart, Users, Loader2 } from "lucide-react";
 // aparte behoefte — al bereikbaar via een link vanaf "/boodschappen".
 // "Recepten" is technisch receptbeheer, laagfrequent — verplaatst naar
 // een link binnen "Ons gezin".
+//
+// Boodschappen staat sinds de koerswijziging "boodschappen eerst" vooraan:
+// dat is waarvoor de app in de praktijk geopend wordt. Het weekmenu is
+// verhuisd van "/" naar "/week" en staat nu op plek twee. De tegel linkt
+// rechtstreeks naar "/boodschappen" en niet naar "/", zodat dagelijks
+// gebruik geen extra doorverwijzing kost ("/" blijft bestaan als voordeur
+// voor bladwijzers en voor de stap na inloggen/onboarding).
 const ITEMS = [
-  { href: "/", label: "Jouw week", shortLabel: "Week", icon: Home },
   { href: "/boodschappen", label: "Boodschappen", shortLabel: "Boodschappen", icon: ShoppingCart },
+  { href: "/week", label: "Jouw week", shortLabel: "Week", icon: CalendarDays },
   { href: "/ons-gezin", label: "Ons gezin", shortLabel: "Gezin", icon: Users },
 ];
 

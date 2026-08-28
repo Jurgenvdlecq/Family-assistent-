@@ -350,6 +350,6 @@ export async function confirmShoppingList(formData: FormData) {
     data: { status: "REVIEWED", reviewedAt: new Date() },
   });
   revalidatePath("/boodschappen");
-  revalidatePath("/");
+  revalidatePath("/week");
   redirect("/boodschappen?status=shopping-reviewed#jullie-boodschappenlijst");
 }

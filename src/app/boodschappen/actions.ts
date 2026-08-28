@@ -311,7 +311,7 @@ export async function confirmPicnicOrder(shoppingListId: string): Promise<void> 
   await assertShoppingListAccess(shoppingListId);
   await prisma.shoppingList.update({ where: { id: shoppingListId }, data: { orderConfirmedAt: new Date() } });
   revalidatePath("/boodschappen");
-  revalidatePath("/");
+  revalidatePath("/week");
 }
 
 /**

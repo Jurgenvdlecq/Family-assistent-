@@ -33,7 +33,7 @@ export default function GlobalError({ reset }: { error: Error & { digest?: strin
           Opnieuw proberen
         </button>
         <Link href="/" style={{ color: "#555" }}>
-          Terug naar Jouw week
+          Terug naar de app
         </Link>
       </body>
     </html>

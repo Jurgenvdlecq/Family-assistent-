@@ -79,7 +79,7 @@ export async function updateHouseholdHardRestrictions(formData: FormData) {
   });
 
   await invalidateCurrentShoppingList(householdId);
-  revalidatePath("/");
+  revalidatePath("/week");
   revalidatePath("/gerechten");
   revalidatePath("/boodschappen");
   redirectToOnsGezin("household-restrictions-updated");
@@ -99,7 +99,7 @@ export async function addPerson(formData: FormData) {
     data: { householdId, name, role, portionMultiplier: defaultPortionMultiplierForRole(role) },
   });
 
-  revalidatePath("/");
+  revalidatePath("/week");
   redirectToOnsGezin("person-added");
 }
 
@@ -125,7 +125,7 @@ export async function updatePersonProfile(formData: FormData) {
   });
 
   await invalidateCurrentShoppingList(householdId);
-  revalidatePath("/");
+  revalidatePath("/week");
   revalidatePath("/gerechten");
   revalidatePath("/boodschappen");
   redirectToOnsGezin("person-updated");
@@ -160,7 +160,7 @@ export async function updatePersonPresence(formData: FormData) {
   }
 
   await invalidateCurrentShoppingList(householdId);
-  revalidatePath("/");
+  revalidatePath("/week");
   revalidatePath("/gerechten");
   revalidatePath("/boodschappen");
   redirectToOnsGezin("presence-updated");
@@ -184,7 +184,7 @@ export async function updateWeeklyRhythm(formData: FormData) {
     data: { weeklyRhythm: { ...rhythm, [dayKey]: value } },
   });
 
-  revalidatePath("/");
+  revalidatePath("/week");
   redirectToOnsGezin("rhythm-updated");
 }
 
@@ -212,7 +212,7 @@ export async function updatePlanningStyle(formData: FormData) {
     data: { planningStyle: planningStyle as (typeof PLANNING_STYLES)[number] },
   });
 
-  revalidatePath("/");
+  revalidatePath("/week");
   redirectToOnsGezin("planning-style-updated");
 }
 
@@ -283,7 +283,7 @@ export async function updateHouseholdCategoryPreference(formData: FormData) {
     });
   }
 
-  revalidatePath("/");
+  revalidatePath("/week");
   revalidatePath("/gerechten");
   redirectToOnsGezin("category-preference-updated");
 }
@@ -328,7 +328,7 @@ export async function setDayRecipePreference(formData: FormData) {
     },
   });
 
-  revalidatePath("/");
+  revalidatePath("/week");
   revalidatePath("/gerechten");
   redirectToOnsGezin("day-recipe-preference-updated");
 }
@@ -352,7 +352,7 @@ export async function deleteDayRecipePreference(formData: FormData) {
     },
   });
 
-  revalidatePath("/");
+  revalidatePath("/week");
   revalidatePath("/gerechten");
   redirectToOnsGezin("day-recipe-preference-deleted");
 }
@@ -394,7 +394,7 @@ export async function updatePersonalPreference(formData: FormData) {
     data: { stance, source: "EXPLICIT", confidence: stance === "UNKNOWN" ? 0 : 1 },
   });
 
-  revalidatePath("/");
+  revalidatePath("/week");
   revalidatePath("/gerechten");
   redirectToOnsGezin("personal-preference-updated");
 }
@@ -407,7 +407,7 @@ export async function deletePersonalPreference(formData: FormData) {
   await loadPersonalPreferenceForCurrentHousehold(preferenceId, householdId);
   await prisma.preference.delete({ where: { id: preferenceId } });
 
-  revalidatePath("/");
+  revalidatePath("/week");
   revalidatePath("/gerechten");
   redirectToOnsGezin("personal-preference-deleted");
 }

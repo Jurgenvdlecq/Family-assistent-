@@ -31,6 +31,6 @@ export async function dismissLearnedPattern(formData: FormData) {
     }),
   ]);
 
-  revalidatePath("/");
+  revalidatePath("/week");
   redirectToOnsGezin("learned-pattern-dismissed");
 }

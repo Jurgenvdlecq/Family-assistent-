@@ -1,9 +1,8 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
 import { after } from "next/server";
-import { ChevronLeft, ShoppingCart, CheckCircle2, Utensils, ChevronRight, Search, ClipboardList, Minus, Plus, X } from "lucide-react";
+import { CalendarDays, ShoppingCart, CheckCircle2, Utensils, ChevronRight, Search, ClipboardList, Minus, Plus, X } from "lucide-react";
 import { requireCurrentHousehold } from "@/lib/auth";
-import { getMealPlanForWeek } from "@/lib/mealPlan";
+import { ensureMealPlan } from "@/lib/mealPlan";
 import { DAY_KEY_BY_ENUM, DAY_LABELS, getCurrentWeekStart } from "@/lib/week";
 import {
   describeLinePackaging,
@@ -619,8 +618,18 @@ export default async function BoodschappenPage({
       : undefined;
 
   const weekStart = getCurrentWeekStart();
-  const mealPlan = await getMealPlanForWeek(household.id, weekStart);
-  if (!mealPlan) redirect("/");
+  // Deze pagina is sinds de koerswijziging "boodschappen eerst" de
+  // startpagina, dus moet ze het weekplan zelf kunnen aanmaken. Voorheen
+  // stuurde ze bij een ontbrekend plan door naar "/" (destijds het weekmenu,
+  // dat `ensureMealPlan` aanriep) — met "/" als voordeur naar deze pagina zou
+  // dat een doorverwijslus worden. `ensureMealPlan` is idempotent: bestaat er
+  // al een plan voor deze week, dan wordt dat gewoon teruggegeven.
+  const mealPlan = await ensureMealPlan(household.id, weekStart);
+  if (!mealPlan) {
+    // Zou niet kunnen: ensureMealPlan maakt 'm net aan. Zelfde vangnet als op
+    // de weekpagina — geen gebruikersinvoer, dus bewust een harde fout.
+    throw new Error("Weekplanning kon niet worden geladen.");
+  }
 
   const shoppingList = await ensureShoppingList(mealPlan.id, household.id);
   if (shoppingList.lines.some((line) => line.product && !line.product.picnicImageId)) {
@@ -838,12 +847,20 @@ export default async function BoodschappenPage({
 
   return (
     <div className="mx-auto flex min-h-screen w-full min-w-0 max-w-2xl flex-col pb-[calc(6rem+env(safe-area-inset-bottom))]">
+      {/* Dit is sinds de koerswijziging "boodschappen eerst" de startpagina,
+          dus geen terugpijl meer (er is niets om naar terug te gaan). In
+          plaats daarvan een snelle doorsteek naar het weekmenu, dat nu op
+          /week staat. */}
       <header className="flex items-center justify-between px-6 pt-6 pb-2">
-        <Link href="/" aria-label="Terug naar Jouw week" className="text-ink-muted">
-          <ChevronLeft size={22} />
-        </Link>
-        <span className="text-sm font-semibold">Boodschappen</span>
         <ShoppingCart size={18} className="text-ink-muted" />
+        <span className="text-sm font-semibold">Boodschappen</span>
+        <Link
+          href="/week"
+          aria-label="Naar jullie weekmenu"
+          className="flex items-center gap-1 text-ink-muted transition-colors hover:text-ink"
+        >
+          <CalendarDays size={18} />
+        </Link>
       </header>
 
       <div className="min-w-0 px-6 pt-4">
