@@ -135,7 +135,20 @@ export function getOrderDayWindow(input: {
  * gemanipuleerd formulier mag nooit een avond ver in de toekomst aanzetten
  * die de lijstopbouw daarna niet meeneemt.
  */
-export function isSelectableOrderDate(date: Date, now: Date): boolean {
+export function isSelectableOrderDate(date: Date, now: Date, intent: "add" | "remove" = "add"): boolean {
   const day = startOfDay(date);
-  return day.getTime() >= startOfDay(now).getTime() && day.getTime() <= lastSelectableDate(now).getTime();
+  if (day.getTime() > lastSelectableDate(now).getTime()) return false;
+
+  // Toevoegen kan alleen vanaf vandaag — boodschappen voor een avond die al
+  // geweest is slaan nergens op. Weghalen mag altijd binnen deze en de
+  // volgende week: een avond die om wat voor reden dan ook aanstaat (bv. de
+  // migratie die bestaande weken op "telt mee" zette) moet de gebruiker er
+  // altijd weer af kunnen halen.
+  const earliest = intent === "remove" ? getCurrentWeekStart(now) : startOfDay(now);
+  return day.getTime() >= earliest.getTime();
+}
+
+/** Eén losse dag in het formaat van de dagkeuze — voor avonden buiten het standaardvenster. */
+export function buildOrderDay(date: Date, now: Date): OrderDay {
+  return toOrderDay(startOfDay(date), getCurrentWeekStart(now));
 }

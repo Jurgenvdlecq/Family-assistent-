@@ -89,7 +89,7 @@ function titleSearchScore(title: string, query: string) {
 export default async function GerechtenPage({
   searchParams,
 }: {
-  searchParams: Promise<{ day?: string; direction?: string; q?: string; status?: string }>;
+  searchParams: Promise<{ day?: string; direction?: string; q?: string; status?: string; week?: string }>;
 }) {
   const params = await searchParams;
 
@@ -105,7 +105,14 @@ export default async function GerechtenPage({
     : "all";
   const wishText = String(params.q ?? "").trim();
 
+  // De dagkeuze op /boodschappen mag avonden in de volgende week bevatten
+  // (bezorging zaterdag, koken dinsdag). Dit scherm werkte altijd op de
+  // huidige week; met ?week=next kan het ook de volgende. Bewust geen vrije
+  // datum uit de URL: alleen deze twee weken zijn geldig, precies zover als
+  // de boodschappenlijst reikt.
+  const isNextWeek = params.week === "next";
   const weekStart = getCurrentWeekStart();
+  if (isNextWeek) weekStart.setDate(weekStart.getDate() + 7);
   const mealPlan = await getMealPlanForWeek(household.id, weekStart);
   const currentEntry = mealPlan?.entries.find((e) => e.dayOfWeek === DAY_ENUM[dayKey]);
 
@@ -261,6 +268,7 @@ export default async function GerechtenPage({
   const directionHref = (key: string) => {
     const q = new URLSearchParams({ day: dayKey, direction: key });
     if (wishText) q.set("q", wishText);
+    if (isNextWeek) q.set("week", "next");
     return `/gerechten?${q.toString()}`;
   };
   if (hasExplicitSearch) {

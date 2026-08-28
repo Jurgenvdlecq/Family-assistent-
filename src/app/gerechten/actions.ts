@@ -6,12 +6,12 @@ import { redirectToHome } from "@/lib/homeRedirect";
 import { prisma } from "@/lib/prisma";
 import { assertCurrentHousehold } from "@/lib/auth";
 import { logFeedbackEvent } from "@/lib/feedback";
-import { invalidateShoppingList } from "@/lib/shoppingList";
+import { invalidateShoppingListForPlanChange } from "@/lib/shoppingList";
 import { recalculateVariantConfidence, maybePromoteRecipeStatus } from "@/lib/scoring";
 import { getHouseholdHardRestrictionsAndParticipantsByDay } from "@/lib/household";
 import { recipeConflictsWithRestrictions } from "@/lib/dietaryRestrictions";
 import { accessibleRecipeWhere } from "@/lib/recipeScope";
-import { DAY_ENUM, DAY_KEYS, type DayKey } from "@/lib/week";
+import { DAY_ENUM, DAY_KEYS, getCurrentWeekStart, type DayKey } from "@/lib/week";
 import { parseFeedbackReason, labelFeedbackReason } from "@/domain/learning/feedbackReasons";
 import { recordRepeatedMealReplacement } from "@/domain/learning/patterns";
 import type { IngredientCategory, Unit } from "@/generated/prisma/enums";
@@ -28,7 +28,22 @@ const VALID_GERECHTEN_DIRECTIONS = new Set(["day", "all", "favorites", "quick"])
  * blijven" hielp hier niet echt en voelde vooral als "blijven hangen" na
  * een afgeronde stap.
  */
-function redirectToGerechten(dayKey: DayKey, direction: string, wishText: string, status: string): never {
+/**
+ * Gaat deze bewerking over de vólgende week? Dan komt de gebruiker uit de
+ * dagkeuze op /boodschappen (bezorging zaterdag, koken dinsdag) en niet uit
+ * het weekmenu — daar moet hij dus ook weer terugkomen.
+ */
+function isNextWeekPlan(weekStart: Date): boolean {
+  return weekStart.getTime() > getCurrentWeekStart().getTime();
+}
+
+function redirectToGerechten(
+  dayKey: DayKey,
+  direction: string,
+  wishText: string,
+  status: string,
+  nextWeek = false
+): never {
   revalidatePath("/gerechten");
   revalidatePath("/week");
   const params = new URLSearchParams({
@@ -37,7 +52,17 @@ function redirectToGerechten(dayKey: DayKey, direction: string, wishText: string
     status,
   });
   if (wishText) params.set("q", wishText);
+  if (nextWeek) params.set("week", "next");
   redirect(`/gerechten?${params.toString()}`);
+}
+
+/** Terug naar waar de keuze vandaan kwam: het weekmenu, of de dagkeuze bij de boodschappen. */
+function redirectAfterMealChosen(status: string, dayKey: DayKey, weekStart: Date): never {
+  if (isNextWeekPlan(weekStart)) {
+    revalidatePath("/boodschappen");
+    redirect(`/boodschappen?status=${encodeURIComponent(status)}#avondeten`);
+  }
+  redirectToHome(status, dayKey);
 }
 
 export async function restoreHiddenRecipeVariant(formData: FormData) {
@@ -112,7 +137,7 @@ export async function replaceMealPlanEntry(formData: FormData) {
   // beperking): terug naar de pagina met een leesbare melding. Een `throw`
   // zou in productie door Next.js geredact worden tot een generieke fout.
   if (neverPreference) {
-    redirectToGerechten(dayKey, direction, wishText, "meal-conflicts-never");
+    redirectToGerechten(dayKey, direction, wishText, "meal-conflicts-never", isNextWeekPlan(weekStart));
   }
   const conflicts = recipeConflictsWithRestrictions(
     variant.recipe.ingredients.map((ri) => ({
@@ -122,7 +147,7 @@ export async function replaceMealPlanEntry(formData: FormData) {
     hardRestrictions
   );
   if (conflicts) {
-    redirectToGerechten(dayKey, direction, wishText, "meal-conflicts-restrictions");
+    redirectToGerechten(dayKey, direction, wishText, "meal-conflicts-restrictions", isNextWeekPlan(weekStart));
   }
 
   const mealPlan = await prisma.mealPlan.findUniqueOrThrow({
@@ -135,7 +160,7 @@ export async function replaceMealPlanEntry(formData: FormData) {
 
   if (currentEntry) {
     if (currentEntry.recipeVariantId === recipeVariantId) {
-      redirectToGerechten(dayKey, direction, wishText, "meal-unchanged");
+      redirectToGerechten(dayKey, direction, wishText, "meal-unchanged", isNextWeekPlan(weekStart));
     }
     const replacedVariant = await prisma.recipeVariant.findUniqueOrThrow({
       where: { id: currentEntry.recipeVariantId },
@@ -198,13 +223,13 @@ export async function replaceMealPlanEntry(formData: FormData) {
   await maybePromoteRecipeStatus(recipeVariantId, householdId);
 
   // De boodschappenlijst hoort mee te veranderen zodra een gerecht wijzigt.
-  await invalidateShoppingList(mealPlan.id);
+  await invalidateShoppingListForPlanChange(householdId, mealPlan.id);
 
   revalidatePath("/boodschappen");
   // Gebruikersverzoek: een voltooide gerechtwissel gaat terug naar het
   // weekmenu (niet naar /gerechten zelf blijven staan) — met focusDayKey
   // land je meteen op de juiste dag i.p.v. bovenaan de pagina.
-  redirectToHome("meal-replaced", dayKey);
+  redirectAfterMealChosen("meal-replaced", dayKey, weekStart);
 }
 
 function defaultQuantityForIngredient(category: IngredientCategory, unit: Unit) {
@@ -261,7 +286,7 @@ export async function chooseLiteralMealPlanEntry(formData: FormData) {
     select: { id: true, name: true, unit: true, category: true, restrictionTags: true },
   });
   if (ingredients.length !== new Set(ingredientIds).size) {
-    redirectToGerechten(dayKey, direction, wishText, "wish-unknown-ingredients");
+    redirectToGerechten(dayKey, direction, wishText, "wish-unknown-ingredients", isNextWeekPlan(weekStart));
   }
 
   // Anders dan bij de gewone suggesties filtert de pagina de letterlijke
@@ -278,7 +303,7 @@ export async function chooseLiteralMealPlanEntry(formData: FormData) {
     hardRestrictions
   );
   if (conflicts) {
-    redirectToGerechten(dayKey, direction, wishText, "meal-conflicts-restrictions");
+    redirectToGerechten(dayKey, direction, wishText, "meal-conflicts-restrictions", isNextWeekPlan(weekStart));
   }
   const neverPreference = await prisma.preference.findFirst({
     where: {
@@ -290,7 +315,7 @@ export async function chooseLiteralMealPlanEntry(formData: FormData) {
     },
   });
   if (neverPreference) {
-    redirectToGerechten(dayKey, direction, wishText, "meal-conflicts-never");
+    redirectToGerechten(dayKey, direction, wishText, "meal-conflicts-never", isNextWeekPlan(weekStart));
   }
 
   const orderedIngredients = ingredientIds
@@ -367,8 +392,8 @@ export async function chooseLiteralMealPlanEntry(formData: FormData) {
     explicit: true,
     context: { dayOfWeek: dayEnum, source: "literal_meal_wish", ingredientIds },
   });
-  await invalidateShoppingList(mealPlan.id);
+  await invalidateShoppingListForPlanChange(householdId, mealPlan.id);
 
   revalidatePath("/boodschappen");
-  redirectToHome("meal-wish-planned", dayKey);
+  redirectAfterMealChosen("meal-wish-planned", dayKey, weekStart);
 }

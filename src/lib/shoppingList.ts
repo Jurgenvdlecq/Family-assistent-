@@ -327,6 +327,29 @@ async function buildShoppingListLines(mealPlanId: string, householdId: string) {
  * er nog niets is overgedragen kan de lijst gewoon weg en wordt hij bij het
  * volgende bezoek lui opnieuw opgebouwd — dat is het normale, goedkope geval.
  */
+/**
+ * Invalideert de boodschappenlijst die door een wijziging in dít weekplan
+ * geraakt wordt.
+ *
+ * Sinds de dagkeuze mag de lijst van de huidige week ook maaltijden uit de
+ * volgende week bevatten (`getGroceryMealEntries`). Daardoor is de oude
+ * aanname "invalideer de lijst van het plan dat je wijzigt" niet meer
+ * geldig: een gerecht wisselen op een avond in de volgende week raakt een
+ * plan dat zelf helemaal geen lijst heeft, waarna de lijst van de huidige
+ * week stilzwijgend op het oude gerecht bleef staan. Altijd allebei dus.
+ */
+export async function invalidateShoppingListForPlanChange(householdId: string, changedMealPlanId: string) {
+  const currentWeekPlan = await prisma.mealPlan.findUnique({
+    where: { householdId_weekStart: { householdId, weekStart: getCurrentWeekStart() } },
+    select: { id: true },
+  });
+
+  await invalidateShoppingList(changedMealPlanId);
+  if (currentWeekPlan && currentWeekPlan.id !== changedMealPlanId) {
+    await invalidateShoppingList(currentWeekPlan.id);
+  }
+}
+
 export async function invalidateShoppingList(mealPlanId: string) {
   const existing = await prisma.shoppingList.findUnique({
     where: { mealPlanId },
@@ -418,11 +441,13 @@ export async function invalidateShoppingList(mealPlanId: string) {
  */
 export async function syncShoppingListForInventoryChange(householdId: string, ingredientId: string) {
   const weekStart = getCurrentWeekStart();
+  // Alleen het id: de maaltijden zelf komen hieronder uit
+  // `getGroceryMealEntries`, dat óók de volgende week meeneemt. De oude,
+  // zware include hield een "alleen deze week"-verzameling in scope — precies
+  // het pad waarop de lijstopbouw en deze berekening uit elkaar konden lopen.
   const mealPlan = await prisma.mealPlan.findUnique({
     where: { householdId_weekStart: { householdId, weekStart } },
-    include: {
-      entries: { include: { recipeVariant: { include: { recipe: { include: { ingredients: true } } } } } },
-    },
+    select: { id: true },
   });
   if (!mealPlan) return;
 
