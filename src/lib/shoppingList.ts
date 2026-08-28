@@ -179,6 +179,8 @@ const MEAL_ENTRY_INCLUDE = {
   // zitten de ingrediënten in de gekozen componenten.
   mealTemplate: true,
   components: { include: { option: { include: { group: true, ingredient: true } } } },
+  // Een avond kan verdeeld zijn: verschillende mensen eten iets anders.
+  assignments: { include: { persons: true, items: true } },
 } as const;
 
 /**
@@ -226,14 +228,22 @@ export async function getGroceryMealEntries(mealPlanId: string) {
 }
 
 async function buildShoppingListLines(mealPlanId: string, householdId: string) {
-  const [mealPlan, fixedGroceries, inventory, likelyInStockIngredients, portionScaleForDate, household] = await Promise.all([
-    getGroceryMealEntries(mealPlanId),
-    prisma.fixedGrocery.findMany({ where: { householdId } }),
-    getInventoryMap(householdId),
-    prisma.ingredient.findMany({ where: { likelyInStock: true }, select: { id: true, unit: true } }),
-    getHouseholdPortionScaleForDate(householdId),
-    prisma.household.findUniqueOrThrow({ where: { id: householdId }, select: { deliveryPreference: true } }),
-  ]);
+  const [mealPlan, fixedGroceries, inventory, likelyInStockIngredients, portionScaleForDate, household, fulfillments] =
+    await Promise.all([
+      getGroceryMealEntries(mealPlanId),
+      prisma.fixedGrocery.findMany({ where: { householdId } }),
+      getInventoryMap(householdId),
+      prisma.ingredient.findMany({ where: { likelyInStock: true }, select: { id: true, unit: true } }),
+      getHouseholdPortionScaleForDate(householdId),
+      prisma.household.findUniqueOrThrow({ where: { id: householdId }, select: { deliveryPreference: true } }),
+      prisma.householdIngredientFulfillment.findMany({ where: { householdId } }),
+    ]);
+  // "Biefstuk halen wij zelf": één keer vastgelegd per huishouden, hier
+  // toegepast op elke regel. Alleen PICNIC-regels gaan straks naar het mandje.
+  const fulfillmentByIngredient = new Map(
+    fulfillments.map((entry) => [entry.ingredientId, entry.fulfillment])
+  );
+  const fulfillmentFor = (ingredientId: string) => fulfillmentByIngredient.get(ingredientId) ?? "PICNIC";
   const productChoicePreference = productChoicePreferenceFromDeliveryPreference(household.deliveryPreference);
 
   const totals = aggregateMealNeeds(mealPlan, portionScaleForDate);
@@ -288,6 +298,7 @@ async function buildShoppingListLines(mealPlanId: string, householdId: string) {
         quantity: net.amount,
         unit: net.unit,
         source: "MEAL" as const,
+        fulfillment: fulfillmentFor(t.ingredientId),
         ...matchToLineFields(runMatch(t.ingredientId)),
       };
     })
@@ -302,6 +313,7 @@ async function buildShoppingListLines(mealPlanId: string, householdId: string) {
       quantity: matchedProduct?.packageQuantity ?? 1,
       unit: ing.unit,
       source: "INVENTORY" as const,
+      fulfillment: fulfillmentFor(ing.id),
       // Altijd controleren: de gebruiker gaf alleen een status door
       // ("bijna op"), geen exacte hoeveelheid — ongeacht hoe zeker de
       // productmatch zelf is.
@@ -315,6 +327,7 @@ async function buildShoppingListLines(mealPlanId: string, householdId: string) {
     quantity: fixed.quantity,
     unit: fixed.unit,
     source: "FIXED" as const,
+    fulfillment: fulfillmentFor(fixed.ingredientId),
     ...matchToLineFields(runMatch(fixed.ingredientId)),
   }));
 

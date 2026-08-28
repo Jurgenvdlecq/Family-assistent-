@@ -11,6 +11,7 @@ const NORMAL_SCALE = () => ({
   presentPortions: 1,
   defaultPortions: 1,
   presentPersonNames: [],
+  personPortions: new Map<string, number>(),
 });
 
 // Maandag 7 september 2026 (ISO-week 37, oneven).
@@ -235,6 +236,7 @@ test("findShoppingListShortfalls: de behoefte wordt geschaald op de datum van de
     presentPortions: 1,
     defaultPortions: 1,
     presentPersonNames: [],
+    personPortions: new Map<string, number>(),
   });
 
   const lines = [line({ id: "l1", ingredientId: "kip", quantity: 600, unit: "GRAM" })];

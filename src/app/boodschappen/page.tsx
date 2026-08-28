@@ -12,6 +12,7 @@ import {
   Minus,
   MoreHorizontal,
   Plus,
+  ShoppingBasket,
   X,
 } from "lucide-react";
 import { requireCurrentHousehold } from "@/lib/auth";
@@ -759,16 +760,21 @@ export default async function BoodschappenPage({
   const activeFixedLines = sortedLines.filter((l) => l.source === "FIXED");
   const fixedReplacementLine = activeFixedLines.find((line) => line.id === fixedReplaceLineId);
   const reviewCount = sortedLines.filter((l) => l.needsReview).length;
+  // Regels die je ergens anders haalt of zelf regelt gaan niet naar Picnic.
+  // Ze staan wél gewoon op de lijst, met een eigen blok eronder — anders zou
+  // de app doen alsof ze besteld worden terwijl dat nooit gebeurt.
+  const picnicLines = sortedLines.filter((line) => line.fulfillment === "PICNIC");
+  const selfProvidedLines = sortedLines.filter((line) => line.fulfillment !== "PICNIC");
   const picnicTransfer = {
-    text: preparePicnicTransferText(sortedLines),
-    itemCount: sortedLines.length,
+    text: preparePicnicTransferText(picnicLines),
+    itemCount: picnicLines.length,
     status: shoppingList.status,
   };
   const hasTransferredLines = sortedLines.some((line) => line.transferredToPicnicAt !== null);
-  const fixedPendingCount = sortedLines.filter(
+  const fixedPendingCount = picnicLines.filter(
     (line) => line.source === "FIXED" && line.transferredToPicnicAt === null
   ).length;
-  const manualPendingCount = sortedLines.filter(
+  const manualPendingCount = picnicLines.filter(
     (line) => line.source === "MANUAL" && line.transferredToPicnicAt === null
   ).length;
   const checklistLines: ChecklistLine[] = sortedLines.map((line) => ({
@@ -1469,6 +1475,28 @@ export default async function BoodschappenPage({
           fixedCount={fixedPendingCount}
           manualCount={manualPendingCount}
         />
+
+        {selfProvidedLines.length > 0 && (
+          <div className="mb-4 min-w-0 rounded-xl border border-line bg-surface p-3 text-xs">
+            <p className="flex items-center gap-2 text-sm font-semibold text-ink">
+              <ShoppingBasket size={15} className="text-ink-muted" />
+              Zelf halen ({selfProvidedLines.length})
+            </p>
+            <p className="mt-1 text-ink-muted">
+              Deze horen wel bij je maaltijden, maar gaan niet mee naar Picnic.
+            </p>
+            <ul className="mt-2 flex flex-col gap-1">
+              {selfProvidedLines.map((line) => (
+                <li key={line.id} className="flex items-baseline justify-between gap-2">
+                  <span className="text-ink">{line.product?.name ?? line.ingredient.name}</span>
+                  <span className="shrink-0 text-[11px] text-ink-faint">
+                    {line.fulfillment === "SELF_PROVIDED" ? "regel je zelf" : "andere winkel"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div id="jullie-boodschappenlijst" className="mb-3 scroll-mt-6 flex items-baseline justify-between gap-3">
           <h2 className="text-sm font-semibold text-ink">Jullie boodschappenlijst</h2>

@@ -32,10 +32,34 @@ export interface MealEntryComponentLike {
   };
 }
 
+/**
+ * Eén deel van een avond waarop niet iedereen hetzelfde eet.
+ * `fulfillment` bepaalt of er boodschappen uit voortkomen: een deel dat
+ * iemand zelf regelt levert niets op, maar sluit de avond niet uit.
+ */
+export interface MealAssignmentLike {
+  label: string;
+  fulfillment: string;
+  sortOrder: number;
+  persons: { personId: string }[];
+  items: { ingredientId: string; quantityPerPortion: number; unit: Unit }[];
+}
+
 export interface MealEntryLike {
   recipeVariant: { recipe: { title: string; ingredients: MealEntryIngredient[] } } | null;
   mealTemplate: { name: string } | null;
   components: MealEntryComponentLike[];
+  /** Leeg in het normale geval: iedereen eet dan hetzelfde. */
+  assignments?: MealAssignmentLike[];
+}
+
+/** Hoeveel porties er van een deel nodig zijn: alleen de aanwezige personen tellen. */
+function assignmentPortions(
+  assignment: MealAssignmentLike,
+  personPortions: Map<string, number> | undefined
+): number {
+  if (!personPortions) return assignment.persons.length;
+  return assignment.persons.reduce((sum, person) => sum + (personPortions.get(person.personId) ?? 0), 0);
 }
 
 /** Componenten in de volgorde waarin ze in de naam terechtkomen. */
@@ -55,6 +79,15 @@ function sortedComponents(entry: MealEntryLike) {
  * gerecht.
  */
 export function mealEntryTitle(entry: MealEntryLike): string {
+  const assignments = entry.assignments ?? [];
+  if (assignments.length > 0) {
+    // Een verdeelde avond heeft geen één naam; hem toch verzinnen zou
+    // verbergen dat er twee dingen op tafel staan.
+    return [...assignments]
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label))
+      .map((assignment) => assignment.label)
+      .join(" · ");
+  }
   if (entry.recipeVariant) return entry.recipeVariant.recipe.title;
 
   const components = sortedComponents(entry);
@@ -92,7 +125,16 @@ export function isCompositeMealEntry(entry: MealEntryLike): boolean {
  */
 export function mealEntryNeeds(
   entry: MealEntryLike,
-  portions: { scale: number; presentPortions: number }
+  portions: {
+    scale: number;
+    presentPortions: number;
+    /**
+     * Porties per aanwezige persoon. Alleen nodig voor een verdeelde avond:
+     * daar hangt de hoeveelheid af van wie er bij welk deel hoort. Ontbreekt
+     * hij, dan telt elk toegewezen persoon voor één portie.
+     */
+    personPortions?: Map<string, number>;
+  }
 ): MealEntryIngredient[] {
   const totals = new Map<string, MealEntryIngredient>();
 
@@ -102,6 +144,22 @@ export function mealEntryNeeds(
     if (current) current.quantity += quantity;
     else totals.set(key, { ingredientId, quantity, unit });
   };
+
+  const assignments = entry.assignments ?? [];
+  if (assignments.length > 0) {
+    for (const assignment of assignments) {
+      // "Zelf regelen" levert geen boodschappen op — maar laat de rest van de
+      // avond wél gewoon staan. Dat is precies waarom een verdeelde avond
+      // bestaat.
+      if (assignment.fulfillment === "SELF_PROVIDED") continue;
+      const assignmentPortionCount = assignmentPortions(assignment, portions.personPortions);
+      if (assignmentPortionCount <= 0) continue;
+      for (const item of assignment.items) {
+        add(item.ingredientId, item.quantityPerPortion * assignmentPortionCount, item.unit);
+      }
+    }
+    return [...totals.values()];
+  }
 
   if (entry.recipeVariant) {
     for (const ingredient of entry.recipeVariant.recipe.ingredients) {

@@ -31,6 +31,12 @@ export type DayPortionScale = {
   presentPortions: number;
   defaultPortions: number;
   presentPersonNames: string[];
+  /**
+   * Porties per aanwezige persoon. Nodig voor een avond waarop niet iedereen
+   * hetzelfde eet: dan hangt de hoeveelheid af van wíé er bij welk deel hoort,
+   * niet van het totaal.
+   */
+  personPortions: Map<string, number>;
 };
 
 function safePortionMultiplier(value: number): number {
@@ -140,6 +146,9 @@ function portionScaleFor(
     presentPortions,
     defaultPortions: baseline > 0 ? baseline : 1,
     presentPersonNames: presentPersons.map((person) => person.name),
+    personPortions: new Map(
+      presentPersons.map((person) => [person.id, safePortionMultiplier(person.portionMultiplier)])
+    ),
   };
 }
 

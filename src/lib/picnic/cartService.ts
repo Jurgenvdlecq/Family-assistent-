@@ -81,9 +81,13 @@ export async function addShoppingListToPicnicCart(
     };
   }
 
-  const linesToTransfer = options?.onlySources
+  const scopedLines = options?.onlySources
     ? shoppingList.lines.filter((line) => options.onlySources!.includes(line.source))
     : shoppingList.lines;
+  // Regels die je ergens anders haalt of zelf regelt horen niet in het
+  // Picnic-mandje. Ze blijven wel gewoon op de lijst staan — als "zelf halen",
+  // niet als iets wat de app stilzwijgend voor je bestelt.
+  const linesToTransfer = scopedLines.filter((line) => line.fulfillment === "PICNIC");
 
   const correlationId = createCorrelationId();
   const client = new PicnicClient(household.picnicAuthToken);

@@ -132,6 +132,7 @@ async function ensureMealPlanInner(
     { hardRestrictionsByDay, participantsByDay },
     dayRoutines,
     mealDayRules,
+    externalFulfillments,
     mealTemplates,
     recentComponentChoices,
     previousWeekEntries,
@@ -181,6 +182,10 @@ async function ensureMealPlanInner(
     getHouseholdHardRestrictionsAndParticipantsForWeek(householdId, weekStart),
     prisma.dayRoutine.findMany({ where: { householdId } }),
     prisma.mealDayRule.findMany({ where: { householdId } }),
+    prisma.householdIngredientFulfillment.findMany({
+      where: { householdId, fulfillment: { not: "PICNIC" } },
+      select: { ingredientId: true },
+    }),
     prisma.mealTemplate.findMany({
       where: { householdId },
       include: {
@@ -368,6 +373,9 @@ async function ensureMealPlanInner(
   const picks = {} as Record<DayKey, Pick>;
 
   const templatesById = new Map(mealTemplates.map((template) => [template.id, template]));
+  // Ingrediënten die dit huishouden niet via Picnic haalt — dat maakt een
+  // gerecht niet onmogelijk, wel iets minder vanzelfsprekend.
+  const externalIngredientIds = new Set(externalFulfillments.map((entry) => entry.ingredientId));
   // Hoe recent een component gekozen is, als volgnummer: 0 = de meest recente
   // week waarin hij voorkwam.
   const weeksDescending = [
@@ -565,6 +573,7 @@ async function ensureMealPlanInner(
       personalIngredientPreferences: personalPreferencesForPresentPersons.byIngredient,
       planningStyle: household.planningStyle,
       dayProfile: profile,
+      externalIngredientIds,
       lastPlannedByRecipeId,
       usedRecipeIds,
       targetDate,
