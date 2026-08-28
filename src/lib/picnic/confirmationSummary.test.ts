@@ -5,6 +5,7 @@ import { buildConfirmationSummary, type ConfirmationLineInput } from "./confirma
 function line(overrides: Partial<ConfirmationLineInput> = {}): ConfirmationLineInput {
   return {
     ingredientName: "Melk",
+    source: "FIXED",
     matchStatus: "MATCHED_TRUSTED",
     transferredToPicnicAt: null,
     product: { name: "Volle melk", price: 1.29, lastSeenAvailable: new Date("2026-07-20") },
@@ -84,4 +85,23 @@ test("buildConfirmationSummary: lege lijst geeft nulwaarden", () => {
   assert.equal(summary.productCount, 0);
   assert.equal(summary.expectedTotalPrice, 0);
   assert.equal(summary.oldestPriceCheck, null);
+});
+
+test("buildConfirmationSummary: splitst de over te dragen producten uit per herkomst", () => {
+  const summary = buildConfirmationSummary([
+    line({ source: "FIXED" }),
+    line({ ingredientName: "Kaas", source: "FIXED" }),
+    line({ ingredientName: "Bananen", source: "MANUAL" }),
+    line({ ingredientName: "Kipfilet", source: "MEAL" }),
+    // Al overgedragen: telt nergens in de uitsplitsing mee, want die gaat
+    // over wat er nú nog naar het mandje gaat.
+    line({ ingredientName: "Rijst", source: "MEAL", transferredToPicnicAt: new Date("2026-07-25") }),
+  ]);
+
+  assert.deepEqual(summary.toTransferBySource, { FIXED: 2, MANUAL: 1, MEAL: 1, INVENTORY: 0 });
+  assert.equal(
+    summary.toTransferBySource.FIXED + summary.toTransferBySource.MANUAL + summary.toTransferBySource.MEAL,
+    summary.toTransferCount,
+    "de uitsplitsing moet optellen tot het getal dat de gebruiker op de knop ziet"
+  );
 });

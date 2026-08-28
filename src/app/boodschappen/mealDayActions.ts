@@ -42,7 +42,9 @@ export async function setMealIncludedInGroceries(formData: FormData) {
     backToPicker("order-day-out-of-range");
   }
 
-  const mealPlan = await ensureMealPlan(household.id, getCurrentWeekStart(date));
+  const currentWeekStart = getCurrentWeekStart();
+  const weekStartForDate = getCurrentWeekStart(date);
+  const mealPlan = await ensureMealPlan(household.id, weekStartForDate);
   if (!mealPlan) {
     backToPicker("order-day-plan-missing");
   }
@@ -57,8 +59,12 @@ export async function setMealIncludedInGroceries(formData: FormData) {
 
   // De bestelling zelf hangt altijd aan het weekplan van déze week, ook als
   // de gewijzigde avond in de volgende week valt — daar wordt de lijst
-  // opnieuw opgebouwd (zie getGroceryMealEntries).
-  const currentWeekPlan = await ensureMealPlan(household.id, getCurrentWeekStart());
+  // opnieuw opgebouwd (zie getGroceryMealEntries). Ging het net al om deze
+  // week, dan hebben we dat plan hierboven al: geen tweede opzoekactie.
+  const currentWeekPlan =
+    weekStartForDate.getTime() === currentWeekStart.getTime()
+      ? mealPlan
+      : await ensureMealPlan(household.id, currentWeekStart);
   if (currentWeekPlan) {
     await invalidateShoppingList(currentWeekPlan.id);
   }

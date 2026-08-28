@@ -75,18 +75,39 @@ function toOrderDay(date: Date, currentWeekStart: Date): OrderDay {
 }
 
 /**
+ * De eerstvolgende datum waarop dit huishouden volgens zijn eigen voorkeur
+ * bezorgd krijgt (vandaag telt mee als het die dag is).
+ *
+ * Bewust gebaseerd op de opgeslagen voorkeur en niet op de live slotenlijst
+ * van Picnic: die opvragen kost een netwerkaanroep, en het dagvenster zou
+ * daar dan bij elke paginalading op moeten wachten. De bezorgkaart toont
+ * nog steeds de echte beschikbaarheid — dit bepaalt alleen wáár de reeks
+ * avonden begint.
+ */
+export function nextDateForWeekday(dayKey: DayKey, now: Date): Date {
+  const today = startOfDay(now);
+  const target = DAY_KEYS.indexOf(dayKey);
+  const current = DAY_KEYS.indexOf(dayKeyForDate(today));
+  const daysAhead = (target - current + 7) % 7;
+  const result = new Date(today);
+  result.setDate(result.getDate() + daysAhead);
+  return result;
+}
+
+/**
  * De avonden waarvoor de gebruiker boodschappen kan meenemen in de
  * eerstvolgende bestelling.
  *
- * Begint bij het eerste bezorgmoment dat Picnic nog aanbiedt, niet bij
- * vandaag: koken op een avond vóór de bezorging kan nu eenmaal niet met
- * boodschappen die dan nog niet geleverd zijn. Is er geen bezorgmoment
- * bekend (geen koppeling, of Picnic onbereikbaar), dan begint het venster
- * gewoon vandaag — beter een bruikbare keuze dan geen keuze.
+ * Begint bij het verwachte bezorgmoment en niet bij vandaag: koken op een
+ * avond vóór de bezorging kan nu eenmaal niet met boodschappen die dan nog
+ * niet geleverd zijn. Is er geen bezorgdag bekend (geen voorkeur ingesteld),
+ * dan begint het venster gewoon vandaag — beter een bruikbare keuze dan geen
+ * keuze.
  */
 export function getOrderDayWindow(input: {
   now: Date;
-  firstDeliveryIsoDate?: string | null;
+  /** Vanaf wanneer kan er bezorgd worden? Ontbreekt die kennis, dan begint het venster vandaag. */
+  firstDeliveryDate?: Date | null;
   windowDays?: number;
 }): OrderDay[] {
   const windowDays = input.windowDays ?? ORDER_DAY_WINDOW_DAYS;
@@ -94,7 +115,7 @@ export function getOrderDayWindow(input: {
   const currentWeekStart = getCurrentWeekStart(input.now);
   const last = lastSelectableDate(input.now);
 
-  const delivery = input.firstDeliveryIsoDate ? parseOrderDate(input.firstDeliveryIsoDate) : null;
+  const delivery = input.firstDeliveryDate ? startOfDay(input.firstDeliveryDate) : null;
   const start = delivery && delivery.getTime() > today.getTime() ? delivery : today;
 
   const days: OrderDay[] = [];

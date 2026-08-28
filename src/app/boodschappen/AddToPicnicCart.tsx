@@ -4,13 +4,86 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { addToPicnicCart, clearPicnicCart, confirmPicnicOrder, getPicnicConfirmationSummary } from "./actions";
 import type { PicnicCartResult } from "@/lib/picnic/cartService";
-import type { ConfirmationSummary } from "@/lib/picnic/confirmationSummary";
+import type { PicnicConfirmationDetails } from "./actions";
 
 type Stage = "idle" | "confirming" | "done";
 type TransferScope = "all" | "fixed";
 
 function formatPrice(amount: number) {
   return `€ ${amount.toFixed(2)}`;
+}
+
+/**
+ * De verse bezorgcontrole op het laatste moment vóór het mandje vullen.
+ *
+ * De pagina haalt de bezorgmomenten al op bij het laden, maar een scherm dat
+ * even openstaat is een momentopname — en dit is het laatste punt waarop de
+ * gebruiker nog kan besluiten te wachten. Blokkeert nooit: het mandje vullen
+ * is iets anders dan een bezorgmoment vastleggen, en dat laatste doet de app
+ * sowieso niet.
+ */
+function DeliveryCheckNote({
+  delivery,
+  summary,
+}: {
+  delivery: NonNullable<PicnicConfirmationDetails["delivery"]>;
+  summary: PicnicConfirmationDetails;
+}) {
+  const amber = "mb-2 rounded-md bg-tag-amber-bg px-2.5 py-2 text-xs text-tag-amber-ink";
+  const green = "mb-2 rounded-md bg-tag-green-bg px-2.5 py-2 text-xs text-tag-green-ink";
+
+  if (delivery.error) {
+    return (
+      <p className={amber}>
+        {delivery.error === "auth"
+          ? "Ik kon de bezorgmomenten net niet controleren — je Picnic-sessie is verlopen."
+          : "Ik kon de bezorgmomenten net niet controleren."}{" "}
+        Je mandje vullen kan gewoon.
+      </p>
+    );
+  }
+
+  if (delivery.days.length === 0) {
+    return (
+      <p className={amber}>
+        Picnic heeft op dit moment geen vrij bezorgmoment. Je mandje vullen kan wel — je kiest je moment straks in de
+        Picnic-app.
+      </p>
+    );
+  }
+
+  // Een oordeel over de minimale bestelwaarde alleen als we het echt weten:
+  // met onbekende prijzen is het totaal een ondergrens, en producten die al in
+  // het mandje liggen tellen wél mee voor Picnic maar niet in dit bedrag.
+  const canJudgeMinimum =
+    delivery.minimumOrderValue !== null && summary.unknownPriceCount === 0 && summary.alreadyTransferredCount === 0;
+
+  return (
+    <>
+      <p className={green}>
+        Net gecheckt bij Picnic:{" "}
+        {delivery.days.map((day) => `${day.label} ${day.windows.join(", ")}`).join(" · ")} {delivery.days.length === 1 ? "is" : "zijn"}{" "}
+        nog vrij.
+      </p>
+      {delivery.minimumOrderValue !== null &&
+        (canJudgeMinimum ? (
+          summary.expectedTotalPrice < delivery.minimumOrderValue ? (
+            <p className={amber}>
+              Je zit met {formatPrice(summary.expectedTotalPrice)} nog onder de minimale bestelwaarde van{" "}
+              {formatPrice(delivery.minimumOrderValue)}.
+            </p>
+          ) : (
+            <p className="mb-2 text-xs text-ink-muted">
+              Boven de minimale bestelwaarde van {formatPrice(delivery.minimumOrderValue)}.
+            </p>
+          )
+        ) : (
+          <p className="mb-2 text-xs text-ink-muted">
+            Minimale bestelwaarde bij Picnic: {formatPrice(delivery.minimumOrderValue)}.
+          </p>
+        ))}
+    </>
+  );
 }
 
 export default function AddToPicnicCart({
@@ -33,7 +106,7 @@ export default function AddToPicnicCart({
   const quickOrderCount = fixedCount + manualCount;
   const [stage, setStage] = useState<Stage>("idle");
   const [scope, setScope] = useState<TransferScope>("all");
-  const [summary, setSummary] = useState<ConfirmationSummary | null>(null);
+  const [summary, setSummary] = useState<PicnicConfirmationDetails | null>(null);
   const [result, setResult] = useState<PicnicCartResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -211,12 +284,32 @@ export default function AddToPicnicCart({
               {summary.alreadyTransferredCount} product(en) staan al in het mandje en worden overgeslagen.
             </p>
           )}
+          {/* Geen enkel getal zonder herkomst: de gebruiker moet kunnen zien
+              waaruit die "N producten" bestaat. */}
+          <ul className="mb-2 flex flex-col gap-0.5 text-xs text-ink-muted">
+            {(
+              [
+                ["FIXED", "Vaste boodschappen"],
+                ["MANUAL", "Zelf toegevoegd"],
+                ["MEAL", "Voor het avondeten"],
+                ["INVENTORY", "Voorraad aanvullen"],
+              ] as const
+            )
+              .filter(([source]) => summary.toTransferBySource[source] > 0)
+              .map(([source, label]) => (
+                <li key={source} className="flex justify-between gap-3">
+                  <span>{label}</span>
+                  <span className="font-medium tabular-nums text-ink">{summary.toTransferBySource[source]}</span>
+                </li>
+              ))}
+          </ul>
           <p className="mb-1 text-xs text-ink-muted">
             Verwachte totaalprijs: {summary.unknownPriceCount > 0 ? "minstens " : ""}
             {formatPrice(summary.expectedTotalPrice)}
             {summary.unknownPriceCount > 0 &&
               ` (${summary.unknownPriceCount} product(en) zonder bekende prijs)`}
           </p>
+          {summary.delivery && <DeliveryCheckNote delivery={summary.delivery} summary={summary} />}
           {summary.oldestPriceCheck && (
             <p className="mb-2 text-xs text-ink-faint">
               Prijzen laatst gecontroleerd op {summary.oldestPriceCheck.toLocaleDateString("nl-NL")}.
