@@ -38,7 +38,11 @@ function mealPlanWithNeed(
       // Deze fixture beschrijft avonden die de gebruiker heeft aangevinkt;
       // niet-aangevinkte avonden zijn een expliciet testgeval hieronder.
       includedInGroceries: e.includedInGroceries ?? true,
-      recipeVariant: { recipe: { ingredients: [{ ingredientId: e.ingredientId, quantity: e.quantity, unit: e.unit }] } },
+      recipeVariant: {
+        recipe: { title: "Testgerecht", ingredients: [{ ingredientId: e.ingredientId, quantity: e.quantity, unit: e.unit }] },
+      },
+      mealTemplate: null,
+      components: [],
     })),
   };
 }
@@ -205,14 +209,22 @@ test("findShoppingListShortfalls: de behoefte wordt geschaald op de datum van de
         date: thisTuesday,
         skipped: false,
         includedInGroceries: true,
-        recipeVariant: { recipe: { ingredients: [{ ingredientId: "kip", quantity: 400, unit: "GRAM" as const }] } },
+        recipeVariant: {
+          recipe: { title: "Testgerecht", ingredients: [{ ingredientId: "kip", quantity: 400, unit: "GRAM" as const }] },
+        },
+        mealTemplate: null,
+        components: [],
       },
       {
         dayOfWeek: "TUESDAY" as const,
         date: nextTuesday,
         skipped: false,
         includedInGroceries: true,
-        recipeVariant: { recipe: { ingredients: [{ ingredientId: "kip", quantity: 400, unit: "GRAM" as const }] } },
+        recipeVariant: {
+          recipe: { title: "Testgerecht", ingredients: [{ ingredientId: "kip", quantity: 400, unit: "GRAM" as const }] },
+        },
+        mealTemplate: null,
+        components: [],
       },
     ],
   };

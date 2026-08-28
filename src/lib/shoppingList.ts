@@ -15,6 +15,7 @@ import { calculatePackageRequirement, type PackageRequirementResult } from "./qu
 import type { DayOfWeek } from "@/generated/prisma/enums";
 import { Prisma } from "@/generated/prisma/client";
 import { logEvent, createCorrelationId } from "./logger";
+import { mealEntryNeeds, type MealEntryLike } from "@/domain/meal-planning/mealEntry";
 
 type InventoryLookup = Awaited<ReturnType<typeof getInventoryMap>>;
 
@@ -22,29 +23,26 @@ type InventoryLookup = Awaited<ReturnType<typeof getInventoryMap>>;
 // type van getMealPlanForWeek: dit is alles wat de behoefteberekening nodig
 // heeft, en maakt hem in tests met eenvoudige literals te vullen.
 interface MealPlanWithEntries {
-  entries: Array<{
-    dayOfWeek: DayOfWeek;
-    /**
-     * De concrete datum van deze avond. Nodig omdat de behoefte geschaald
-     * wordt op wie er dán mee-eet: een lijst kan avonden uit twee weken
-     * bevatten, en die twee weken hebben altijd een verschillende
-     * oneven/even-pariteit.
-     */
-    date: Date;
-    /** Huishouden eet deze dag niet thuis — telt niet mee in de behoefte. */
-    skipped: boolean;
-    /**
-     * Neemt de gebruiker deze avond mee in de eerstvolgende bestelling? Los
-     * van `skipped`: je kunt thuis koken van wat er al ligt. Beide moeten
-     * kloppen voordat een avond boodschappen oplevert.
-     */
-    includedInGroceries: boolean;
-    recipeVariant: {
-      recipe: {
-        ingredients: Array<{ ingredientId: string; quantity: number; unit: Unit }>;
-      };
-    };
-  }>;
+  entries: Array<
+    MealEntryLike & {
+      dayOfWeek: DayOfWeek;
+      /**
+       * De concrete datum van deze avond. Nodig omdat de behoefte geschaald
+       * wordt op wie er dán mee-eet: een lijst kan avonden uit twee weken
+       * bevatten, en die twee weken hebben altijd een verschillende
+       * oneven/even-pariteit.
+       */
+      date: Date;
+      /** Huishouden eet deze dag niet thuis — telt niet mee in de behoefte. */
+      skipped: boolean;
+      /**
+       * Neemt de gebruiker deze avond mee in de eerstvolgende bestelling? Los
+       * van `skipped`: je kunt thuis koken van wat er al ligt. Beide moeten
+       * kloppen voordat een avond boodschappen oplevert.
+       */
+      includedInGroceries: boolean;
+    }
+  >;
 }
 
 /**
@@ -64,15 +62,16 @@ function aggregateMealNeeds(
     // niet thuis (`skipped`), of de gebruiker heeft deze avond niet
     // aangevinkt voor de eerstvolgende bestelling (`includedInGroceries`).
     if (entry.skipped || !entry.includedInGroceries) continue;
-    const scale = portionScaleForDate(entry.date).scale;
-    for (const ri of entry.recipeVariant.recipe.ingredients) {
-      const key = `${ri.ingredientId}:${ri.unit}`;
-      const scaledQuantity = ri.quantity * scale;
+    // Recept of samenstelling: `mealEntryNeeds` is de enige plek die dat
+    // onderscheid kent, inclusief het verschil tussen "hoeveelheid voor het
+    // hele gezin" en "hoeveelheid per persoon".
+    for (const need of mealEntryNeeds(entry, portionScaleForDate(entry.date))) {
+      const key = `${need.ingredientId}:${need.unit}`;
       const current = totals.get(key);
       if (current) {
-        current.quantity += scaledQuantity;
+        current.quantity += need.quantity;
       } else {
-        totals.set(key, { ingredientId: ri.ingredientId, quantity: scaledQuantity, unit: ri.unit });
+        totals.set(key, { ...need });
       }
     }
   }
@@ -176,6 +175,10 @@ const MEAL_ENTRY_INCLUDE = {
       recipe: { include: { ingredients: { include: { ingredient: true } } } },
     },
   },
+  // Een avond kan ook een samenstelling zijn in plaats van een recept; dan
+  // zitten de ingrediënten in de gekozen componenten.
+  mealTemplate: true,
+  components: { include: { option: { include: { group: true, ingredient: true } } } },
 } as const;
 
 /**
@@ -544,13 +547,11 @@ export async function syncShoppingListForInventoryChange(householdId: string, in
   let rawNeed: BaseQuantity | null = null;
   for (const entry of groceryEntries) {
     if (entry.skipped || !entry.includedInGroceries) continue;
-    const scale = portionScaleForDate(entry.date).scale;
-    for (const ri of entry.recipeVariant.recipe.ingredients) {
-      if (ri.ingredientId !== ingredientId) continue;
-      const scaledQuantity = ri.quantity * scale;
+    for (const need of mealEntryNeeds(entry, portionScaleForDate(entry.date))) {
+      if (need.ingredientId !== ingredientId) continue;
       rawNeed = rawNeed
-        ? { amount: rawNeed.amount + scaledQuantity, unit: rawNeed.unit }
-        : { amount: scaledQuantity, unit: ri.unit };
+        ? { amount: rawNeed.amount + need.quantity, unit: rawNeed.unit }
+        : { amount: need.quantity, unit: need.unit };
     }
   }
 

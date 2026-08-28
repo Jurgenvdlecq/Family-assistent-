@@ -15,6 +15,7 @@ import {
 import { dayRecipePreferenceOwnerId } from "@/domain/meal-planning/dayRecipePreferences";
 import { dayProfile } from "@/domain/meal-planning/dayProfiles";
 import { resolveMealDayRule } from "@/domain/meal-planning/mealDayRules";
+import { chooseComponents, describeComponentChoice } from "@/domain/meal-planning/mealComposition";
 import { entriesForSilentAcceptance } from "@/domain/meal-planning/silentAcceptance";
 import { recordRepeatedMealAcceptance } from "@/domain/learning/patterns";
 import type { ConfidenceLevel } from "@/generated/prisma/enums";
@@ -47,6 +48,10 @@ const MEAL_PLAN_INCLUDE = {
           },
         },
       },
+      // Een avond kan ook een samenstelling zijn; dan zit de maaltijd in de
+      // gekozen componenten in plaats van in een recept.
+      mealTemplate: true,
+      components: { include: { option: { include: { group: true, ingredient: true } } } },
     },
   },
 } as const;
@@ -127,6 +132,8 @@ async function ensureMealPlanInner(
     { hardRestrictionsByDay, participantsByDay },
     dayRoutines,
     mealDayRules,
+    mealTemplates,
+    recentComponentChoices,
     previousWeekEntries,
     confirmedAcceptancePatterns,
   ] = await Promise.all([
@@ -174,12 +181,28 @@ async function ensureMealPlanInner(
     getHouseholdHardRestrictionsAndParticipantsForWeek(householdId, weekStart),
     prisma.dayRoutine.findMany({ where: { householdId } }),
     prisma.mealDayRule.findMany({ where: { householdId } }),
+    prisma.mealTemplate.findMany({
+      where: { householdId },
+      include: {
+        groups: {
+          include: { options: { include: { ingredient: true } } },
+          orderBy: { sortOrder: "asc" },
+        },
+      },
+    }),
+    // Welke componenten er de afgelopen weken gekozen zijn — de basis voor
+    // afwisseling ("vorige week broccoli, dus nu sperziebonen").
+    prisma.mealPlanEntryComponent.findMany({
+      where: { mealPlanEntry: { mealPlan: { householdId, weekStart: { lt: weekStart, gte: recentPlanningStart } } } },
+      select: { mealComponentOptionId: true, mealPlanEntry: { select: { mealPlan: { select: { weekStart: true } } } } },
+    }),
     // De maaltijden van vorige week — nodig voor een dagprofiel dat "dit
     // varieert niet vanzelf" zegt zonder dat er een exact gerecht aan hangt.
     prisma.mealPlanEntry.findMany({
       where: { mealPlan: { householdId, weekStart: previousWeekStart } },
       select: { dayOfWeek: true, recipeVariantId: true },
     }),
+
     prisma.learnedPattern.findMany({
       where: {
         householdId,
@@ -336,8 +359,29 @@ async function ensureMealPlanInner(
 
   const usedRecipeIds = new Set<string>();
   type VariantWithRecipe = (typeof allVariants)[number];
-  type Pick = { variant: VariantWithRecipe; reason: string; confidence: ConfidenceLevel; score?: number };
+  // Een avond is óf een recept, óf een samenstelling uit componenten. Bewust
+  // een unie en geen "variant mag null zijn": zo kan er geen halve avond
+  // ontstaan die geen van beide is.
+  type Pick =
+    | { kind: "recipe"; variant: VariantWithRecipe; reason: string; confidence: ConfidenceLevel; score?: number }
+    | { kind: "composite"; templateId: string; optionIds: string[]; reason: string; confidence: ConfidenceLevel };
   const picks = {} as Record<DayKey, Pick>;
+
+  const templatesById = new Map(mealTemplates.map((template) => [template.id, template]));
+  // Hoe recent een component gekozen is, als volgnummer: 0 = de meest recente
+  // week waarin hij voorkwam.
+  const weeksDescending = [
+    ...new Set(recentComponentChoices.map((choice) => choice.mealPlanEntry.mealPlan.weekStart.getTime())),
+  ].sort((a, b) => b - a);
+  const recencyByOptionId = new Map<string, number>();
+  for (const choice of recentComponentChoices) {
+    const rank = weeksDescending.indexOf(choice.mealPlanEntry.mealPlan.weekStart.getTime());
+    const known = recencyByOptionId.get(choice.mealComponentOptionId);
+    if (known === undefined || rank < known) recencyByOptionId.set(choice.mealComponentOptionId, rank);
+  }
+  // Binnen déze week mag dezelfde optie niet twee keer terugkomen — dat is de
+  // eis "dinsdag en vrijdag niet dezelfde combinatie".
+  const usedOptionIdsThisWeek = new Set<string>();
 
   for (const dayKey of DAY_KEYS) {
     const busy = rhythm[dayKey] === "busy";
@@ -370,11 +414,59 @@ async function ensureMealPlanInner(
     if (fixedVariant) {
       usedRecipeIds.add(fixedVariant.recipeId);
       picks[dayKey] = {
+        kind: "recipe",
         variant: fixedVariant,
         reason: `Dit staat vast op ${DAY_LABELS[dayKey].toLowerCase()}.`,
         confidence: "CERTAIN",
       };
       continue;
+    }
+
+    // Zegt de dagregel "stel deze avond samen" (zoals een AVG-avond), dan
+    // kiest de planner per component een optie in plaats van één recept.
+    //
+    // Componenten gaan langs dezelfde harde-beperkingenfilter als recepten:
+    // een allergie is een allergie, ook als het onderdeel maar één van de drie
+    // is. Blijft er van een component niets veilig over, dan wordt die
+    // component overgeslagen; blijft er van de hele maaltijd niets over, dan
+    // valt de dag terug op een gewoon recept — een halve maaltijd tonen zou
+    // beloven wat er niet is.
+    const template = rule?.mealTemplateId ? templatesById.get(rule.mealTemplateId) : undefined;
+    if (template) {
+      const safeGroups = template.groups
+        .map((group) => ({
+          id: group.id,
+          role: group.role as string,
+          name: group.name,
+          sortOrder: group.sortOrder,
+          options: group.options
+            .filter(
+              (option) =>
+                !recipeConflictsWithRestrictions(
+                  [{ category: option.ingredient.category, restrictionTags: option.ingredient.restrictionTags }],
+                  hardRestrictionsByDay[dayKey] ?? []
+                )
+            )
+            .map((option) => ({ id: option.id, name: option.name, ingredientId: option.ingredientId })),
+        }))
+        .filter((group) => group.options.length > 0);
+
+      if (safeGroups.length > 0) {
+        const choices = chooseComponents({
+          groups: safeGroups,
+          usedThisWeek: usedOptionIdsThisWeek,
+          recencyByOptionId,
+        });
+        for (const choice of choices) usedOptionIdsThisWeek.add(choice.option.id);
+        picks[dayKey] = {
+          kind: "composite",
+          templateId: template.id,
+          optionIds: choices.map((choice) => choice.option.id),
+          reason: describeComponentChoice(template.name, choices),
+          confidence: "CERTAIN",
+        };
+        continue;
+      }
     }
 
     // Een expliciet onthouden daggewoonte (WP51) wint van de gewone scoring,
@@ -386,6 +478,7 @@ async function ensureMealPlanInner(
     if (routineVariant) {
       usedRecipeIds.add(routineVariant.recipeId);
       picks[dayKey] = {
+        kind: "recipe",
         variant: routineVariant,
         reason: `Dit is jullie vaste gewoonte op ${DAY_LABELS[dayKey].toLowerCase()}.`,
         confidence: "CERTAIN",
@@ -407,6 +500,7 @@ async function ensureMealPlanInner(
       if (previousVariant) {
         usedRecipeIds.add(previousVariant.recipeId);
         picks[dayKey] = {
+          kind: "recipe",
           variant: previousVariant,
           reason: `${DAY_LABELS[dayKey]} houden jullie hetzelfde.`,
           confidence: "CERTAIN",
@@ -479,6 +573,7 @@ async function ensureMealPlanInner(
     usedRecipeIds.add(chosen.recipeId);
 
     picks[dayKey] = {
+      kind: "recipe",
       variant: chosen,
       reason: formatMealPlanReason(scored),
       confidence: confidence === "SLIGHT_DOUBT" ? confidence : scored.confidence,
@@ -493,15 +588,23 @@ async function ensureMealPlanInner(
         weekStart,
         status: "CONFIRMED",
         entries: {
-          create: DAY_KEYS.map((dayKey) => ({
-            dayOfWeek: DAY_ENUM[dayKey],
-            recipeVariantId: picks[dayKey].variant.id,
-            source: entrySource,
-            status: "PROPOSED",
-            reason: picks[dayKey].reason,
-            score: picks[dayKey].score ?? null,
-            confidenceLevel: picks[dayKey].confidence,
-          })),
+          create: DAY_KEYS.map((dayKey) => {
+            const pick = picks[dayKey];
+            return {
+              dayOfWeek: DAY_ENUM[dayKey],
+              recipeVariantId: pick.kind === "recipe" ? pick.variant.id : null,
+              mealTemplateId: pick.kind === "composite" ? pick.templateId : null,
+              components:
+                pick.kind === "composite"
+                  ? { create: pick.optionIds.map((optionId) => ({ mealComponentOptionId: optionId })) }
+                  : undefined,
+              source: entrySource,
+              status: "PROPOSED" as const,
+              reason: pick.reason,
+              score: pick.kind === "recipe" ? pick.score ?? null : null,
+              confidenceLevel: pick.confidence,
+            };
+          }),
         },
       },
     });
@@ -525,21 +628,29 @@ async function ensureMealPlanInner(
     throw error;
   }
 
+  // Suggesties en feedback gaan over een receptvariant. Een samengestelde
+  // avond heeft die niet — daar wordt in werkpakket F apart van geleerd (de
+  // componentkeuzes staan al vast in `MealPlanEntryComponent`). Er hier een
+  // nepvariant voor verzinnen zou de geschiedenis vervuilen.
+  const recipeDays = DAY_KEYS.map((dayKey) => ({ dayKey, pick: picks[dayKey] })).filter(
+    (day): day is { dayKey: DayKey; pick: Extract<Pick, { kind: "recipe" }> } => day.pick.kind === "recipe"
+  );
+
   await prisma.mealSuggestion.createMany({
-    data: DAY_KEYS.map((dayKey) => ({
+    data: recipeDays.map(({ dayKey, pick }) => ({
       householdId,
-      recipeVariantId: picks[dayKey].variant.id,
-      reason: picks[dayKey].reason,
-      confidenceLevel: picks[dayKey].confidence,
+      recipeVariantId: pick.variant.id,
+      reason: pick.reason,
+      confidenceLevel: pick.confidence,
       targetSlot: dateForDay(weekStart, dayKey),
     })),
   });
 
-  for (const dayKey of DAY_KEYS) {
+  for (const { dayKey, pick } of recipeDays) {
     await logFeedbackEvent({
       householdId,
       subjectType: "RECIPE_VARIANT",
-      subjectId: picks[dayKey].variant.id,
+      subjectId: pick.variant.id,
       eventType: "CHOSEN",
       explicit: false,
       context: {
@@ -548,8 +659,8 @@ async function ensureMealPlanInner(
         source: "auto_generated",
       },
     });
-    await recalculateVariantConfidence(householdId, picks[dayKey].variant.id);
-    await maybePromoteRecipeStatus(picks[dayKey].variant.id, householdId);
+    await recalculateVariantConfidence(householdId, pick.variant.id);
+    await maybePromoteRecipeStatus(pick.variant.id, householdId);
   }
 
   logEvent({
@@ -594,12 +705,14 @@ export async function acceptProposedMealPlanEntries(householdId: string, mealPla
         data: { status: "ACCEPTED" },
       })
     ),
-    ...acceptedEntries.map((entry) =>
+    ...acceptedEntries
+      .filter((entry) => entry.recipeVariantId !== null)
+      .map((entry) =>
       prisma.feedbackEvent.create({
         data: {
           householdId,
           subjectType: "RECIPE_VARIANT",
-          subjectId: entry.recipeVariantId,
+          subjectId: entry.recipeVariantId!,
           eventType: "CHOSEN",
           explicit: false,
           context: {
@@ -612,17 +725,25 @@ export async function acceptProposedMealPlanEntries(householdId: string, mealPla
     ),
   ]);
 
-  for (const recipeVariantId of new Set(acceptedEntries.map((entry) => entry.recipeVariantId))) {
+  // Alleen receptavonden leveren iets op om van te leren: een samengestelde
+  // maaltijd heeft geen variant waar vertrouwen aan hangt. De status van zo'n
+  // avond wordt hierboven wél netjes op ACCEPTED gezet, zodat de weekplanning
+  // niet half PROPOSED blijft staan.
+  const acceptedRecipeEntries = acceptedEntries.filter(
+    (entry): entry is (typeof acceptedEntries)[number] & { recipeVariantId: string } =>
+      entry.recipeVariantId !== null && entry.recipeVariant !== null
+  );
+  for (const recipeVariantId of new Set(acceptedRecipeEntries.map((entry) => entry.recipeVariantId))) {
     await recalculateVariantConfidence(householdId, recipeVariantId);
     await maybePromoteRecipeStatus(recipeVariantId, householdId);
   }
-  for (const entry of acceptedEntries) {
+  for (const entry of acceptedRecipeEntries) {
     await recordRepeatedMealAcceptance({
       householdId,
       dayOfWeek: entry.dayOfWeek,
       acceptedRecipeVariantId: entry.recipeVariantId,
-      acceptedRecipeCategory: entry.recipeVariant.recipe.category,
-      acceptedRecipeTitle: entry.recipeVariant.recipe.title,
+      acceptedRecipeCategory: entry.recipeVariant!.recipe.category,
+      acceptedRecipeTitle: entry.recipeVariant!.recipe.title,
     });
   }
 

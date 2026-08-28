@@ -35,6 +35,7 @@ import {
 import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
 import { getPendingLearningPrompts } from "@/domain/learning/patterns";
+import { mealEntryTitle } from "@/domain/meal-planning/mealEntry";
 import {
   answerSmartLearningPrompt,
   dismissSmartLearningPrompt,
@@ -196,16 +197,23 @@ export default async function Home({
   const routineByDay = new Map(
     dayRoutines.map((routine) => [routine.dayOfWeek, routine]),
   );
-  const mealVariantIds = mealPlan.entries.map((entry) => entry.recipeVariantId);
+  // Een avond kan een samengestelde maaltijd zijn en dan is er geen
+  // receptvariant. Alles wat over een récept gaat (voorkeuren, feedback,
+  // categorie) slaat zo'n avond dus over.
+  const mealVariantIds = mealPlan.entries
+    .map((entry) => entry.recipeVariantId)
+    .filter((id): id is string => id !== null);
   const mealCategoryIds = [
     ...new Set(
-      mealPlan.entries.map((entry) => entry.recipeVariant.recipe.category),
+      mealPlan.entries
+        .map((entry) => entry.recipeVariant?.recipe.category)
+        .filter((category): category is NonNullable<typeof category> => category != null),
     ),
   ];
   const mealIngredientIds = [
     ...new Set(
       mealPlan.entries.flatMap((entry) =>
-        entry.recipeVariant.recipe.ingredients.map((ri) => ri.ingredientId),
+        (entry.recipeVariant?.recipe.ingredients ?? []).map((ri) => ri.ingredientId),
       ),
     ),
   ];
@@ -245,7 +253,7 @@ export default async function Home({
     where: {
       householdId: household.id,
       subjectType: "RECIPE_VARIANT",
-      subjectId: { in: mealPlan.entries.map((e) => e.recipeVariantId) },
+      subjectId: { in: mealVariantIds },
       eventType: "EXPLICIT_FEEDBACK",
     },
     select: { subjectId: true },
@@ -397,7 +405,12 @@ export default async function Home({
       <div className="flex min-w-0 flex-col divide-y divide-line border-y border-line bg-surface">
         {DAY_KEYS.map((dayKey) => {
           const entry = entryByDay.get(DAY_ENUM[dayKey]);
-          const recipe = entry?.recipeVariant.recipe;
+          // `null` bij een samengestelde maaltijd: die heeft componenten in
+          // plaats van een recept.
+          const variant = entry?.recipeVariant ?? null;
+          const recipe = variant?.recipe;
+          const mealTitle = entry ? mealEntryTitle(entry) : null;
+          const componentNames = (entry?.components ?? []).map((component) => component.option.name);
           const dedupedIngredients =
             recipe?.ingredients.filter(
               (ri, index, list) =>
@@ -411,6 +424,7 @@ export default async function Home({
           const routineMatchesEntry = Boolean(
             entry &&
             routine &&
+            entry.recipeVariantId !== null &&
             routine.recipeVariantId === entry.recipeVariantId,
           );
           const participants = participantsByDay[dayKey];
@@ -418,6 +432,7 @@ export default async function Home({
             entry &&
             recipe &&
             (recipe.status === "FOUND" || recipe.status === "ADAPTED") &&
+            entry.recipeVariantId !== null &&
             !alreadyAsked.has(entry.recipeVariantId) &&
             // Pas vragen "hoe was dit?" zodra de dag echt begonnen is — anders
             // vroeg de app dit al bij een verse week over maaltijden die nog
@@ -442,15 +457,16 @@ export default async function Home({
 
                 <div className="min-w-0 flex-1">
                   <p className="line-clamp-2 font-medium text-ink">
-                    {recipe?.title ?? "—"}
+                    {mealTitle ?? "—"}
                   </p>
                   <div className="mt-1 flex flex-wrap gap-1.5">
                     {skipped && <Tag tone="amber">Uit eten</Tag>}
-                    {entry && (
-                      <Tag tone={variantTone(entry.recipeVariant.variantType)}>
-                        {VARIANT_LABELS[entry.recipeVariant.variantType]}
+                    {variant && (
+                      <Tag tone={variantTone(variant.variantType)}>
+                        {VARIANT_LABELS[variant.variantType]}
                       </Tag>
                     )}
+                    {!variant && componentNames.length > 0 && <Tag tone="blue">Zelf samengesteld</Tag>}
                     {recipe && (
                       <Tag tone={statusTone(recipe.status)}>
                         {STATUS_LABELS[recipe.status]}
@@ -546,6 +562,10 @@ export default async function Home({
                           Gewoonlijk: {routine.recipeVariant.recipe.title}
                         </span>
                       )}
+                      {/* Een daggewoonte onthoudt één gerecht. Bij een
+                          samengestelde maaltijd is er niets om te onthouden —
+                          die avond wordt juist elke keer opnieuw samengesteld. */}
+                      {variant && (
                       <form action={setDayRoutine}>
                         <input
                           type="hidden"
@@ -556,7 +576,7 @@ export default async function Home({
                         <input
                           type="hidden"
                           name="recipeVariantId"
-                          value={entry.recipeVariantId}
+                          value={variant.id}
                         />
                         <button
                           type="submit"
@@ -567,6 +587,7 @@ export default async function Home({
                             : `Onthoud voor elke ${DAY_LABELS[dayKey].toLowerCase()}`}
                         </button>
                       </form>
+                      )}
                     </>
                   )}
                 </div>
@@ -644,19 +665,21 @@ export default async function Home({
                                 {person.name}
                               </p>
                               <div className="flex min-w-0 flex-col gap-2">
-                                <div>
-                                  <p className="mb-1 text-[11px] text-ink-faint">
-                                    Dit gerecht
-                                  </p>
-                                  <PreferenceButtons
-                                    householdId={household.id}
-                                    personId={person.id}
-                                    dayKey={dayKey}
-                                    subjectType="RECIPE_VARIANT"
-                                    subjectId={entry.recipeVariantId}
-                                    currentStance={currentStance}
-                                  />
-                                </div>
+                                {variant && (
+                                  <div>
+                                    <p className="mb-1 text-[11px] text-ink-faint">
+                                      Dit gerecht
+                                    </p>
+                                    <PreferenceButtons
+                                      householdId={household.id}
+                                      personId={person.id}
+                                      dayKey={dayKey}
+                                      subjectType="RECIPE_VARIANT"
+                                      subjectId={variant.id}
+                                      currentStance={currentStance}
+                                    />
+                                  </div>
+                                )}
                                 {recipe && (
                                   <div>
                                     <p className="mb-1 text-[11px] text-ink-faint">
@@ -720,7 +743,7 @@ export default async function Home({
                       <input
                         type="hidden"
                         name="recipeVariantId"
-                        value={entry.recipeVariantId}
+                        value={variant?.id ?? ""}
                       />
                       <input type="hidden" name="dayKey" value={dayKey} />
                       <input type="hidden" name="positive" value="true" />
@@ -740,7 +763,7 @@ export default async function Home({
                       <input
                         type="hidden"
                         name="recipeVariantId"
-                        value={entry.recipeVariantId}
+                        value={variant?.id ?? ""}
                       />
                       <input type="hidden" name="dayKey" value={dayKey} />
                       <input type="hidden" name="positive" value="false" />
