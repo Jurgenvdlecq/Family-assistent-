@@ -406,5 +406,13 @@ export async function removeFixedGroceryPermanently(formData: FormData) {
     prisma.fixedGrocery.deleteMany({ where: { householdId, ingredientId } }),
     ...(lineId ? [prisma.shoppingListLine.deleteMany({ where: { id: String(lineId), source: "FIXED" } })] : []),
   ]);
+  // Deze actie is sinds de optiemenu's ook vanaf de boodschappenlijst zelf
+  // aan te roepen ("Nooit meer"). Dan hoort de gebruiker terug te komen bij
+  // die lijst, niet in het beheerblok waar hij niet was. Vaste, gesloten
+  // keuze uit twee bekende bestemmingen — geen pad uit het formulier.
+  if (String(formData.get("returnTo") ?? "") === "list") {
+    revalidatePath("/boodschappen");
+    redirect("/boodschappen?status=fixed-removed-from-list#jullie-boodschappenlijst");
+  }
   redirectToFixedGroceries("fixed-removed");
 }

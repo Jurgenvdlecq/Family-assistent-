@@ -294,15 +294,26 @@ test("clearPicnicCartForShoppingList: zet transferredToPicnicAt terug zodat een 
 
     await addShoppingListToPicnicCart(shoppingList.id);
     let line = await prisma.shoppingListLine.findFirstOrThrow({ where: { shoppingListId: shoppingList.id } });
+    const ingredientId = line.ingredientId;
     assert.ok(line.transferredToPicnicAt);
 
     const clearResult = await clearPicnicCartForShoppingList(shoppingList.id);
     assert.equal(clearResult.ok, true);
-    line = await prisma.shoppingListLine.findFirstOrThrow({ where: { shoppingListId: shoppingList.id } });
+    // Let op: mandje legen bouwt de lijst opnieuw op, dus dit is niet meer
+    // dezelfde rij — daarom op ingrediënt zoeken en niet op regel-id, en
+    // niet op een exact aantal regels rekenen (de herbouw levert alles op
+    // wat het weekmenu nodig heeft, niet alleen de ene fixtureregel).
+    line = await prisma.shoppingListLine.findFirstOrThrow({ where: { shoppingListId: shoppingList.id, ingredientId } });
     assert.equal(line.transferredToPicnicAt, null);
 
-    const second = await addShoppingListToPicnicCart(shoppingList.id);
-    assert.equal(second.added.length, 1, "na het legen van het mandje moet de regel opnieuw worden toegevoegd");
+    await addShoppingListToPicnicCart(shoppingList.id);
+    const reTransferred = await prisma.shoppingListLine.findFirstOrThrow({
+      where: { shoppingListId: shoppingList.id, ingredientId },
+    });
+    assert.ok(
+      reTransferred.transferredToPicnicAt,
+      "na het legen van het mandje moet ditzelfde product opnieuw naar Picnic zijn gegaan"
+    );
   } finally {
     global.fetch = originalFetch;
     if (household) await cleanup(household.id);

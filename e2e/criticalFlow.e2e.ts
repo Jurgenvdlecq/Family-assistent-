@@ -34,6 +34,15 @@ const USERNAME = "e2etest";
 const PASSWORD = "e2etest123";
 const MOCK_SEARCH_TERM = "aardappelen"; // bestaand, gedeeld seed-ingrediënt — voorkomt vervuiling van de ingrediëntencatalogus.
 
+/** Het beheerblok op /boodschappen staat ingeklapt; alles erbinnen is pas
+ *  zichtbaar als het open staat. Idempotent: veilig meerdere keren aan te
+ *  roepen, ook als een eerdere stap 'm al opende. */
+async function openBeheer(target: Page) {
+  await target.locator("#beheer").evaluate((el) => {
+    (el as HTMLDetailsElement).open = true;
+  });
+}
+
 test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
   await cleanupMockProducts();
 
@@ -413,6 +422,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
     );
 
     await t.test("5. Vaste boodschap / extra product toevoegen (via Picnic-zoeken)", async () => {
+      await openBeheer(page);
       await page.locator("#add-fixed-grocery summary").click();
       const searchInput = page.getByPlaceholder("Zoek Picnic-product, bv. appels");
       await searchInput.waitFor({ state: "visible" });
@@ -554,6 +564,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       // Voor een vers huishouden staat de voorraadcheck al standaard open
       // (er is nog niets bevestigd, dus alles vraagt om aandacht) — alleen
       // klikken als hij nog dicht staat, anders klapt de klik hem juist toe.
+      await openBeheer(page);
       const inventorySection = page.locator("#inventory-check");
       const alreadyOpen = await inventorySection.evaluate((el) => (el as HTMLDetailsElement).open);
       if (!alreadyOpen) await inventorySection.locator("summary").first().click();
