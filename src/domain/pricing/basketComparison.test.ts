@@ -19,6 +19,7 @@ function line(overrides: Partial<BasketLineInput> = {}): BasketLineInput {
       gtin: null,
       price: 1.45,
       packageQuantity: 1000,
+      packageUnit: "ML",
     },
     ...overrides,
   };
@@ -35,6 +36,7 @@ function candidate(overrides: Partial<StoreCandidateInput> = {}): StoreCandidate
     gtin: null,
     price: 1.29,
     packageQuantity: 1000,
+    packageUnit: "ML",
     promoLabel: null,
     observedAt: OBSERVED,
     stale: false,
@@ -201,6 +203,63 @@ test("het mandje: zonder eigen prijs telt de regel nergens mee", () => {
   assert.equal(total.linesMissing, 1);
   assert.equal(comparison.lines[0].stores.get("AH")!.missingReason, "onze eigen prijs is onbekend");
   assert.equal(comparison.lines[0].stores.get("AH")!.cost, 3.87, "de prijs zelf blijft wel zichtbaar");
+});
+
+test("het mandje: ook het alternatieve bedrag krijgt een eigen bedrag ernaast", () => {
+  // Zonder dit zou "€ 2,55 als je ook alternatieven meerekent" naast het harde
+  // referentiebedrag komen te staan, dat over minder regels gaat. Dezelfde
+  // scheefheid als hierboven, één alinea lager op het scherm.
+  const comparison = compareBasket(
+    [line()],
+    new Map([
+      [
+        "regel-melk",
+        [candidate({ name: "AH Houdbare halfvolle melk", price: 0.85, productId: "ah-houdbaar" })],
+      ],
+    ]),
+    ["AH"]
+  );
+  const total = comparison.totals.get("AH")!;
+  assert.equal(total.alternativeTotal, 2.55);
+  assert.equal(total.referenceTotalForHardLines, 0, "in het harde bedrag zit deze regel niet");
+  assert.equal(total.referenceTotalForAlternativeLines, 4.35, "in het alternatieve bedrag wel");
+});
+
+test("het mandje: '2x brood' is een aantal, geen hoeveelheid", () => {
+  // Vaste boodschappen in stuks zijn een door de gebruiker gekozen aantal
+  // verpakkingen. Dat als 2 gram lezen zou één verpakking opleveren in plaats
+  // van twee — en dus de helft van het bedrag.
+  const comparison = compareBasket(
+    [
+      line({
+        ingredientName: "Brood",
+        neededQuantity: 2,
+        unit: "PIECE",
+        quantityIsPackageCount: true,
+        reference: { ...line().reference!, packageQuantity: 800, packageUnit: "GRAM", price: 1.2 },
+      }),
+    ],
+    new Map([["regel-melk", [candidate({ packageQuantity: 800, packageUnit: "GRAM", price: 1.1 })]]]),
+    ["AH"]
+  );
+  const result = comparison.lines[0].stores.get("AH")!;
+  assert.equal(result.packagesToBuy, 2);
+  assert.equal(result.cost, 2.2);
+  assert.equal(comparison.referenceTotal, 2.4, "en aan onze kant precies zo geteld");
+});
+
+test("het mandje: een verpakking in een andere eenheid levert geen bedrag op", () => {
+  // "2 stuks" tegen "1000 ml per verpakking" afzetten geeft een getal dat
+  // nergens op slaat. Dan liever niets zeggen.
+  const comparison = compareBasket(
+    [line({ neededQuantity: 2, unit: "PIECE" })],
+    new Map([["regel-melk", [candidate()]]]),
+    ["AH"]
+  );
+  const result = comparison.lines[0].stores.get("AH")!;
+  assert.equal(result.cost, null);
+  assert.equal(result.missingReason, "verpakking in een andere eenheid");
+  assert.equal(comparison.totals.get("AH")!.hardTotal, 0);
 });
 
 test("het mandje: de oudste prijs in het totaal wordt onthouden", () => {

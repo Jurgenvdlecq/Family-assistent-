@@ -7,7 +7,12 @@ import {
   type StoreCandidateInput,
 } from "@/domain/pricing/basketComparison";
 import { deriveQualityTier } from "@/domain/pricing/qualityTier";
-import { getStoreCandidatesForIngredients, type StorePriceForIngredient } from "./storePrices";
+import { isUserChosenPackageCount } from "@/lib/shoppingList";
+import {
+  getStoreCandidatesForIngredients,
+  getStoreProductsByIds,
+  type StorePriceForIngredient,
+} from "./storePrices";
 
 /**
  * De brug tussen de boodschappenlijst en de mandje-simulatie.
@@ -52,8 +57,12 @@ export async function getBasketOverview(
   providers: ProductProvider[] = COMPARISON_PROVIDERS,
   now: Date = new Date()
 ): Promise<BasketOverview> {
-  const shoppingList = await prisma.shoppingList.findUnique({
-    where: { mealPlanId },
+  // Het weekplan wordt hier expliciet aan het huishouden gebonden. Vandaag
+  // komen beide argumenten uit dezelfde sessie, maar zonder deze koppeling
+  // nodigt de signatuur uit om er ooit een mealPlanId uit een queryparameter in
+  // te stoppen — en dan lever je de regels van een ander huishouden.
+  const shoppingList = await prisma.shoppingList.findFirst({
+    where: { mealPlanId, mealPlan: { householdId } },
     include: { lines: { include: { ingredient: true, product: true } } },
   });
 
@@ -69,12 +78,14 @@ export async function getBasketOverview(
   // Regels die je zelf haalt gaan sowieso niet via een winkelbestelling; ze
   // horen dus ook niet in een winkeltotaal thuis. Ze verdwijnen niet uit
   // beeld, ze tellen alleen niet mee — de pagina zegt dat er ook bij.
-  const lines = shoppingList.lines.filter((line) => line.fulfillment === "PICNIC");
+  // Een regel zonder hoeveelheid kost bij elke winkel niets en zou het aantal
+  // vergeleken regels ("voor 12 van de 15 regels") alleen maar opblazen.
+  const lines = shoppingList.lines.filter((line) => line.fulfillment === "PICNIC" && line.quantity > 0);
   if (lines.length === 0) return { ...empty, shoppingListId: shoppingList.id };
 
   const ingredientIds = [...new Set(lines.map((line) => line.ingredientId))];
 
-  const [candidatesByIngredient, choices] = await Promise.all([
+  const [rankedByIngredient, choices] = await Promise.all([
     getStoreCandidatesForIngredients(ingredientIds, providers, 6, now),
     prisma.householdStoreProductChoice.findMany({
       where: { householdId, ingredientId: { in: ingredientIds }, provider: { in: providers } },
@@ -88,6 +99,23 @@ export async function getBasketOverview(
     choicesByIngredient.set(choice.ingredientId, perProvider);
   }
 
+  // De gekozen producten er rechtstreeks bij halen. De rangschikking levert
+  // maar een handvol kandidaten per winkel, en die verzameling verandert
+  // naarmate er prijzen bijkomen — een keuze die daarbuiten valt zou anders
+  // stilzwijgend verdwijnen en de regel als "niet gevonden" tonen.
+  const pinned = await getStoreProductsByIds(choices.map((choice) => choice.productId), now);
+  const pinnedById = new Map(pinned.map((product) => [product.productId, product]));
+
+  const candidatesByIngredient = new Map(rankedByIngredient);
+  for (const choice of choices) {
+    const product = pinnedById.get(choice.productId);
+    if (!product) continue;
+    const existing = candidatesByIngredient.get(choice.ingredientId) ?? [];
+    if (existing.some((candidate) => candidate.productId === product.productId)) continue;
+    // Vooraan: dit is wat het huishouden zelf heeft aangewezen.
+    candidatesByIngredient.set(choice.ingredientId, [product, ...existing]);
+  }
+
   const basketLines: BasketLineInput[] = [];
   const candidatesByLine = new Map<string, StoreCandidateInput[]>();
   const lineMeta = new Map<string, { ingredientId: string; picnicProductName: string | null }>();
@@ -99,6 +127,10 @@ export async function getBasketOverview(
       ingredientName: line.ingredient.name,
       neededQuantity: line.quantity,
       unit: line.unit,
+      // Bij een vaste of handmatige regel in stuks staat er een door de
+      // gebruiker gekozen aantal verpakkingen ("2x brood"), geen hoeveelheid.
+      // Dezelfde uitzondering die de rest van de app al maakt.
+      quantityIsPackageCount: isUserChosenPackageCount(line),
       reference: line.product
         ? {
             name: line.product.name,
@@ -120,6 +152,9 @@ export async function getBasketOverview(
             gtin: line.product.gtin,
             price: line.product.price === null ? null : Number(line.product.price),
             packageQuantity: line.product.packageQuantity,
+            // De verpakkingsinhoud staat in de eenheid van het ingrediënt; de
+            // regel kan er een andere hebben.
+            packageUnit: line.ingredient.unit,
           }
         : null,
     });
@@ -157,6 +192,7 @@ function toStoreCandidate(candidate: StorePriceForIngredient): StoreCandidateInp
     brand: candidate.brand,
     packageSize: candidate.packageSize,
     packageQuantity: candidate.packageQuantity,
+    packageUnit: candidate.unit,
     qualityTier: candidate.qualityTier,
     gtin: candidate.gtin,
     price: candidate.price,

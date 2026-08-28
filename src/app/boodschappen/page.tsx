@@ -438,7 +438,8 @@ function StorePriceHint({
  * cijfers niet waarmaken zodra een deel van de lijst daar niet te vinden is.
  * Het volledige overzicht staat op /prijzen.
  */
-function StoreBasketHint({ overview }: { overview: Awaited<ReturnType<typeof getBasketOverview>> }) {
+function StoreBasketHint({ overview }: { overview: Awaited<ReturnType<typeof getBasketOverview>> | null }) {
+  if (!overview) return null;
   const lineCount = overview.comparison.lines.length;
   const usable = COMPARISON_PROVIDERS.map((provider) => overview.comparison.totals.get(provider)).filter(
     (total) => total !== undefined && total.linesCompared > 0
@@ -934,8 +935,18 @@ export default async function BoodschappenPage({
       getHouseholdHardRestrictions(household.id),
       getInventoryMap(household.id),
       // Alleen voor de ene regel hieronder ("wat kost deze lijst elders");
-      // het echte overzicht staat op /prijzen.
-      getBasketOverview(household.id, mealPlan.id),
+      // het echte overzicht staat op /prijzen. Een puur informatief regeltje
+      // mag deze pagina nooit kunnen slopen: bij een fout verdwijnt de regel,
+      // de rest blijft gewoon staan.
+      getBasketOverview(household.id, mealPlan.id).catch((err) => {
+        logEvent({
+          level: "warn",
+          area: "pricing",
+          message: "Prijsvergelijking op de boodschappenlijst overgeslagen",
+          meta: { householdId: household.id, error: errorMessage(err) },
+        });
+        return null;
+      }),
     ]);
   const fixedProductResults = fixedSearch.value;
   const manualProductResults = manualSearch.value;

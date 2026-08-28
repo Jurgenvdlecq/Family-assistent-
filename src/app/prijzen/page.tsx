@@ -144,7 +144,8 @@ export default async function PrijzenPage({
                           <p className="mt-2 text-sm text-ink-muted">
                             {euro(total.alternativeTotal)} als je ook {total.linesWithAlternative}{" "}
                             {total.linesWithAlternative === 1 ? "ander soort product" : "andere soorten product"}{" "}
-                            meerekent — dat is dan wel iets anders in huis.
+                            meerekent — bij Picnic {euro(total.referenceTotalForAlternativeLines)} voor
+                            diezelfde regels. Dat is dan wel iets anders in huis.
                           </p>
                         )}
                       </>
@@ -256,20 +257,24 @@ export default async function PrijzenPage({
                               {store.stale && (
                                 <p className="mt-0.5 text-xs text-ink-faint">Prijs is ouder dan een dag.</p>
                               )}
-                              {chosenProductId && (
-                                <form action={clearStoreProductChoice} className="mt-1">
-                                  <input type="hidden" name="ingredientId" value={ingredientId} />
-                                  <input type="hidden" name="provider" value={provider} />
-                                  <input type="hidden" name="lineId" value={line.lineId} />
-                                  <PendingSubmitButton
-                                    pendingText="Bezig…"
-                                    className="text-xs font-medium text-accent underline"
-                                  >
-                                    Jullie keuze — weer automatisch laten kiezen
-                                  </PendingSubmitButton>
-                                </form>
-                              )}
                             </>
+                          )}
+
+                          {/* Bewust buiten de "is er een resultaat"-tak: juist
+                              als een gekozen product géén prijs meer oplevert,
+                              moet de gebruiker die keuze kunnen loslaten. */}
+                          {chosenProductId && (
+                            <form action={clearStoreProductChoice} className="mt-1">
+                              <input type="hidden" name="ingredientId" value={ingredientId} />
+                              <input type="hidden" name="provider" value={provider} />
+                              <input type="hidden" name="lineId" value={line.lineId} />
+                              <PendingSubmitButton
+                                pendingText="Bezig…"
+                                className="text-xs font-medium text-accent underline"
+                              >
+                                Jullie keuze — weer automatisch laten kiezen
+                              </PendingSubmitButton>
+                            </form>
                           )}
 
                           {candidates.length > 1 && (

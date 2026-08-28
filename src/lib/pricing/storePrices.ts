@@ -68,6 +68,53 @@ export async function getStorePricesForIngredients(
 }
 
 /**
+ * Specifieke producten opzoeken, buiten de rangschikking om.
+ *
+ * Nodig voor een handmatige correctie: die is een beslissing, geen suggestie.
+ * Zou de gekozen tegenhanger alleen uit de shortlist van de matcher gehaald
+ * worden, dan verdwijnt de keuze zodra de matcher later een ander product
+ * mooier vindt — en dat zonder melding. Hier wordt hij dus rechtstreeks
+ * opgehaald.
+ */
+export async function getStoreProductsByIds(
+  productIds: string[],
+  now: Date = new Date()
+): Promise<StorePriceForIngredient[]> {
+  if (productIds.length === 0) return [];
+  const products = await prisma.product.findMany({
+    where: { id: { in: productIds } },
+    include: { ingredient: { select: { unit: true } } },
+  });
+  const latest = await getLatestPrices(products.map((product) => product.id));
+
+  return products
+    .map((product): StorePriceForIngredient | null => {
+      const price = latest.get(product.id);
+      // Zonder waarneming is er geen prijs — en dat is geen prijs van nul.
+      if (!price) return null;
+      return {
+        provider: product.provider,
+        productId: product.id,
+        name: product.name,
+        brand: product.brand,
+        packageSize: product.packageSize,
+        packageQuantity: product.packageQuantity,
+        unit: product.ingredient?.unit ?? null,
+        qualityTier: product.qualityTier,
+        gtin: product.gtin,
+        freeFromAllergens: product.freeFromAllergens,
+        price: price.price,
+        wasPrice: price.wasPrice,
+        promoLabel: price.promoLabel,
+        promoUntil: price.promoUntil,
+        observedAt: price.observedAt,
+        stale: isPriceStale(price.observedAt, now),
+      };
+    })
+    .filter((product) => product !== null);
+}
+
+/**
  * Alle bruikbare kandidaten per ingrediënt, per winkel — niet alleen de beste.
  *
  * Het mandje doorrekenen heeft meer dan één kandidaat nodig: het beste product

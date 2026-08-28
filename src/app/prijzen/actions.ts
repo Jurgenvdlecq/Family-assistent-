@@ -48,8 +48,12 @@ export async function chooseStoreProduct(formData: FormData) {
   });
 
   revalidatePath("/prijzen");
-  // Terug naar dezelfde regel, niet naar de bovenkant van de pagina.
-  redirect(`/prijzen?focus=${lineId}&status=keuze-opgeslagen#regel-${lineId}`);
+  // De samenvattingsregel op de boodschappenlijst hangt van dezelfde keuze af.
+  revalidatePath("/boodschappen");
+  // Terug naar dezelfde regel, niet naar de bovenkant van de pagina. De id komt
+  // van de client, dus gecodeerd — anders breekt een rare waarde de URL.
+  const anchor = encodeURIComponent(lineId);
+  redirect(`/prijzen?focus=${anchor}&status=keuze-opgeslagen#regel-${anchor}`);
 }
 
 /** De correctie weer loslaten: vanaf nu kiest de app zelf weer. */
@@ -65,5 +69,7 @@ export async function clearStoreProductChoice(formData: FormData) {
   });
 
   revalidatePath("/prijzen");
-  redirect(`/prijzen?focus=${lineId}&status=keuze-gewist#regel-${lineId}`);
+  revalidatePath("/boodschappen");
+  const anchor = encodeURIComponent(lineId);
+  redirect(`/prijzen?focus=${anchor}&status=keuze-gewist#regel-${anchor}`);
 }

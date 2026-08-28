@@ -1152,7 +1152,10 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
 
       try {
         // De regel op /boodschappen wijst door naar het volledige overzicht.
-        await page.goto(`${server.baseURL}/prijzen`, { waitUntil: "load" });
+        await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
+        await waitForBoodschappenSettled(page);
+        await page.getByRole("link", { name: "Bekijk regel voor regel" }).click();
+        await page.waitForURL((url) => url.pathname === "/prijzen", { timeout: 15_000 });
         await page.locator("text=Je boodschappen bij een andere winkel").waitFor({
           state: "visible",
           timeout: 15_000,
@@ -1178,6 +1181,15 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         });
         assert.ok(choice, "De keuze hoort onthouden te zijn");
         assert.equal(choice!.productId, createdProductIds[1]);
+
+        // En het gedrag dat dit werkpakket belooft: de doorrekening rekent
+        // voortaan met het gekozen product. Een rij in de database is daar
+        // geen bewijs van — de duurdere variant hoort nu op de regel te staan.
+        const chosenRow = page.locator(`#regel-${line.id}`);
+        await chosenRow
+          .locator(`text=${`AH ${line.ingredient.name} groot`}`)
+          .first()
+          .waitFor({ state: "visible", timeout: 10_000 });
       } finally {
         await prisma.householdStoreProductChoice.deleteMany({ where: { householdId } });
         await prisma.priceObservation.deleteMany({ where: { productId: { in: createdProductIds } } });
