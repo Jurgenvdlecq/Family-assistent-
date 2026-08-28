@@ -1012,182 +1012,15 @@ export default async function BoodschappenPage({
 
         <MealDayPicker days={mealDayOptions} />
 
-        {!household.picnicAuthToken && (
-          <PicnicTransfer
-            shoppingListId={shoppingList.id}
-            text={picnicTransfer.text}
-            itemCount={picnicTransfer.itemCount}
-            transferred={picnicTransfer.status === "TRANSFERRED"}
-          />
-        )}
-        <AddToPicnicCart
-          shoppingListId={shoppingList.id}
-          connected={Boolean(household.picnicAuthToken)}
-          hasTransferredLines={hasTransferredLines}
-          orderConfirmed={shoppingList.orderConfirmedAt !== null}
-          fixedCount={fixedPendingCount}
-          manualCount={manualPendingCount}
-        />
-
-        <div id="jullie-boodschappenlijst" className="mb-3 scroll-mt-6 flex items-baseline justify-between gap-3">
-          <h2 className="text-sm font-semibold text-ink">Jullie boodschappenlijst</h2>
-          <span className="text-xs font-medium text-ink-muted">
-            {listTotalCost > 0 ? `€ ${listTotalCost.toFixed(2)}` : "Prijs onbekend"}
-          </span>
-        </div>
-        {/* Een leeg omkaderd blok rendert niet: zonder aangevinkte avonden zou
-            de lijst er dan uitzien alsof er niets besteld wordt, terwijl de
-            vaste boodschappen gewoon klaarstaan. */}
-        {mealLines.length > 0 && (
-          <div className="flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
-            {mealLines.map(renderShoppingLineRow)}
-          </div>
-        )}
-
-        {activeFixedLines.length > 0 && (
-          <details
-            id="alle-te-bestellen-producten"
-            className={mealLines.length > 0 ? "mt-3 scroll-mt-6" : "scroll-mt-6"}
-            // Zijn de vaste boodschappen de hele lijst, dan staan ze meteen
-            // open — anders moet je klikken om te zien wat er besteld wordt.
-            open={mealLines.length === 0 || undefined}
-          >
-            <summary className="cursor-pointer text-xs font-medium text-ink-muted hover:text-ink">
-              {mealLines.length === 0
-                ? `${activeFixedLines.length} vaste boodschap${activeFixedLines.length === 1 ? "" : "pen"} staan klaar`
-                : `+ ${activeFixedLines.length} vaste boodschap${
-                    activeFixedLines.length === 1 ? "" : "pen"
-                  } worden ook besteld — toon volledige lijst`}
-            </summary>
-            <div className="mt-3 flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
-              {activeFixedLines.map(renderShoppingLineRow)}
-            </div>
-          </details>
-        )}
-
-        {mealLines.length === 0 && activeFixedLines.length === 0 && (
-          <p className="rounded-xl border border-dashed border-line bg-surface p-4 text-xs text-ink-muted">
-            Je lijst is nog leeg. Tik hierboven een avond aan om er boodschappen voor mee te nemen, of voeg hieronder
-            zelf producten toe.
-          </p>
-        )}
-
-        <div id="quick-add-product" className="mb-6 scroll-mt-6 rounded-xl border border-line bg-surface p-4">
-          <h2 className="mb-1 text-sm font-semibold text-ink">Product toevoegen</h2>
-          <p className="mb-3 text-xs text-ink-muted">Voor deze week alleen — dit wordt geen vaste gewoonte.</p>
-          {quickOrderRawFocus && (
-            <p className="mb-3 rounded-md bg-accent-soft px-2.5 py-2 text-xs text-ink-muted">
-              Je zoekt zelf een product voor &ldquo;{quickOrderRawFocus}&rdquo; uit je snelle lijstje — na het
-              toevoegen kom je daar automatisch weer terug.
-            </p>
-          )}
-          <form action="/boodschappen#quick-add-product" className="flex min-w-0 gap-2">
-            {quickOrderRawFocus && (
-              <>
-                <input type="hidden" name="quickOrder" value={quickOrderText} />
-                <input type="hidden" name="quickOrderRaw" value={quickOrderRawFocus} />
-              </>
-            )}
-            <input
-              name="manualQ"
-              defaultValue={manualSearchQuery}
-              placeholder="Zoek een product, bv. chips"
-              className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
-            />
-            <button
-              type="submit"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-line bg-surface text-ink transition-colors hover:border-accent/70 hover:bg-surface-2"
-              aria-label="Zoeken bij Picnic"
-              title="Zoeken bij Picnic"
-            >
-              <Search size={16} />
-            </button>
-          </form>
-
-          {!household.picnicAuthToken && (
-            <p className="mt-3 text-sm text-ink-muted">Koppel eerst Picnic om live producten te zoeken.</p>
-          )}
-
-          {manualSearchQuery && household.picnicAuthToken && manualProductResults.length === 0 && (
-            <p className="mt-3 text-sm text-ink-muted">
-              Geen Picnic-producten gevonden voor {manualSearchQuery}. Probeer een andere zoekterm.
-            </p>
-          )}
-
-          {manualProductResults.length > 0 && (
-            <div className="mt-4 grid gap-2">
-              {manualProductResults.map((item) => (
-                <form key={item.externalRef} action={addManualProduct} className="rounded-lg border border-line p-3">
-                  <input type="hidden" name="shoppingListId" value={shoppingList.id} />
-                  <input type="hidden" name="searchTerm" value={manualSearchQuery} />
-                  {quickOrderRawFocus && (
-                    <>
-                      <input type="hidden" name="raw" value={quickOrderRawFocus} />
-                      <input type="hidden" name="quickOrderText" value={quickOrderText} />
-                    </>
-                  )}
-                  <input type="hidden" name="externalRef" value={item.externalRef} />
-                  <input type="hidden" name="productName" value={item.name ?? ""} />
-                  <input type="hidden" name="packageSize" value={item.unit_quantity ?? ""} />
-                  <input type="hidden" name="picnicImageId" value={item.image_id ?? ""} />
-                  <input type="hidden" name="price" value={picnicPriceToEuros(item.display_price ?? item.price) ?? ""} />
-
-                  <div className="flex min-w-0 gap-3">
-                    <FixedProductImage item={item} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex min-w-0 items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="line-clamp-2 text-sm font-medium text-ink">{item.name}</p>
-                          <p className="text-xs text-ink-faint">{item.unit_quantity ?? "Geen verpakkingsinfo"}</p>
-                        </div>
-                        <span className="shrink-0 text-sm font-semibold text-ink">
-                          {picnicPriceToEuros(item.display_price ?? item.price) != null
-                            ? `€ ${picnicPriceToEuros(item.display_price ?? item.price)!.toFixed(2)}`
-                            : "Prijs onbekend"}
-                        </span>
-                      </div>
-                      <div className="mt-3 flex flex-wrap items-center gap-2">
-                        <input
-                          type="number"
-                          name="quantity"
-                          defaultValue={item.fixedQuantity}
-                          min="0.01"
-                          step="any"
-                          className="w-24 rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
-                        />
-                        <select
-                          name="unit"
-                          defaultValue={item.fixedUnit}
-                          className="rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
-                        >
-                          <option value="PIECE">stuks</option>
-                          <option value="GRAM">gram</option>
-                          <option value="ML">ml</option>
-                        </select>
-                        <button
-                          type="submit"
-                          className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
-                        >
-                          Toevoegen
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </form>
-              ))}
-            </div>
-          )}
-        </div>
-
         <div id="quick-order" className="mb-6 scroll-mt-6 rounded-xl border border-line bg-surface p-4">
-          <h2 className="mb-1 text-sm font-semibold text-ink">Snel meerdere producten toevoegen</h2>
-          <p className="mb-3 text-xs text-ink-muted">Voor deze week alleen.</p>
+          <h2 className="mb-1 text-sm font-semibold text-ink">Nog iets nodig?</h2>
+          <p className="mb-3 text-xs text-ink-muted">Eén product of een rijtje met komma&rsquo;s — allebei goed. Voor deze week alleen.</p>
           <form action="/boodschappen#quick-order" className="grid gap-2">
             <textarea
               name="quickOrder"
               defaultValue={quickOrderText}
               rows={3}
-              placeholder={"Rijst, Sperziebonen, Appelmoes"}
+              placeholder={"bananen — of meerdere: rijst, sperziebonen, appelmoes"}
               className="min-h-20 min-w-0 resize-y rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
             />
             <button
@@ -1326,6 +1159,178 @@ export default async function BoodschappenPage({
             </form>
           )}
         </div>
+
+        {/* Geen tweede, permanent kader meer: dit is de "kies zelf"-stap
+            van het veld hierboven, en verschijnt alleen wanneer een product
+            niet vanzelf herkend is of je zelf een zoekopdracht deed. */}
+        {(quickOrderRawFocus || manualSearchQuery) && (
+          <div id="quick-add-product" className="mb-6 scroll-mt-6 rounded-xl border border-line bg-surface p-4">
+            <h2 className="mb-1 text-sm font-semibold text-ink">Product toevoegen</h2>
+            <p className="mb-3 text-xs text-ink-muted">Voor deze week alleen — dit wordt geen vaste gewoonte.</p>
+            {quickOrderRawFocus && (
+              <p className="mb-3 rounded-md bg-accent-soft px-2.5 py-2 text-xs text-ink-muted">
+                Je zoekt zelf een product voor &ldquo;{quickOrderRawFocus}&rdquo; uit je snelle lijstje — na het
+                toevoegen kom je daar automatisch weer terug.
+              </p>
+            )}
+            <form action="/boodschappen#quick-add-product" className="flex min-w-0 gap-2">
+              {quickOrderRawFocus && (
+                <>
+                  <input type="hidden" name="quickOrder" value={quickOrderText} />
+                  <input type="hidden" name="quickOrderRaw" value={quickOrderRawFocus} />
+                </>
+              )}
+              <input
+                name="manualQ"
+                defaultValue={manualSearchQuery}
+                placeholder="Zoek een product, bv. chips"
+                className="min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
+              />
+              <button
+                type="submit"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-line bg-surface text-ink transition-colors hover:border-accent/70 hover:bg-surface-2"
+                aria-label="Zoeken bij Picnic"
+                title="Zoeken bij Picnic"
+              >
+                <Search size={16} />
+              </button>
+            </form>
+
+            {!household.picnicAuthToken && (
+              <p className="mt-3 text-sm text-ink-muted">Koppel eerst Picnic om live producten te zoeken.</p>
+            )}
+
+            {manualSearchQuery && household.picnicAuthToken && manualProductResults.length === 0 && (
+              <p className="mt-3 text-sm text-ink-muted">
+                Geen Picnic-producten gevonden voor {manualSearchQuery}. Probeer een andere zoekterm.
+              </p>
+            )}
+
+            {manualProductResults.length > 0 && (
+              <div className="mt-4 grid gap-2">
+                {manualProductResults.map((item) => (
+                  <form key={item.externalRef} action={addManualProduct} className="rounded-lg border border-line p-3">
+                    <input type="hidden" name="shoppingListId" value={shoppingList.id} />
+                    <input type="hidden" name="searchTerm" value={manualSearchQuery} />
+                    {quickOrderRawFocus && (
+                      <>
+                        <input type="hidden" name="raw" value={quickOrderRawFocus} />
+                        <input type="hidden" name="quickOrderText" value={quickOrderText} />
+                      </>
+                    )}
+                    <input type="hidden" name="externalRef" value={item.externalRef} />
+                    <input type="hidden" name="productName" value={item.name ?? ""} />
+                    <input type="hidden" name="packageSize" value={item.unit_quantity ?? ""} />
+                    <input type="hidden" name="picnicImageId" value={item.image_id ?? ""} />
+                    <input type="hidden" name="price" value={picnicPriceToEuros(item.display_price ?? item.price) ?? ""} />
+
+                    <div className="flex min-w-0 gap-3">
+                      <FixedProductImage item={item} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="line-clamp-2 text-sm font-medium text-ink">{item.name}</p>
+                            <p className="text-xs text-ink-faint">{item.unit_quantity ?? "Geen verpakkingsinfo"}</p>
+                          </div>
+                          <span className="shrink-0 text-sm font-semibold text-ink">
+                            {picnicPriceToEuros(item.display_price ?? item.price) != null
+                              ? `€ ${picnicPriceToEuros(item.display_price ?? item.price)!.toFixed(2)}`
+                              : "Prijs onbekend"}
+                          </span>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <input
+                            type="number"
+                            name="quantity"
+                            defaultValue={item.fixedQuantity}
+                            min="0.01"
+                            step="any"
+                            className="w-24 rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
+                          />
+                          <select
+                            name="unit"
+                            defaultValue={item.fixedUnit}
+                            className="rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink"
+                          >
+                            <option value="PIECE">stuks</option>
+                            <option value="GRAM">gram</option>
+                            <option value="ML">ml</option>
+                          </select>
+                          <button
+                            type="submit"
+                            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
+                          >
+                            Toevoegen
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </form>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!household.picnicAuthToken && (
+          <PicnicTransfer
+            shoppingListId={shoppingList.id}
+            text={picnicTransfer.text}
+            itemCount={picnicTransfer.itemCount}
+            transferred={picnicTransfer.status === "TRANSFERRED"}
+          />
+        )}
+        <AddToPicnicCart
+          shoppingListId={shoppingList.id}
+          connected={Boolean(household.picnicAuthToken)}
+          hasTransferredLines={hasTransferredLines}
+          orderConfirmed={shoppingList.orderConfirmedAt !== null}
+          fixedCount={fixedPendingCount}
+          manualCount={manualPendingCount}
+        />
+
+        <div id="jullie-boodschappenlijst" className="mb-3 scroll-mt-6 flex items-baseline justify-between gap-3">
+          <h2 className="text-sm font-semibold text-ink">Jullie boodschappenlijst</h2>
+          <span className="text-xs font-medium text-ink-muted">
+            {listTotalCost > 0 ? `€ ${listTotalCost.toFixed(2)}` : "Prijs onbekend"}
+          </span>
+        </div>
+        {/* Een leeg omkaderd blok rendert niet: zonder aangevinkte avonden zou
+            de lijst er dan uitzien alsof er niets besteld wordt, terwijl de
+            vaste boodschappen gewoon klaarstaan. */}
+        {mealLines.length > 0 && (
+          <div className="flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
+            {mealLines.map(renderShoppingLineRow)}
+          </div>
+        )}
+
+        {activeFixedLines.length > 0 && (
+          <details
+            id="alle-te-bestellen-producten"
+            className={mealLines.length > 0 ? "mt-3 scroll-mt-6" : "scroll-mt-6"}
+            // Zijn de vaste boodschappen de hele lijst, dan staan ze meteen
+            // open — anders moet je klikken om te zien wat er besteld wordt.
+            open={mealLines.length === 0 || undefined}
+          >
+            <summary className="cursor-pointer text-xs font-medium text-ink-muted hover:text-ink">
+              {mealLines.length === 0
+                ? `${activeFixedLines.length} vaste boodschap${activeFixedLines.length === 1 ? "" : "pen"} staan klaar`
+                : `+ ${activeFixedLines.length} vaste boodschap${
+                    activeFixedLines.length === 1 ? "" : "pen"
+                  } worden ook besteld — toon volledige lijst`}
+            </summary>
+            <div className="mt-3 flex min-w-0 flex-col divide-y divide-line rounded-xl border border-line bg-surface">
+              {activeFixedLines.map(renderShoppingLineRow)}
+            </div>
+          </details>
+        )}
+
+        {mealLines.length === 0 && activeFixedLines.length === 0 && (
+          <p className="rounded-xl border border-dashed border-line bg-surface p-4 text-xs text-ink-muted">
+            Je lijst is nog leeg. Tik hierboven een avond aan om er boodschappen voor mee te nemen, of voeg hieronder
+            zelf producten toe.
+          </p>
+        )}
 
         <details id="daily-review" className="mb-8 mt-4 min-w-0 scroll-mt-6" open={focusedLineId ? true : undefined}>
           <summary className="cursor-pointer text-sm font-semibold text-ink">Bekijk per dag</summary>

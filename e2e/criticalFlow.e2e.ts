@@ -725,13 +725,13 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
     });
 
     await t.test(
-      "10c. Bestellen rechtstreeks vanaf de startpagina zodra de lijst bevestigd is, zonder naar /boodschappen te hoeven (nieuwe functie)",
+      "10c. Bestellen vanaf de boodschappenpagina zodra de lijst bevestigd is",
       async () => {
         // Forceer de "lijst bevestigd, nog niet naar Picnic"-status (net als
         // 7b/7c: direct via Prisma, i.p.v. leunen op wat eerdere stappen
-        // toevallig hebben achtergelaten) — zodat de startpagina de
-        // "Klaar om naar Picnic te gaan"-tegel toont met de echte
-        // AddToPicnicCart-knop erin, i.p.v. alleen een link naar elders.
+        // toevallig hebben achtergelaten) — zodat de boodschappenpagina de
+        // "Klaar om naar Picnic te gaan"-tekst toont met de echte
+        // AddToPicnicCart-knop erin.
         const shoppingList = await prisma.shoppingList.findFirstOrThrow({
           where: { mealPlan: { householdId } },
           include: { lines: true },
@@ -750,8 +750,9 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
           data: { status: "REVIEWED", reviewedAt: new Date() },
         });
 
-        await page.goto(`${server.baseURL}/week`, { waitUntil: "load" });
-        await page.locator("text=Klaar om naar Picnic te gaan").waitFor({ state: "visible", timeout: 15_000 });
+        // Op de boodschappenpagina staat geen tussentekst meer maar meteen de
+        // echte knop — dat is precies de winst van het ontdubbelen.
+        await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
 
         const addedBefore = mockPicnic.addedProducts.length;
         const addButton = page.getByRole("button", { name: "Toevoegen aan Picnic-mandje" });
@@ -772,16 +773,16 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         );
         assert.equal(
           new URL(page.url()).pathname,
-          "/week",
-          "Moet op de weekpagina blijven — geen navigatie naar /boodschappen nodig voor deze actie"
+          "/boodschappen",
+          "Moet op de boodschappenpagina blijven — bestellen gebeurt waar de lijst staat"
         );
       }
     );
 
     await t.test(
-      "10d. Startpagina toont daarna 'Rond je bestelling af in Picnic' met werkende 'Ik heb besteld' (nieuwe functie)",
+      "10d. Boodschappenpagina toont daarna 'Rond je bestelling af in Picnic' met werkende 'Ik heb besteld'",
       async () => {
-        await page.goto(`${server.baseURL}/week`, { waitUntil: "load" });
+        await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
         await page.locator("text=Rond je bestelling af in Picnic").waitFor({ state: "visible", timeout: 15_000 });
 
         const confirmOrderButton = page.getByRole("button", { name: "Ik heb besteld" });
@@ -801,7 +802,7 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         const shoppingList = await prisma.shoppingList.findFirstOrThrow({ where: { mealPlan: { householdId } } });
         assert.ok(shoppingList.orderConfirmedAt !== null, "orderConfirmedAt moet gezet zijn na 'Ik heb besteld'");
 
-        await page.goto(`${server.baseURL}/week`, { waitUntil: "load" });
+        await page.goto(`${server.baseURL}/boodschappen`, { waitUntil: "load" });
         const stillShowingConfirmCard = await page
           .locator("text=Rond je bestelling af in Picnic")
           .isVisible()
