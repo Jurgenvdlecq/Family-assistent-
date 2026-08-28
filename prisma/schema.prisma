@@ -76,6 +76,7 @@ model Household {
   mealDayRules           MealDayRule[]
   mealTemplates          MealTemplate[]
   ingredientFulfillments HouseholdIngredientFulfillment[]
+  storeProductChoices    HouseholdStoreProductChoice[]
   pushSubscriptions      PushSubscription[]
   notificationPreferences NotificationPreference[]
   notificationDeliveryLogs NotificationDeliveryLog[]
@@ -785,6 +786,7 @@ model Ingredient {
   mealComponentOptions   MealComponentOption[]
   assignmentItems        MealAssignmentItem[]
   householdFulfillments  HouseholdIngredientFulfillment[]
+  storeProductChoices    HouseholdStoreProductChoice[]
 
   @@map("ingredients")
 }
@@ -855,6 +857,7 @@ model Product {
   householdPreferences HouseholdProductPreference[]
   rejections           RejectedProductMatch[]
   priceObservations    PriceObservation[]
+  storeChoices         HouseholdStoreProductChoice[]
 
   @@unique([ingredientId, provider, externalRef])
   @@index([ingredientId])
@@ -960,6 +963,32 @@ enum ProductPreferenceSource {
   AUTOMATIC
 
   @@map("product_preference_source")
+}
+
+// De correctie op een winkelvergelijking: "nee, bij Albert Heijn kopen we
+// dít". Bewust een aparte tabel en niet HouseholdProductPreference: die gaat
+// over wat er besteld wordt (en dat is altijd Picnic), deze gaat alleen over
+// waarmee we vergelijken. Eén keuze per ingrediënt per winkel — de winkel
+// hoort in de sleutel, anders zou een keuze bij AH die bij Dirk overschrijven.
+//
+// Deze correctie is het antwoord op de belangrijkste zwakte van automatisch
+// matchen: de app raadt welk product hetzelfde is, en raadt er onvermijdelijk
+// een deel naast. Zonder een plek om dat te corrigeren blijft dezelfde fout
+// elke week terugkomen.
+model HouseholdStoreProductChoice {
+  id           String          @id @default(uuid())
+  householdId  String          @map("household_id")
+  ingredientId String          @map("ingredient_id")
+  provider     ProductProvider
+  productId    String          @map("product_id")
+  chosenAt     DateTime        @default(now()) @map("chosen_at")
+
+  household  Household  @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId], references: [id])
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([householdId, ingredientId, provider])
+  @@map("household_store_product_choices")
 }
 
 // Een product dat een huishouden expliciet heeft afgewezen voor een
