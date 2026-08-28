@@ -30,6 +30,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { getHouseholdPortionScaleForDate } from "@/lib/household";
 import { mealEntryNeeds, mealEntryTitle } from "@/domain/meal-planning/mealEntry";
+import { setIngredientFulfillment } from "./fulfillmentActions";
 import { getFixedGroceries } from "@/lib/fixedGroceries";
 import { getInventoryChecklist, getInventoryMap } from "@/lib/inventory";
 import { enrichShoppingListProductImages } from "@/lib/picnic/productEnrichment";
@@ -97,6 +98,7 @@ const STATUS_MESSAGES: Record<string, string> = {
   "shopping-reviewed": "Lijst bevestigd — klaar om naar Picnic te gaan.",
   "meal-day-added": "Deze avond gaat mee: de boodschappen ervoor staan nu op de lijst.",
   "line-removed": "Product van de lijst gehaald.",
+  "fulfillment-saved": "Onthouden waar dit product vandaan komt.",
   "meal-day-removed": "Deze avond gaat niet mee. Het geplande gerecht blijft gewoon staan.",
   "meal-replaced": "Gerecht gewisseld — de boodschappen ervoor zijn bijgewerkt.",
   "meal-wish-planned": "Ingepland — de boodschappen ervoor staan op de lijst.",
@@ -1015,6 +1017,32 @@ export default async function BoodschappenPage({
                     Hoort bij een avond die je hebt aangevinkt. Vink die avond uit om alles ervan in één keer weg
                     te halen.
                   </p>
+                )}
+
+                {/* Herkomst: alleen Picnic-regels gaan naar het mandje. Een
+                    regel die al overgedragen is blijft staan zoals hij is —
+                    die ligt er al in, en hem alsnog als "zelf halen" tonen zou
+                    niet kloppen. */}
+                {!line.transferredToPicnicAt && (
+                  <form action={setIngredientFulfillment} className="border-t border-line px-2.5 py-2">
+                    <input type="hidden" name="lineId" value={line.id} />
+                    <label className="block text-[11px] font-semibold text-ink">Waar komt dit vandaan?</label>
+                    <select
+                      name="fulfillment"
+                      defaultValue={line.fulfillment}
+                      className="mt-1 w-full rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink"
+                    >
+                      <option value="PICNIC">Via Picnic</option>
+                      <option value="OTHER_STORE">Andere winkel</option>
+                      <option value="SELF_PROVIDED">Regelen we zelf</option>
+                    </select>
+                    <PendingSubmitButton
+                      pendingText="Bezig..."
+                      className="mt-1.5 w-full rounded-md border border-line px-2 py-1 text-[11px] font-medium text-ink hover:bg-surface-2"
+                    >
+                      Onthouden
+                    </PendingSubmitButton>
+                  </form>
                 )}
               </div>
             </details>

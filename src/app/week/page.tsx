@@ -36,6 +36,8 @@ import NavBar from "@/components/NavBar";
 import Tag from "@/components/Tag";
 import { getPendingLearningPrompts } from "@/domain/learning/patterns";
 import { mealEntryTitle } from "@/domain/meal-planning/mealEntry";
+import { calendarDateKey } from "@/domain/week/isoWeek";
+import { clearDatePresence, setDatePresence } from "./presenceActions";
 import {
   answerSmartLearningPrompt,
   dismissSmartLearningPrompt,
@@ -68,6 +70,8 @@ const STATUS_MESSAGES: Record<string, string> = {
   "meal-unchanged": "Dit gerecht stond al op die dag.",
   "day-skipped": "Deze dag telt niet meer mee.",
   "day-restored": "Deze dag telt weer gewoon mee.",
+  "date-presence-saved": "Genoteerd — alleen voor deze keer.",
+  "date-presence-cleared": "Deze dag volgt weer jullie gewone ritme.",
 };
 
 /** Meldingen die geen bevestiging zijn maar een blokkade/fout — amber i.p.v. groen. */
@@ -183,6 +187,24 @@ export default async function Home({
   if (!mealPlan) {
     throw new Error("Weekplanning kon niet worden geladen.");
   }
+  const [allPersons, dateOverrides] = await Promise.all([
+    prisma.person.findMany({
+      where: { householdId: household.id },
+      select: { id: true, name: true },
+      orderBy: { createdAt: "asc" },
+    }),
+    // Alleen de uitzonderingen van déze week: verder terug of vooruit doet
+    // hier niets, en de tabel groeit wél door.
+    prisma.personPresenceDateOverride.findMany({
+      where: {
+        person: { householdId: household.id },
+        date: { gte: weekStart, lte: dateForDay(weekStart, "sunday") },
+      },
+      select: { date: true },
+    }),
+  ]);
+  const dateOverrideDays = new Set(dateOverrides.map((override) => calendarDateKey(override.date)));
+
   const [participantsByDay, learningPrompts, dayRoutines] = await Promise.all([
     getHouseholdMealParticipantsForWeek(household.id, weekStart),
     getPendingLearningPrompts(
@@ -428,6 +450,7 @@ export default async function Home({
             routine.recipeVariantId === entry.recipeVariantId,
           );
           const participants = participantsByDay[dayKey];
+          const isoDateForDay = calendarDateKey(dateForDay(weekStart, dayKey));
           const isNew =
             entry &&
             recipe &&
@@ -601,6 +624,57 @@ export default async function Home({
                   Meer voor deze dag
                 </summary>
                 <div className="mt-3 flex min-w-0 flex-col gap-4">
+                  {/* Deze week anders: een uitzondering voor precies deze
+                      datum. Verandert bewust níéts aan het weekritme — één
+                      afwijkende vrijdag maakt vrijdag niet blijvend anders. */}
+                  <div>
+                    <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
+                      Anders met eten deze week
+                    </p>
+                    <form action={setDatePresence} className="flex flex-col gap-2">
+                      <input type="hidden" name="householdId" value={household.id} />
+                      <input type="hidden" name="dayKey" value={dayKey} />
+                      <input type="hidden" name="date" value={isoDateForDay} />
+                      <div className="flex flex-wrap gap-2">
+                        {allPersons.map((person) => (
+                          <label
+                            key={person.id}
+                            className="flex items-center gap-1.5 rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink"
+                          >
+                            <input
+                              type="checkbox"
+                              name="presentPersonId"
+                              value={person.id}
+                              defaultChecked={participants.some((participant) => participant.id === person.id)}
+                            />
+                            {person.name}
+                          </label>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="submit"
+                          className="rounded-md border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink hover:bg-surface-2"
+                        >
+                          Alleen deze keer
+                        </button>
+                      </div>
+                    </form>
+                    {dateOverrideDays.has(isoDateForDay) && (
+                      <form action={clearDatePresence} className="mt-1.5">
+                        <input type="hidden" name="householdId" value={household.id} />
+                        <input type="hidden" name="dayKey" value={dayKey} />
+                        <input type="hidden" name="date" value={isoDateForDay} />
+                        <button
+                          type="submit"
+                          className="text-[11px] text-ink-faint underline decoration-dotted hover:text-ink"
+                        >
+                          Terug naar het gewone ritme
+                        </button>
+                      </form>
+                    )}
+                  </div>
+
                   <div>
                     <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-ink-faint">
                       Losse maaltijd invullen
