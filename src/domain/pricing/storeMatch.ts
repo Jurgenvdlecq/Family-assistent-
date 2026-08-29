@@ -132,9 +132,21 @@ export function wordCoverage(wanted: string[], productWords: string[]): number {
  * niets over, dan valt het terug op de oorspronkelijke naam — liever een
  * matige zoekopdracht dan een lege.
  */
+/**
+ * Meer dan dit aantal woorden maakt een zoekopdracht bij een winkel eerder
+ * slechter dan beter.
+ *
+ * De zoekmachines van winkels worden strenger naarmate je meer woorden geeft.
+ * Onze eigen productnaam kan lang zijn ("Alpro mild & creamy naturel groot
+ * formaat"), en dan vindt de winkel haar eigen variant van datzelfde product
+ * niet meer. Vier woorden is specifiek genoeg om het juiste product te
+ * vinden en kort genoeg om varianten niet uit te sluiten.
+ */
+const MAX_SEARCH_WORDS = 4;
+
 export function storeSearchTerm(ingredientName: string): string {
   const words = contentWords(ingredientName);
-  return words.length > 0 ? words.join(" ") : ingredientName;
+  return words.length > 0 ? words.slice(0, MAX_SEARCH_WORDS).join(" ") : ingredientName;
 }
 
 /**

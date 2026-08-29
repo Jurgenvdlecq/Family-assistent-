@@ -187,3 +187,14 @@ test("rangschikken: een onbekende verpakkingsvorm telt nooit als verschil", () =
   assert.equal(ranked.length, 1);
   assert.equal(ranked[0].sameForm, false);
 });
+
+test("zoekterm: niet meer dan vier woorden, anders vindt de winkel niets meer", () => {
+  // Winkelzoekmachines worden strenger naarmate je meer woorden geeft. Onze
+  // eigen productnaam kan lang zijn, en dan vindt Albert Heijn haar eigen
+  // variant van datzelfde product niet meer terug.
+  assert.equal(
+    storeSearchTerm("Alpro mild & creamy naturel groot formaat"),
+    "alpro mild creamy naturel"
+  );
+  assert.equal(storeSearchTerm("Alpro mild & creamy"), "alpro mild creamy");
+});
