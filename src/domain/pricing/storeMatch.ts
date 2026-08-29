@@ -36,6 +36,14 @@ function normalize(value: string): string {
  */
 const NOISE_WORDS = new Set([
   "ah",
+  // Losse maatafkortingen. Die stonden er niet bij zolang alles van twee
+  // letters toch al wegviel; nu korte woorden wél meetellen (zie hieronder)
+  // moeten ze hier expliciet staan.
+  "st",
+  "gr",
+  "kg",
+  "ml",
+  "cl",
   "albert",
   "heijn",
   "dirk",
@@ -65,12 +73,26 @@ const NOISE_WORDS = new Set([
 const NUMBER_LIKE = /^\d+(?:[.,]\d+)?(?:g|gr|gram|kg|ml|cl|l|st|stuk|stuks|x)?$/;
 
 export function contentWords(value: string): string[] {
+  // Vanaf twee letters. Eerder viel alles van twee tekens weg, en dat kostte
+  // precies de woorden die het onderscheid maken: van "Wc papier" bleef alleen
+  // "papier" over, en daarmee paste elk soort papier. Maatafkortingen en
+  // getallen vallen hierboven en hieronder alsnog weg.
   return normalize(value)
     .split(" ")
-    .filter((word) => word.length > 2 && !NOISE_WORDS.has(word) && !NUMBER_LIKE.test(word));
+    .filter((word) => word.length >= 2 && !NOISE_WORDS.has(word) && !NUMBER_LIKE.test(word));
 }
 
 export const STORE_MATCH_THRESHOLD = 0.6;
+
+/**
+ * Hoeveel van ons eigen product een kandidaat minstens moet dekken.
+ *
+ * Dezelfde grens die het equivalentiemodel gebruikt om iets "een ander
+ * product" te noemen. Wat daar niet doorheen komt hoort niet als vergelijking
+ * op het scherm: bewust op de helft en niet hoger, want het merk is meestal
+ * één van de woorden en een ander merk mag geen beletsel zijn.
+ */
+export const REFERENCE_MATCH_THRESHOLD = 0.5;
 
 /**
  * Hoeveel van de gevraagde woorden komen echt terug in deze productnaam?
@@ -213,6 +235,7 @@ export function rankStoreProducts(
   const wanted = new Set(contentWords(ingredientName));
   const referenceWords = contentWords(reference?.name ?? "");
   const referenceForm = derivePackageForm(reference?.packageSize, reference?.name);
+  const knowsOwnProduct = referenceWords.length > 0;
 
   return products
     .map((product) => ({
@@ -227,7 +250,25 @@ export function rankStoreProducts(
         derivePackageForm(product.packageSize, product.name) === referenceForm,
       surplusWords: contentWords(product.name).filter((word) => !wanted.has(word)).length,
     }))
-    .filter((match) => match.score >= STORE_MATCH_THRESHOLD)
+    .filter((match) => {
+      // Toegelaten als het bij het ingrediënt hoort óf op ons eigen product
+      // lijkt. Dat "of" is niet vrijblijvend: de ingrediëntnaam is soms
+      // ronduit misleidend. Bij "Wc papier" blijft na het filteren alleen
+      // "papier" over, en dan haalde printerpapier een perfecte score terwijl
+      // het échte toiletpapier werd weggegooid — want dat heet "toiletpapier"
+      // en bevat het woord "papier" niet als los woord.
+      const belongsHere =
+        match.score >= STORE_MATCH_THRESHOLD || match.referenceScore >= STORE_MATCH_THRESHOLD;
+      if (!belongsHere) return false;
+
+      // En omgekeerd: kennen we ons eigen product, dan is iets dat daar
+      // nauwelijks op lijkt geen kandidaat. Het werd eerder wél getoond, met
+      // "ander soort" erbij — maar een doos printerpapier naast je
+      // toiletpapier zetten is geen nuttige vergelijking, hoe eerlijk het
+      // label er ook bij staat. Dan liever "niet gevonden", en de gebruiker
+      // kan zelf het juiste product aanwijzen.
+      return !knowsOwnProduct || match.referenceScore >= REFERENCE_MATCH_THRESHOLD;
+    })
     .sort(
       (a, b) =>
         b.score - a.score ||

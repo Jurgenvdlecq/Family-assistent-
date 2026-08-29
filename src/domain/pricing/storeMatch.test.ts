@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rankStoreProducts, scoreStoreProductForIngredient, storeSearchTerm } from "./storeMatch";
+import { contentWords, rankStoreProducts, scoreStoreProductForIngredient, storeSearchTerm } from "./storeMatch";
 import type { ProviderProduct } from "./types";
 
 function product(name: string, overrides: Partial<ProviderProduct> = {}): ProviderProduct {
@@ -197,4 +197,61 @@ test("zoekterm: niet meer dan vier woorden, anders vindt de winkel niets meer", 
     "alpro mild creamy naturel"
   );
   assert.equal(storeSearchTerm("Alpro mild & creamy"), "alpro mild creamy");
+});
+
+test("toelating: het juiste product mag niet sneuvelen op een misleidende ingrediëntnaam", () => {
+  // Gebruikersmelding: bij "Wc Papier" stond 24Basics printerpapier. Na het
+  // filteren blijft van die ingrediëntnaam alleen "papier" over, en dan haalde
+  // printerpapier een perfecte score — terwijl het échte toiletpapier werd
+  // wéggegooid, want dat heet "toiletpapier" en bevat "papier" niet als los
+  // woord. De toelating keek alleen naar de ingrediëntnaam.
+  const kandidaten = [
+    product("24Basics Wit papier 80gram", { packageSize: "100 stuks" }),
+    product("AH Toiletpapier 4-laags 8 rollen", { packageSize: "8 rollen" }),
+    product("Page toiletpapier 3-laags", { packageSize: "6 rollen" }),
+  ];
+
+  const namen = rankStoreProducts("Wc Papier", kandidaten, 8, {
+    name: "Picnic toiletpapier 4 laags",
+    packageSize: "9 rollen",
+  }).map((match) => match.product.name);
+
+  assert.ok(
+    namen.includes("AH Toiletpapier 4-laags 8 rollen"),
+    "toegelaten omdat het op ons eigen product lijkt, ook al matcht de ingrediëntnaam niet"
+  );
+  assert.ok(
+    !namen.some((naam) => naam.includes("24Basics")),
+    "en printerpapier hoort er helemaal niet meer bij te staan"
+  );
+});
+
+test("toelating: wat duidelijk ons product niet is, wordt geen kandidaat", () => {
+  // Eerder werd zoiets wél getoond, met "ander soort" erbij. Maar een doos
+  // printerpapier naast je toiletpapier zetten is geen nuttige vergelijking,
+  // hoe eerlijk het label er ook bij staat.
+  const kandidaten = [
+    product("Alpro Barista koffiemelk"),
+    product("Alpro Mild & creamy zonder suikers"),
+  ];
+  const namen = rankStoreProducts("Alpro", kandidaten, 8, { name: "Alpro mild & creamy" }).map(
+    (match) => match.product.name
+  );
+  assert.deepEqual(namen, ["Alpro Mild & creamy zonder suikers"]);
+});
+
+test("toelating: zonder eigen product blijft de oude, ruimere toelating gelden", () => {
+  // Weten we niet wat wij kopen, dan mag die onwetendheid geen producten
+  // wegfilteren — dan is de ingrediëntnaam alles wat we hebben.
+  const kandidaten = [
+    product("Alpro Barista koffiemelk"),
+    product("Alpro Mild & creamy zonder suikers"),
+  ];
+  assert.equal(rankStoreProducts("Alpro", kandidaten, 8).length, 2);
+});
+
+test("woorden van twee letters tellen mee, maatafkortingen niet", () => {
+  assert.deepEqual(contentWords("Wc papier"), ["wc", "papier"]);
+  assert.deepEqual(contentWords("Halfvolle melk 1 l"), ["halfvolle", "melk"]);
+  assert.deepEqual(contentWords("Beschuit 13 st"), ["beschuit"]);
 });
