@@ -171,3 +171,32 @@ test("Dirk: zonder namen blijft de volgorde van de site zelf staan", () => {
   const paths = ["/boodschappen/a", "/boodschappen/b"];
   assert.deepEqual(rankDirkCategories(paths, []), paths);
 });
+
+test("Dirk: 'Foto van' hoort niet in de productnaam", () => {
+  // Dirk zet in het alt-attribuut een beschrijving van de afbeelding, niet de
+  // productnaam. Op het scherm stond daardoor "Foto van Ha…", en "foto" telde
+  // bij élk Dirk-product als extra woord mee in de rangschikking.
+  const html = `
+    <div class="product-card">
+      <a href="/product/12345">
+        <img alt="Foto van Bolletje beschuit" src="/img/1.jpg">
+      </a>
+      <span class="product-unit">10 stuks</span>
+      <div class="price"><span class="price-large hasEuros">1</span><span class="price-small">79</span></div>
+    </div>
+  `;
+  assert.equal(parseDirkProducts(html)[0].name, "Bolletje beschuit");
+});
+
+test("Dirk: een naam die niet met een fotobeschrijving begint blijft ongemoeid", () => {
+  const html = `
+    <div class="product-card">
+      <a href="/product/54321">
+        <img alt="Fotolijst van hout" src="/img/2.jpg">
+      </a>
+      <span class="product-unit">1 stuk</span>
+      <div class="price"><span class="price-large hasEuros">9</span><span class="price-small">99</span></div>
+    </div>
+  `;
+  assert.equal(parseDirkProducts(html)[0].name, "Fotolijst van hout");
+});

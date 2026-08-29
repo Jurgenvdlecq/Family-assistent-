@@ -17,12 +17,14 @@ import type { ProviderProduct, StorePriceProvider } from "@/domain/pricing/types
  *
  * Twee dingen maken dit anders dan Albert Heijn:
  *
- * 1. **Geen bruikbare zoekfunctie.** De zoekpagina van Dirk laadt client-side,
- *    dus daar valt server-side niets uit te lezen. We crawlen daarom
- *    categoriepagina's naar een eigen index en zoeken daar zelf in. Dat is
- *    ook waarom `search()` hieronder tegen die index praat en niet tegen de
- *    site: één keer per dag crawlen is verkeersvriendelijker dan per
- *    ingrediënt een pagina ophalen.
+ * 1. **De zoekfunctie is bruikbaar — maar dat wordt gemeten, niet aangenomen.**
+ *    Hier stond lang dat Dirks zoekpagina client-side laadt en er dus niets
+ *    uit te lezen valt. Dat kwam uit de oorspronkelijke opdracht en is nooit
+ *    getoetst; in de praktijk geeft `/zoeken/producten/<term>` gewoon
+ *    leesbare producten. `dirkSearchWorks` stelt het daarom elke verversing
+ *    opnieuw vast, en bij nee wordt er alsnog gecrawld. Zo hoeft niemand een
+ *    aanname te geloven, en corrigeert de app zichzelf als Dirk haar site
+ *    omgooit — in welke richting dan ook.
  * 2. **Het is een scrape.** De opmaak van de pagina is niet afgesproken en kan
  *    zonder aankondiging veranderen. Daarom: nul gevonden producten is een
  *    fóút die luid gemeld wordt, geen lege uitslag. Anders lijkt een kapotte
@@ -272,9 +274,12 @@ export const dirkPriceProvider: StorePriceProvider = {
   provider: "DIRK",
   label: "Dirk",
   capabilities: DIRK_CAPABILITIES,
+  // De verversing kiest zelf tussen de zoekpagina en de gecrawlde catalogus
+  // (zie `refreshDirkPrices`); deze losse ingang wordt daar niet voor
+  // gebruikt en zou alleen maar een derde, afwijkende weg openen.
   search: async () => {
     throw new DirkUnavailableError(
-      "Dirk heeft geen bruikbare zoekfunctie; de vergelijking gebruikt de gecrawlde catalogus."
+      "Gebruik refreshDirkPrices: die bepaalt zelf of de zoekpagina of de catalogus wordt gebruikt."
     );
   },
 };

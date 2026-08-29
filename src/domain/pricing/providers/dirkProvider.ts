@@ -6,9 +6,12 @@ import { parsePackContent, unitPriceFor } from "../unitPrice";
  * Dirk: het lezen van de pagina's.
  *
  * Dirk heeft geen API. De site rendert server-side, dus de prijzen staan
- * gewoon in de HTML — maar de zoekpagina laadt client-side en is daarmee
- * onbruikbaar. Daarom crawlen we categorieën naar een eigen index en zoeken
- * we daar zelf in (`src/lib/pricing/dirkClient.ts`).
+ * gewoon in de HTML — en dat geldt, anders dan hier lang beweerd werd, ook
+ * voor de zoekpagina. Die aanname kwam uit de oorspronkelijke opdracht en is
+ * nooit gemeten; in de praktijk levert `/zoeken/producten/<term>` gewoon
+ * leesbare producten op. De verversing stelt dat elke keer zelf vast en valt
+ * terug op het crawlen van categorieën als het antwoord ooit nee wordt (zie
+ * `src/lib/pricing/dirkClient.ts`).
  *
  * Net als bij Albert Heijn staat het ontleden los van het netwerkdeel, zodat
  * het zonder internet te testen is. Het verschil is dat dit een scrape is:
@@ -102,6 +105,21 @@ function textOf(html: string): string {
 }
 
 /**
+ * Dirk zet in het `alt`-attribuut niet de productnaam maar een beschrijving
+ * van de afbeelding: "Foto van Bolletje beschuit".
+ *
+ * Dat voorvoegsel hoort er dus af. Niet alleen omdat er anders "Foto van
+ * Ha…" op het scherm staat — waar een mens niets aan heeft — maar ook omdat
+ * "foto" bij élk Dirk-product als extra woord meetelt en zo de onderlinge
+ * volgorde van hun eigen producten scheeftrekt.
+ */
+const IMAGE_ALT_PREFIX = /^\s*(?:product)?(?:foto|afbeelding|plaatje)\s+van\s+/i;
+
+function stripImagePrefix(value: string): string {
+  return value.replace(IMAGE_ALT_PREFIX, "").trim();
+}
+
+/**
  * De naam van het product uit een stuk HTML.
  *
  * Meerdere kansen, van betrouwbaar naar minder betrouwbaar. In webshopmarkup
@@ -120,7 +138,7 @@ function parseName(chunk: string): string | null {
 
   for (const candidate of candidates) {
     if (!candidate) continue;
-    const text = textOf(candidate);
+    const text = stripImagePrefix(textOf(candidate));
     // Losse woorden als "Bekijk" of "Aanbieding" zijn geen productnaam.
     if (text.length >= 3 && /[a-zA-Z]{3}/.test(text)) return text;
   }
