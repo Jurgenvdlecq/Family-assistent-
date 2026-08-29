@@ -63,6 +63,15 @@ export interface MealPlanScoringInput {
    * wij zelf" stilzwijgend alle biefstukgerechten wegstrepen.
    */
   externalIngredientIds?: Set<string>;
+  /**
+   * Ingrediënten die deze week echt in de actie zijn, met de winkel erbij.
+   *
+   * Bewust een bíjsturende factor en geen hoofdcriterium: met een plafond
+   * (zie `OFFER_SCORE_CAP`) kan een aanbieding een dubbeltje op zijn kant
+   * laten vallen, maar nooit winnen van een dagprofiel of van wat iemand
+   * lekker vindt. Anders eten we alleen nog wat er in de actie ligt.
+   */
+  ingredientsOnOffer?: Map<string, { label: string; storeLabel: string }>;
   lastPlannedByRecipeId: Map<string, Date>;
   usedRecipeIds: Set<string>;
   targetDate: Date;
@@ -76,6 +85,20 @@ export interface ScoredMealPlanCandidate {
 }
 
 const BUSY_VARIANT_TYPES = new Set<VariantType>(["FAST", "REHEATABLE"]);
+
+/** Wat één ingrediënt in de actie oplevert. */
+const OFFER_BONUS_PER_INGREDIENT = 8;
+
+/**
+ * Het plafond op aanbiedingen, en de reden dat het er is.
+ *
+ * 16 punten is minder dan één passend dagprofiel-kenmerk (16 per kenmerk, vaak
+ * meerdere), minder dan een persoonlijke voorkeur (14 tot 35) en veel minder
+ * dan een harde afkeur. Een aanbieding kan dus wél de doorslag geven tussen
+ * twee gerechten die verder gelijk scoren, en kan nooit een gerecht opdringen
+ * dat niet bij de avond of bij het gezin past.
+ */
+export const OFFER_SCORE_CAP = 16;
 const DAY_LABELS: Record<DayKey, string> = {
   monday: "maandag",
   tuesday: "dinsdag",
@@ -276,6 +299,22 @@ function scoreCandidate(input: MealPlanScoringInput, candidate: MealPlanCandidat
         .slice(0, 2)
         .map((ingredient) => ingredient.name.toLowerCase())
         .join(" en ")} zelf nog halen`
+    );
+  }
+
+  // Aanbiedingen: bijsturend, met een plafond.
+  const offers = input.ingredientsOnOffer
+    ? candidate.ingredients
+        .map((ingredient) => input.ingredientsOnOffer!.get(ingredient.id))
+        .filter((offer) => offer !== undefined)
+    : [];
+  if (offers.length > 0) {
+    signal.score += Math.min(offers.length * OFFER_BONUS_PER_INGREDIENT, OFFER_SCORE_CAP);
+    reasons.push(
+      `${offers
+        .slice(0, 2)
+        .map((offer) => offer!.label)
+        .join(" en ")} ${offers.length === 1 ? "is" : "zijn"} deze week in de bonus bij ${offers[0]!.storeLabel}`
     );
   }
 

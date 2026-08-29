@@ -21,6 +21,8 @@ import { recordRepeatedMealAcceptance } from "@/domain/learning/patterns";
 import type { ConfidenceLevel } from "@/generated/prisma/enums";
 import { Prisma } from "@/generated/prisma/client";
 import { logEvent, createCorrelationId, errorMessage } from "./logger";
+import { getIngredientsOnOffer } from "./pricing/offers";
+import { COMPARISON_PROVIDERS } from "./pricing/basket";
 
 type WeeklyRhythm = Partial<Record<DayKey, "busy" | "quiet">>;
 
@@ -238,6 +240,26 @@ async function ensureMealPlanInner(
   );
   const allIngredientIds = [...new Set(allIngredients.map((ingredient) => ingredient.id))];
   const ingredientNameById = new Map(allIngredients.map((ingredient) => [ingredient.id, ingredient.name]));
+
+  // Welke ingrediënten deze week echt in de actie zijn. Bewust ná de grote
+  // Promise.all: deze zoekopdracht heeft de ingrediëntenlijst nodig die daar
+  // uit komt. Leest alleen opgeslagen prijzen — de weekplanning wacht nooit op
+  // een winkel. Gaat er iets mis, dan plannen we gewoon zonder: een aanbieding
+  // is een extraatje, geen voorwaarde.
+  const ingredientsOnOffer = await getIngredientsOnOffer(
+    allIngredientIds,
+    ingredientNameById,
+    COMPARISON_PROVIDERS
+  ).catch((error) => {
+    logEvent({
+      level: "warn",
+      area: "pricing",
+      message: "Aanbiedingen ophalen voor de weekplanning overgeslagen",
+      correlationId,
+      meta: { householdId, error: errorMessage(error) },
+    });
+    return new Map<string, { label: string; storeLabel: string }>();
+  });
   const allPersonIds = [...new Set(DAY_KEYS.flatMap((dayKey) => participantsByDay[dayKey].map((person) => person.id)))];
   const personNamesById = new Map(
     DAY_KEYS.flatMap((dayKey) => participantsByDay[dayKey].map((person) => [person.id, person.name] as const))
@@ -578,6 +600,7 @@ async function ensureMealPlanInner(
       planningStyle: household.planningStyle,
       dayProfile: profile,
       externalIngredientIds,
+      ingredientsOnOffer,
       lastPlannedByRecipeId,
       usedRecipeIds,
       targetDate,
