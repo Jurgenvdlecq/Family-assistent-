@@ -21,8 +21,22 @@ const HOUSE_BRANDS: Record<ProductProvider, string[]> = {
   PICNIC: ["picnic"],
 };
 
-/** Woorden die een product als goedkoopste klasse markeren. */
-const BUDGET_MARKERS = ["basic", "1 de beste", "1de beste", "g'woon", "gwoon", "voordeel", "budget"];
+/**
+ * Woorden die een product als goedkoopste klasse markeren.
+ *
+ * Let op het onderscheid met `HOUSE_BRANDS` hierboven: een huismerk is de
+ * standaardklasse, alleen een expliciet goedkopere lijn eronder is BUDGET.
+ * Bij Albert Heijn is dat "AH Basic" naast het gewone "AH"; bij Dirk is dat
+ * "G'woon" naast "1 de Beste".
+ *
+ * "1 de beste" stond hier eerst wél bij, en dat trok de hele vergelijking
+ * met Dirk scheef: bijna elk Dirk-product draagt dat merk, dus bijna elke
+ * Dirk-regel kreeg "voordeelmerk in plaats van wat jullie normaal kopen" en
+ * verdween uit het harde totaal. Alleen A-merken bleven over. Het merk stond
+ * bovendien al in `HOUSE_BRANDS`, dus het model sprak zichzelf tegen: de
+ * budgetcontrole staat eerder en liet de huismerkregel nooit aan bod komen.
+ */
+const BUDGET_MARKERS = ["basic", "g'woon", "gwoon", "voordeel", "budget"];
 
 /** Woorden en keurmerken die op biologisch duiden. */
 const BIO_MARKERS = ["biologisch", "bio ", " bio", "organic", "eko", "demeter", "skal"];
