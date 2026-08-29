@@ -4,6 +4,7 @@ import {
   DIRK_CAPABILITIES,
   dirkProductUrl,
   parseDirkBrand,
+  rankDirkCategories,
   parseDirkCategoryPaths,
   parseDirkPrice,
   parseDirkProductId,
@@ -140,4 +141,33 @@ test("Dirk: alleen een adres dat echt op dirk.nl staat wordt een link", () => {
   assert.equal(dirkProductUrl("//kwaadaardig.example/product/123"), null);
   assert.equal(dirkProductUrl("javascript:alert(1)"), null);
   assert.equal(dirkProductUrl(null), null);
+});
+
+test("Dirk: de categorieën waar de lijst iets te zoeken heeft komen eerst", () => {
+  // Gebruikersmelding: "Hij zegt dat ie producten heeft gevonden maar geen
+  // match, terwijl sommige producten identiek zijn." Dirk heeft geen
+  // zoekfunctie, dus er wordt gecrawld — en er werden simpelweg de eerste
+  // categorieën van Dirks eigen menu gepakt. Die staan los van de lijst.
+  const paths = [
+    "/boodschappen/wijn-en-bier",
+    "/boodschappen/huishouden/schoonmaak",
+    "/boodschappen/zuivel/melk",
+    "/boodschappen/snoep-en-koek",
+    "/boodschappen/huishouden/toiletpapier",
+  ];
+
+  const ranked = rankDirkCategories(paths, ["Halfvolle melk", "Wc papier", "Picnic toiletpapier 4 laags"]);
+
+  assert.deepEqual(ranked.slice(0, 2), [
+    "/boodschappen/zuivel/melk",
+    "/boodschappen/huishouden/toiletpapier",
+  ]);
+  // Wat niets dekt verdwijnt niet, het schuift alleen naar achteren: is er
+  // tijd over, dan is het alsnog welkom.
+  assert.equal(ranked.length, paths.length);
+});
+
+test("Dirk: zonder namen blijft de volgorde van de site zelf staan", () => {
+  const paths = ["/boodschappen/a", "/boodschappen/b"];
+  assert.deepEqual(rankDirkCategories(paths, []), paths);
 });

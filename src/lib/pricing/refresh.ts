@@ -352,7 +352,17 @@ export async function refreshDirkPrices(
 
   let catalogue;
   try {
-    catalogue = await crawlDirkCatalogue({ maxCategories: options?.maxCategories });
+    catalogue = await crawlDirkCatalogue({
+      maxCategories: options?.maxCategories,
+      deadline: options?.deadline,
+      // Waar deze verversing voor bedoeld is. Zonder dit bezoekt de crawler
+      // de eerste categorieën van Dirks eigen menu, en die staan volledig los
+      // van wat er op de lijst staat — vandaar "wel aanbod, maar niets dat
+      // paste" terwijl sommige producten identiek zijn.
+      relevantTo: ingredients.flatMap((ingredient) =>
+        ingredient.referenceProductName ? [ingredient.name, ingredient.referenceProductName] : [ingredient.name]
+      ),
+    });
   } catch (error) {
     // Een mislukte crawl is een storing, geen lege winkel. Luid melden en
     // stoppen; de eerder opgeslagen prijzen blijven staan.
