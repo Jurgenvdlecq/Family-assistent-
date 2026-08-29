@@ -437,3 +437,38 @@ test("verversing: valt ook terug als de specifieke zoekopdracht wél iets terugg
     await prisma.ingredient.delete({ where: { id: ingredient.id } });
   }
 });
+
+test("verversing: stopt netjes bij het tijdslimiet in plaats van te worden afgekapt", async () => {
+  // In productie bleef de knop eindeloos op "bezig met ophalen" staan: de
+  // aanroep liep over de limiet van de hostingpartij heen, werd afgekapt, en
+  // dan krijgt de browser nooit antwoord — ook niet over wat er wél gelukt is.
+  const asked: string[] = [];
+  const result = await refreshStorePrices(
+    fakeProvider(async (term) => {
+      asked.push(term);
+      return [];
+    }),
+    // Een limiet die al verstreken is: er hoort geen enkele aanvraag te volgen.
+    { limitIngredients: 5, deadline: Date.now() - 1 }
+  );
+
+  assert.equal(asked.length, 0, "geen enkele winkelaanvraag meer gedaan");
+  assert.equal(result.ingredientsChecked, 0);
+  assert.equal(result.abortedAfter, 0);
+  assert.ok(
+    result.errors.some((message) => message.includes("tijdslimiet")),
+    "en de gebruiker leest waaróm het niet af is"
+  );
+});
+
+test("verversing: zonder tijdslimiet verandert er niets aan het gedrag", async () => {
+  const asked: string[] = [];
+  await refreshStorePrices(
+    fakeProvider(async (term) => {
+      asked.push(term);
+      return [];
+    }),
+    { limitIngredients: 3 }
+  );
+  assert.ok(asked.length >= 3, "alle drie de ingrediënten zijn gewoon bevraagd");
+});

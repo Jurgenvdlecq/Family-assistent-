@@ -122,6 +122,20 @@ export async function getPricedIngredients(options?: PricedIngredientOptions) {
   ];
 }
 
+/**
+ * De melding bij een verversing die op de klok is gestopt.
+ *
+ * Bewust in dezelfde lijst als de echte fouten: het is geen storing, maar het
+ * is wél "niet alles is gelukt", en dat hoort de gebruiker te lezen in plaats
+ * van te moeten afleiden uit een aantal dat lager is dan verwacht.
+ */
+const STOPPED_ON_TIME = "gestopt bij het tijdslimiet; de rest volgt bij de volgende verversing";
+
+/** Is de tijd op? Zonder afgesproken eindtijd nooit. */
+function outOfTime(deadline: number | undefined): boolean {
+  return deadline !== undefined && Date.now() >= deadline;
+}
+
 export interface RefreshResult {
   provider: ProductProvider;
   ingredientsChecked: number;
@@ -152,7 +166,7 @@ export interface RefreshResult {
  */
 export async function refreshStorePrices(
   provider: StorePriceProvider,
-  options?: { limitIngredients?: number; withExtras?: boolean } & PricedIngredientOptions
+  options?: { limitIngredients?: number; withExtras?: boolean; deadline?: number } & PricedIngredientOptions
 ): Promise<RefreshResult> {
   const correlationId = createCorrelationId();
   const ingredients = (
@@ -177,6 +191,15 @@ export async function refreshStorePrices(
   let consecutiveFailures = 0;
 
   for (const [index, ingredient] of ingredients.entries()) {
+    // Netjes stoppen vóór de hostingpartij de aanroep afkapt. Wordt dat aan
+    // haar overgelaten, dan krijgt de gebruiker helemaal geen antwoord: de
+    // knop blijft op "bezig met ophalen" staan en wat er wél is opgehaald
+    // wordt nooit gemeld. Liever de helft doen en dat eerlijk zeggen.
+    if (outOfTime(options?.deadline)) {
+      result.abortedAfter = index;
+      result.errors.push(STOPPED_ON_TIME);
+      break;
+    }
     if (index > 0) await sleep(REQUEST_SPACING_MS);
     result.ingredientsChecked += 1;
 
@@ -308,7 +331,7 @@ export function refreshableProviders(): StorePriceProvider[] {
  * ziet.
  */
 export async function refreshDirkPrices(
-  options?: { limitIngredients?: number; maxCategories?: number } & PricedIngredientOptions
+  options?: { limitIngredients?: number; maxCategories?: number; deadline?: number } & PricedIngredientOptions
 ): Promise<RefreshResult> {
   const correlationId = createCorrelationId();
   const ingredients = (
@@ -348,7 +371,12 @@ export async function refreshDirkPrices(
   // te onderscheiden van "de scraper leest niets meer".
   result.itemsSeen = catalogue.products.length;
 
-  for (const ingredient of ingredients) {
+  for (const [index, ingredient] of ingredients.entries()) {
+    if (outOfTime(options?.deadline)) {
+      result.abortedAfter = index;
+      result.errors.push(STOPPED_ON_TIME);
+      break;
+    }
     result.ingredientsChecked += 1;
     const matches = rankStoreProducts(ingredient.name, catalogue.products, CANDIDATES_PER_INGREDIENT, {
       name: ingredient.referenceProductName,
@@ -388,13 +416,22 @@ export async function refreshDirkPrices(
   return result;
 }
 
-export async function refreshAllStorePrices(): Promise<RefreshResult[]> {
+export async function refreshAllStorePrices(options?: { deadline?: number }): Promise<RefreshResult[]> {
   const results: RefreshResult[] = [];
-  for (const provider of refreshableProviders()) {
-    results.push(await refreshStorePrices(provider, { withExtras: true }));
+  // Elke winkel krijgt een gelijk deel van de resterende tijd. Zonder deze
+  // verdeling zou de eerste winkel het hele budget kunnen opsouperen en zou
+  // de tweede er structureel niet aan toe komen — precies het soort stille
+  // scheefgroei dat je pas maanden later ontdekt.
+  const providers = refreshableProviders();
+  const shares = providers.length + 1;
+  const budget = options?.deadline ? Math.floor((options.deadline - Date.now()) / shares) : null;
+  const deadlineFor = () => (budget === null ? undefined : Date.now() + budget);
+
+  for (const provider of providers) {
+    results.push(await refreshStorePrices(provider, { withExtras: true, deadline: deadlineFor() }));
   }
   // Dirk apart, omdat de vorm van die verversing anders is. Een mislukte
   // Dirk-crawl mag de AH-prijzen niet meeslepen: die zijn gewoon opgehaald.
-  results.push(await refreshDirkPrices());
+  results.push(await refreshDirkPrices({ deadline: deadlineFor() }));
   return results;
 }
