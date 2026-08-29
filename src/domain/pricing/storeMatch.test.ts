@@ -91,3 +91,21 @@ test("zoeken: blijft er niets over, dan zoeken we met de naam zelf", () => {
   // Liever een matige zoekopdracht dan een lege.
   assert.equal(storeSearchTerm("Dirk"), "Dirk");
 });
+
+test("zoeken: een samenstelling met of zonder spatie is hetzelfde product", () => {
+  // Uit productiegebruik: wij noemen het "Allesreinigerdoekjes", Albert Heijn
+  // schrijft "Allesreiniger doekjes". Op letterniveau vond de ene vorm de
+  // andere niet, en dan staat er "niet gevonden" terwijl het product er ligt.
+  assert.equal(
+    scoreStoreProductForIngredient("Allesreinigerdoekjes Citrus", "AH Allesreiniger doekjes citrus"),
+    1
+  );
+  // En andersom net zo goed.
+  assert.equal(scoreStoreProductForIngredient("Snack Tomaatjes", "AH Snacktomaatjes"), 1);
+});
+
+test("zoeken: losse letters blijven geen match", () => {
+  // Het weglaten van spaties mag geen nieuwe overeenkomsten verzinnen die niet
+  // uit dezelfde letters bestaan.
+  assert.ok(scoreStoreProductForIngredient("Appelmoes", "AH Bananen") < 0.6);
+});

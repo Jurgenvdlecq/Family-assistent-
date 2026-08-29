@@ -319,3 +319,87 @@ test("het mandje: de oudste prijs in het totaal wordt onthouden", () => {
   assert.equal(total.oldestObservation?.toISOString(), ouder.toISOString());
   assert.equal(total.anyStale, true);
 });
+
+test("het mandje: '3x Alpro' is drie van ónze verpakkingen, niet drie vierpakken", () => {
+  // Echt voorbeeld uit productiegebruik: Picnic € 8,97 voor 3 stuks, en de app
+  // rekende bij Albert Heijn 3 × een vierpak van € 10,98 = € 32,94. Dat koopt
+  // er twaalf terwijl je er drie wilde.
+  const comparison = compareBasket(
+    [
+      line({
+        ingredientName: "Alpro",
+        neededQuantity: 3,
+        unit: "PIECE",
+        quantityIsPackageCount: true,
+        reference: {
+          name: "Alpro mild & creamy naturel",
+          brand: "Alpro",
+          packageSize: "1 stuk",
+          qualityTier: "STANDAARD",
+          gtin: null,
+          price: 2.99,
+          packageQuantity: 1,
+          packageUnit: "PIECE",
+        },
+      }),
+    ],
+    new Map([
+      [
+        "regel-melk",
+        [
+          candidate({
+            name: "AH Alpro mild & creamy naturel",
+            packageSize: "4 stuks",
+            packageQuantity: 4,
+            packageUnit: "PIECE",
+            price: 10.98,
+          }),
+        ],
+      ],
+    ]),
+    ["AH"]
+  );
+
+  const result = comparison.lines[0].stores.get("AH")!;
+  assert.equal(result.packagesToBuy, 1, "één vierpak dekt drie stuks");
+  assert.equal(result.cost, 10.98);
+  assert.equal(result.surplus, 1, "je houdt er wel één over");
+  assert.equal(comparison.referenceTotal, 8.97, "en onze eigen kant blijft 3 × € 2,99");
+});
+
+test("het mandje: zonder onze eigen verpakkingsinhoud rekent hij een aantal niet om", () => {
+  // Liever niets zeggen dan een bedrag dat er twaalf koopt.
+  const comparison = compareBasket(
+    [
+      line({
+        neededQuantity: 3,
+        unit: "PIECE",
+        quantityIsPackageCount: true,
+        reference: { ...line().reference!, packageQuantity: null, packageUnit: null, price: 2.99 },
+      }),
+    ],
+    new Map([["regel-melk", [candidate({ packageQuantity: 4, packageUnit: "PIECE", price: 10.98 })]]]),
+    ["AH"]
+  );
+  const result = comparison.lines[0].stores.get("AH")!;
+  assert.equal(result.cost, null);
+  assert.equal(result.missingReason, "verpakkingen niet te vergelijken");
+});
+
+test("het mandje: één stuk nodig blijft gewoon één verpakking bij elke winkel", () => {
+  // Hier is "koop er daar ook één" precies wat je wilt, ook als er meer in zit;
+  // de verpakkingsgrootte staat ernaast zodat het verschil zichtbaar is.
+  const comparison = compareBasket(
+    [
+      line({
+        neededQuantity: 1,
+        unit: "PIECE",
+        quantityIsPackageCount: true,
+        reference: { ...line().reference!, packageQuantity: null, packageUnit: null, price: 3.49 },
+      }),
+    ],
+    new Map([["regel-melk", [candidate({ packageQuantity: 380, packageUnit: "GRAM", price: 2.95 })]]]),
+    ["AH"]
+  );
+  assert.equal(comparison.lines[0].stores.get("AH")!.cost, 2.95);
+});
