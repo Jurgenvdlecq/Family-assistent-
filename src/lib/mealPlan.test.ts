@@ -10,6 +10,7 @@ import { prisma } from "./prisma";
 import { ensureMealPlan } from "./mealPlan";
 import { getCurrentWeekStart } from "./week";
 import { weekParityForDate } from "@/domain/week/isoWeek";
+import { getIngredientsOnOffer } from "./pricing/offers";
 
 async function makeHousehold(name: string, hardRestrictions: string[] = []) {
   return prisma.household.create({
@@ -321,5 +322,76 @@ test("weekritme: een huishouden zonder dagregels krijgt exact het oude gedrag", 
   } finally {
     await cleanup(withoutRules.id);
     await cleanup(alsoWithoutRules.id);
+  }
+});
+
+
+test("aanbieding: alleen een échte actie telt als aanbieding voor de weekplanning", async () => {
+  // Bewijst het gedrag dat de weekplanning gebruikt, tegen de echte database:
+  // een van-prijs die eerder ook werkelijk gerekend is levert een aanbieding
+  // op, dezelfde actie met een verzonnen van-prijs niet.
+  const recipeIngredient = await prisma.recipeIngredient.findFirstOrThrow({ include: { ingredient: true } });
+  const namen = new Map([[recipeIngredient.ingredientId, recipeIngredient.ingredient.name]]);
+
+  async function meetPrijsverloop(eerderePrijs: number) {
+    const product = await prisma.product.create({
+      data: {
+        ingredientId: recipeIngredient.ingredientId,
+        provider: "AH",
+        externalRef: `ah-actie-${Math.random().toString(36).slice(2)}`,
+        name: `AH ${recipeIngredient.ingredient.name}`,
+        brand: "AH",
+        packageSize: "500 gram",
+        packageQuantity: 500,
+        price: 1.99,
+        qualityTier: "STANDAARD",
+      },
+    });
+    const dagen = (aantal: number) => new Date(Date.now() - aantal * 24 * 60 * 60 * 1000);
+    await prisma.priceObservation.createMany({
+      data: [
+        { productId: product.id, price: eerderePrijs, observedAt: dagen(28), source: "API" },
+        { productId: product.id, price: eerderePrijs, observedAt: dagen(21), source: "API" },
+        { productId: product.id, price: eerderePrijs, observedAt: dagen(14), source: "API" },
+        { productId: product.id, price: eerderePrijs, observedAt: dagen(7), source: "API" },
+        {
+          productId: product.id,
+          price: 1.99,
+          wasPrice: 2.99,
+          promoLabel: "1+1 gratis",
+          promoType: "X_VOOR_Y",
+          observedAt: new Date(),
+          source: "API",
+        },
+      ],
+    });
+    return product;
+  }
+
+  // Geval 1: de van-prijs van € 2,99 was hier eerder ook echt de prijs.
+  const echt = await meetPrijsverloop(2.99);
+  try {
+    const offers = await getIngredientsOnOffer([recipeIngredient.ingredientId], namen, ["AH"]);
+    const offer = offers.get(recipeIngredient.ingredientId);
+    assert.ok(offer, "een echte korting hoort als aanbieding te tellen");
+    assert.equal(offer!.storeLabel, "Albert Heijn");
+    assert.equal(offer!.promoLabel, "1+1 gratis");
+  } finally {
+    await prisma.priceObservation.deleteMany({ where: { productId: echt.id } });
+    await prisma.product.delete({ where: { id: echt.id } });
+  }
+
+  // Geval 2: exact dezelfde actie, maar de van-prijs is hier nooit gerekend.
+  const nep = await meetPrijsverloop(1.99);
+  try {
+    const offers = await getIngredientsOnOffer([recipeIngredient.ingredientId], namen, ["AH"]);
+    assert.equal(
+      offers.get(recipeIngredient.ingredientId),
+      undefined,
+      "een nepkorting mag het weekmenu niet sturen"
+    );
+  } finally {
+    await prisma.priceObservation.deleteMany({ where: { productId: nep.id } });
+    await prisma.product.delete({ where: { id: nep.id } });
   }
 });

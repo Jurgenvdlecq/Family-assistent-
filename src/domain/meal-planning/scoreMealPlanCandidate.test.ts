@@ -543,3 +543,90 @@ test("zelf halen: een profiel dat alles via Picnic wil, weegt een externe boodsc
     "op een avond die bestellen moet vervangen telt 'nog even langs de slager' zwaarder"
   );
 });
+
+test("aanbieding: geeft de doorslag tussen twee gerechten die verder gelijk scoren", () => {
+  // Dit is waar de aanbieding voor bedoeld is: een dubbeltje op zijn kant.
+  const metKip = candidate({
+    id: "a-kip",
+    recipeTitle: "Kip met rijst",
+    ingredients: [{ id: "kip", name: "Kipfilet" }],
+  });
+  const zonderKip = candidate({
+    id: "b-vis",
+    recipeTitle: "Vis met rijst",
+    ingredients: [{ id: "vis", name: "Kabeljauw" }],
+  });
+
+  const result = chooseMealPlanCandidate({
+    candidates: [metKip, zonderKip],
+    dayKey: "wednesday",
+    busy: false,
+    preferredCategories: new Set(),
+    variantPreferences: new Map(),
+    ingredientsOnOffer: new Map([["kip", { label: "Kipfilet", storeLabel: "Albert Heijn" }]]),
+    lastPlannedByRecipeId: new Map(),
+    usedRecipeIds: new Set(),
+    targetDate: TARGET_DATE,
+  });
+
+  assert.equal(result.candidate.id, "a-kip");
+  assert.ok(
+    result.reasons.some((reason) => reason.includes("in de bonus bij Albert Heijn")),
+    "de reden hoort zichtbaar te zijn"
+  );
+});
+
+test("aanbieding: wint nooit van wat iemand liever niet eet", () => {
+  // Het plafond bestaat hiervoor. Anders eten we alleen nog wat er in de
+  // actie ligt.
+  const inDeBonus = candidate({
+    id: "a-bonus",
+    recipeTitle: "Kip met rijst",
+    ingredients: [
+      { id: "kip", name: "Kipfilet" },
+      { id: "rijst", name: "Rijst" },
+      { id: "ui", name: "Ui" },
+    ],
+  });
+  const gewoon = candidate({ id: "b-gewoon", recipeTitle: "Pasta pesto" });
+
+  const result = chooseMealPlanCandidate({
+    candidates: [inDeBonus, gewoon],
+    dayKey: "wednesday",
+    busy: false,
+    preferredCategories: new Set(),
+    variantPreferences: new Map(),
+    personalVariantPreferences: new Map([
+      ["a-bonus", [{ personName: "Lynn", stance: "RATHER_NOT", confidence: 1 }]],
+    ]),
+    ingredientsOnOffer: new Map([
+      ["kip", { label: "Kipfilet", storeLabel: "Albert Heijn" }],
+      ["rijst", { label: "Rijst", storeLabel: "Albert Heijn" }],
+      ["ui", { label: "Ui", storeLabel: "Albert Heijn" }],
+    ]),
+    lastPlannedByRecipeId: new Map(),
+    usedRecipeIds: new Set(),
+    targetDate: TARGET_DATE,
+  });
+
+  assert.equal(result.candidate.id, "b-gewoon", "een afkeur weegt zwaarder dan drie aanbiedingen");
+});
+
+test("aanbieding: zonder aanbiedingen verandert er niets aan de score", () => {
+  // Achterwaartse compatibiliteit: een huishouden zonder prijsgegevens moet
+  // exact dezelfde keuzes krijgen als voorheen.
+  const base = {
+    candidates: [candidate({ id: "a" }), candidate({ id: "b" })],
+    dayKey: "monday" as const,
+    busy: false,
+    preferredCategories: new Set<string>(),
+    variantPreferences: new Map(),
+    lastPlannedByRecipeId: new Map(),
+    usedRecipeIds: new Set<string>(),
+    targetDate: TARGET_DATE,
+  };
+  const zonder = chooseMealPlanCandidate(base);
+  const metLege = chooseMealPlanCandidate({ ...base, ingredientsOnOffer: new Map() });
+  assert.equal(zonder.candidate.id, metLege.candidate.id);
+  assert.equal(zonder.score, metLege.score);
+});
