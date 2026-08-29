@@ -85,7 +85,14 @@ export function scoreStoreProductForIngredient(ingredientName: string, productNa
   if (wanted.length === 0) return 0;
 
   const haystack = normalize(productName);
-  const hits = wanted.filter((word) => haystack.includes(word)).length;
+  // Ook zonder spaties vergelijken. Winkels schrijven samenstellingen
+  // verschillend: "Allesreinigerdoekjes" bij ons, "Allesreiniger doekjes" bij
+  // Albert Heijn. Dat is hetzelfde product, maar op letterniveau vond de ene
+  // vorm de andere niet — en dan meldde het scherm "niet gevonden" terwijl het
+  // product er ligt. Dit voegt geen enkele nieuwe overeenkomst toe die niet
+  // letterlijk uit dezelfde letters bestaat.
+  const joined = haystack.replace(/ /g, "");
+  const hits = wanted.filter((word) => haystack.includes(word) || joined.includes(word)).length;
   return hits / wanted.length;
 }
 

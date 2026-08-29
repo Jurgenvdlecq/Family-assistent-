@@ -166,12 +166,44 @@ export interface BasketComparison {
 function packagesForLine(
   line: BasketLineInput,
   packageQuantity: number | null,
-  packageUnit: Unit | null
+  packageUnit: Unit | null,
+  isReference: boolean
 ): { packagesToBuy: number | null; surplus: number | null; reason: string | null } {
-  // "2x brood" is geen hoeveelheid maar een aantal. Dan is de verpakking
-  // irrelevant: je koopt er twee, bij elke winkel.
+  // "3x Alpro" is geen hoeveelheid maar een aantal verpakkingen — en wel ónze
+  // verpakkingen. Dat is precies waar het misging: drie keer een vierpak van
+  // een andere winkel is twaalf stuks en € 32,94, terwijl je er drie wilde.
   if (line.quantityIsPackageCount) {
-    return { packagesToBuy: Math.ceil(line.neededQuantity), surplus: null, reason: null };
+    const count = Math.ceil(line.neededQuantity);
+
+    // Aan onze eigen kant is het aantal per definitie het aantal.
+    if (isReference) return { packagesToBuy: count, surplus: null, reason: null };
+
+    // Eén stuk nodig: dan koop je er bij elke winkel één, ook als daar meer in
+    // zit. De verpakkingsgrootte staat ernaast, dus het verschil is zichtbaar.
+    if (count === 1) return { packagesToBuy: 1, surplus: null, reason: null };
+
+    // Meer dan één: dan moet het aantal eerst door onze eigen verpakking heen
+    // naar een echte hoeveelheid, en pas daarna door die van de winkel.
+    const ownContent = line.reference?.packageQuantity ?? null;
+    const ownUnit = line.reference?.packageUnit ?? null;
+    if (
+      ownContent == null ||
+      packageQuantity == null ||
+      (ownUnit !== null && packageUnit !== null && ownUnit !== packageUnit)
+    ) {
+      // Zonder onze eigen verpakkingsinhoud valt "drie keer die van ons" niet
+      // om te rekenen naar die van de winkel. Dan liever niets zeggen dan een
+      // bedrag dat er twaalf koopt.
+      return { packagesToBuy: null, surplus: null, reason: "verpakkingen niet te vergelijken" };
+    }
+
+    const needed = count * ownContent;
+    const packages = Math.ceil(Math.round((needed / packageQuantity) * 1e6) / 1e6);
+    return {
+      packagesToBuy: packages,
+      surplus: Number((packages * packageQuantity - needed).toFixed(2)),
+      reason: null,
+    };
   }
 
   if (packageQuantity == null) {
@@ -217,7 +249,7 @@ function priceLineAtStore(
       // niet wat we normaal zouden kopen, dus ook niet of dit gelijkwaardig is.
       { level: "NIET_VERGELIJKBAAR" as const, reason: "we hebben zelf nog geen product gekozen" };
 
-  const packaging = packagesForLine(line, candidate.packageQuantity, candidate.packageUnit);
+  const packaging = packagesForLine(line, candidate.packageQuantity, candidate.packageUnit, false);
   const packagesToBuy = packaging.packagesToBuy;
 
   // Een kortingslabel is geen prijs. "1+1 gratis" bij drie stuks is 33%
@@ -307,7 +339,8 @@ export function compareBasket(
       const packaging = packagesForLine(
         line,
         line.reference.packageQuantity,
-        line.reference.packageUnit
+        line.reference.packageUnit,
+        true
       );
       if (packaging.packagesToBuy === null) {
         referenceLinesMissing += 1;
