@@ -1,6 +1,11 @@
 import { headers } from "next/headers";
 import { refreshAllStorePrices } from "@/lib/pricing/refresh";
+import { finishRefreshRun, startRefreshRuns } from "@/lib/pricing/refreshRuns";
 import { logEvent, createCorrelationId, errorMessage } from "@/lib/logger";
+import type { ProductProvider } from "@/generated/prisma/enums";
+
+/** De winkels waar de nachtelijke verversing langsgaat. */
+const REFRESH_PROVIDERS: ProductProvider[] = ["AH", "DIRK"];
 
 /**
  * Dagelijkse prijsverversing, aangeroepen door een cron (Vercel Cron).
@@ -32,7 +37,15 @@ export async function GET(request: Request) {
   }
 
   try {
+    // Eerst een regel per winkel, dan pas het werk: raakt deze aanroep
+    // halverwege afgekapt, dan is dat straks zichtbaar op het scherm in
+    // plaats van dat er niets van te zien is.
+    const runIds = await startRefreshRuns(REFRESH_PROVIDERS, "CRON");
     const results = await refreshAllStorePrices();
+    for (const result of results) {
+      const runId = runIds.get(result.provider);
+      if (runId) await finishRefreshRun(runId, result);
+    }
     // Een verversing die niets opleverde is een storing, geen uitslag — dat
     // moet ook in de HTTP-status te zien zijn, anders staat de cron op groen
     // terwijl de prijzen bevriezen.
