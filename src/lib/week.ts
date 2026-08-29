@@ -114,7 +114,7 @@ export function formatWeekRange(weekStart: Date): string {
 // Zelfde vaste Europe/Amsterdam-tijdzone als notificationPolicy.ts (v1 is
 // NL/BE-only) — gebruikt voor de twee functies hieronder, die allebei om
 // "hoe laat/welke dag is het écht" gaan, niet om serverlokale tijd.
-const DISPLAY_TIME_ZONE = "Europe/Amsterdam";
+export const DISPLAY_TIME_ZONE = "Europe/Amsterdam";
 
 /** "Goedemorgen"/"Goedemiddag"/"Goedenavond" op basis van het huidige uur — was voorheen altijd "Goedemorgen", ook 's avonds. */
 export function timeOfDayGreeting(now: Date = new Date()): string {

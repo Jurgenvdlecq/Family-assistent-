@@ -8,12 +8,13 @@ import { EQUIVALENCE_LABELS, type EquivalenceLevel } from "@/domain/pricing/equi
 import { PROVIDER_LABELS } from "@/domain/pricing/types";
 import { describeProviderSource } from "@/domain/pricing/providers/capabilities";
 import { describeSplitAdvice } from "@/domain/pricing/splitAdvice";
+import { getLastRefreshRuns, describeRefreshRun } from "@/lib/pricing/refreshRuns";
 import { compareLineAcrossStores, comparisonColumns } from "@/domain/pricing/lineComparison";
 import type { ProductProvider } from "@/generated/prisma/enums";
 import type { StorePriceForIngredient } from "@/lib/pricing/storePrices";
 import NavBar from "@/components/NavBar";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
-import { chooseStoreProduct, clearStoreProductChoice } from "./actions";
+import { chooseStoreProduct, clearStoreProductChoice, refreshPricesNow } from "./actions";
 
 // Leest de actuele boodschappenlijst en maakt (idempotent) het weekplan aan —
 // nooit statisch prerenderen.
@@ -22,7 +23,22 @@ export const dynamic = "force-dynamic";
 const STATUS_MESSAGES: Record<string, string> = {
   "keuze-opgeslagen": "Onthouden. Vanaf nu rekent de vergelijking met dit product.",
   "keuze-gewist": "Keuze losgelaten. De app kiest hier weer zelf.",
+  ververst: "Klaar. Hieronder staat per winkel wat het opleverde.",
+  "verversen-mislukt": "Er is niets opgehaald. Hieronder staat per winkel waarom.",
+  "verversing-loopt-al": "Er loopt al een verversing. Even geduld, en ververs daarna de pagina.",
 };
+
+/**
+ * Welke meldingen géén succes zijn.
+ *
+ * Een groene "klaar"-balk boven een scherm waar nul producten zijn opgehaald,
+ * is precies de schijn die deze app niet hoort te wekken.
+ */
+const WARNING_STATUSES = new Set(["verversen-mislukt", "verversing-loopt-al"]);
+
+// Een handmatige verversing doet echte aanvragen naar de winkels. Dat mag
+// even duren, maar niet eindeloos — Vercel breekt een te lange aanroep af.
+export const maxDuration = 60;
 
 function euro(value: number) {
   return `€ ${value.toFixed(2).replace(".", ",")}`;
@@ -71,7 +87,10 @@ export default async function PrijzenPage({
   const mealPlan = await ensureMealPlan(household.id, getCurrentWeekStart());
   if (!mealPlan) throw new Error("Weekplanning kon niet worden geladen.");
 
-  const overview = await getBasketOverview(household.id, mealPlan.id);
+  const [overview, lastRuns] = await Promise.all([
+    getBasketOverview(household.id, mealPlan.id),
+    getLastRefreshRuns(COMPARISON_PROVIDERS),
+  ]);
   const { comparison, candidatesByIngredient, choicesByIngredient, lineMeta } = overview;
   const providers = COMPARISON_PROVIDERS;
   // Picnic hoort als kolom naast de winkels te staan, niet als losse alinea
@@ -104,10 +123,43 @@ export default async function PrijzenPage({
         </p>
 
         {statusMessage && (
-          <p className="mb-5 rounded-lg border border-tag-green-ink/20 bg-tag-green-bg px-3 py-2 text-sm font-medium text-tag-green-ink">
+          <p
+            className={`mb-5 rounded-lg border px-3 py-2 text-sm font-medium ${
+              WARNING_STATUSES.has(params.status ?? "")
+                ? "border-tag-amber-ink/20 bg-tag-amber-bg text-tag-amber-ink"
+                : "border-tag-green-ink/20 bg-tag-green-bg text-tag-green-ink"
+            }`}
+          >
             {statusMessage}
           </p>
         )}
+
+        {/* Bewust buiten het lijstblok: verversen hangt niet van de
+            boodschappenlijst af (het gaat om je receptenboek en je vaste
+            boodschappen), en juist een huishouden zonder lijst heeft deze
+            knop het hardst nodig. */}
+        <section className="mb-6 rounded-xl border border-line bg-surface p-4">
+          <div className="space-y-1">
+            {providers.map((provider) => (
+              <p key={provider} className="text-xs text-ink-faint">
+                {describeRefreshRun(lastRuns.get(provider), PROVIDER_LABELS[provider])}
+              </p>
+            ))}
+          </div>
+          <form action={refreshPricesNow} className="mt-2">
+            <PendingSubmitButton
+              pendingText="Bezig met ophalen — dit duurt even…"
+              className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium text-ink"
+            >
+              Prijzen nu verversen
+            </PendingSubmitButton>
+            {/* Eerlijk over wat de knop wél en niet doet. */}
+            <p className="mt-1 text-xs text-ink-faint">
+              Haalt de prijzen van een deel van je ingrediënten op, zodat je meteen ziet of het werkt.
+              De volledige lijst gaat elke nacht vanzelf.
+            </p>
+          </form>
+        </section>
 
         {comparison.lines.length === 0 ? (
           <p className="rounded-xl border border-line bg-surface p-4 text-sm text-ink-muted">
@@ -257,6 +309,7 @@ export default async function PrijzenPage({
                     nog niet.
                   </p>
                 )}
+
               </div>
             </section>
 

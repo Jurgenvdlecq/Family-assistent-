@@ -936,6 +936,36 @@ enum ObservationSource {
   @@map("observation_source")
 }
 
+// Wat er bij de laatste prijsverversing gebeurd is, per winkel.
+//
+// Bestaat omdat de uitkomst anders alleen in een logbestand terechtkomt, en
+// daar heeft de gebruiker niets aan: "wanneer zijn deze prijzen opgehaald" en
+// "waarom staat er niets" zijn vragen die op het scherm beantwoord horen te
+// worden. Eén regel per winkel per verversing, zodat een storing van vandaag
+// niet die van gisteren wist.
+model PriceRefreshRun {
+  id                 String              @id @default(uuid())
+  provider           ProductProvider
+  startedAt          DateTime            @default(now()) @map("started_at")
+  finishedAt         DateTime?           @map("finished_at")
+  ingredientsChecked Int                 @default(0) @map("ingredients_checked")
+  productsStored     Int                 @default(0) @map("products_stored")
+  /// De eerste foutmelding, in gewone taal; `null` als alles goed ging.
+  error              String?
+  trigger            PriceRefreshTrigger
+
+  @@index([provider, startedAt])
+  @@map("price_refresh_runs")
+}
+
+// Door de nachtelijke taak, of doordat iemand zelf op "nu verversen" tikte.
+enum PriceRefreshTrigger {
+  CRON
+  MANUAL
+
+  @@map("price_refresh_trigger")
+}
+
 // Vervangt het generieke gebruik van Preference{subjectType: PRODUCT} met
 // iets rijkers (Fase 2 / Fase 5): niet alleen "vertrouwd of niet", maar ook
 // hoe vaak en wanneer voor het laatst gekozen, en of dat automatisch of

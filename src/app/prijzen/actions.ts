@@ -5,6 +5,10 @@ import { redirect } from "next/navigation";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { ProductProvider } from "@/generated/prisma/enums";
+import { refreshDirkPrices, refreshStorePrices, type RefreshResult } from "@/lib/pricing/refresh";
+import { ahPriceProvider } from "@/lib/pricing/ahClient";
+import { finishRefreshRun, hasRunningRefresh, startRefreshRuns } from "@/lib/pricing/refreshRuns";
+import { errorMessage } from "@/lib/logger";
 
 const PROVIDERS: ProductProvider[] = ["AH", "DIRK"];
 
@@ -72,4 +76,91 @@ export async function clearStoreProductChoice(formData: FormData) {
   revalidatePath("/boodschappen");
   const anchor = encodeURIComponent(lineId);
   redirect(`/prijzen?focus=${anchor}&status=keuze-gewist#regel-${anchor}`);
+}
+
+/**
+ * "Prijzen nu verversen" — dezelfde klus als de nachtelijke taak, maar
+ * afgemeten en met de uitslag meteen op het scherm.
+ *
+ * Waarom afgemeten: een aanroep vanuit de app mag niet minutenlang duren, en
+ * de volledige lijst kost dat wel (er zit bewust een pauze tussen de aanvragen
+ * zodat we de winkels niet overvragen). Deze knop doet daarom een beperkt
+ * aantal ingrediënten. Dat staat ook zo op het scherm — een knop die "alles
+ * bijgewerkt" suggereert terwijl hij een deel doet, is precies de soort
+ * belofte die deze app niet hoort te maken.
+ *
+ * De uitkomst wordt vastgelegd (`PriceRefreshRun`): eerst een regel per winkel
+ * bij de start, daarna bijgewerkt met wat het opleverde. Zo is een afgebroken
+ * verversing zichtbaar in plaats van onzichtbaar, en houdt een lopende regel
+ * een tweede gelijktijdige verversing tegen.
+ */
+export async function refreshPricesNow() {
+  // Alleen voor een ingelogd huishouden: dit doet echte aanvragen naar
+  // externe winkels, dus geen open eindpunt.
+  await requireCurrentHousehold();
+
+  // Twee tabbladen, of twee gezinsleden tegelijk, zouden de zorgvuldig
+  // ingebouwde pauze tussen de aanvragen verdubbelen. En een blokkade door de
+  // winkel valt niet op deze knop maar op de nachtelijke verversing.
+  if (await hasRunningRefresh(REFRESH_PROVIDERS)) {
+    redirect("/prijzen?status=verversing-loopt-al");
+  }
+
+  const runIds = await startRefreshRuns(REFRESH_PROVIDERS, "MANUAL");
+  const results: RefreshResult[] = [];
+
+  // Elke winkel apart afhandelen: een storing bij de één mag de ander niet
+  // meeslepen — dan zie je van geen van beide wat er aan de hand is.
+  for (const provider of REFRESH_PROVIDERS) {
+    let result: RefreshResult;
+    try {
+      result =
+        provider === "AH"
+          ? await refreshStorePrices(ahPriceProvider, {
+              limitIngredients: MANUAL_INGREDIENT_LIMIT,
+              withExtras: false,
+            })
+          : await refreshDirkPrices({
+              limitIngredients: MANUAL_INGREDIENT_LIMIT,
+              maxCategories: MANUAL_DIRK_CATEGORY_LIMIT,
+            });
+    } catch (error) {
+      result = failedRun(provider, error);
+    }
+    results.push(result);
+    await finishRefreshRun(runIds.get(provider)!, result);
+  }
+
+  revalidatePath("/prijzen");
+  revalidatePath("/boodschappen");
+
+  // Een groene "klaar"-melding terwijl er nul producten zijn opgehaald, is
+  // precies de schijn die deze app niet hoort te wekken.
+  const nothingStored = results.every((result) => result.productsStored === 0);
+  redirect(`/prijzen?status=${nothingStored ? "verversen-mislukt" : "ververst"}`);
+}
+
+/** De winkels die een handmatige verversing langsgaat. */
+const REFRESH_PROVIDERS: ProductProvider[] = ["AH", "DIRK"];
+
+/**
+ * Zoveel ingrediënten pakt een handmatige verversing; de rest doet de
+ * nachtelijke taak. Bewust laag gehouden: er zit een pauze tussen de
+ * aanvragen, en de hostingpartij kapt een te lange aanroep af.
+ */
+const MANUAL_INGREDIENT_LIMIT = 15;
+
+/** En zoveel categoriepagina's bij Dirk. */
+const MANUAL_DIRK_CATEGORY_LIMIT = 6;
+
+/** Een winkel die helemaal niet bereikbaar was, in dezelfde vorm als een gewone uitslag. */
+function failedRun(provider: ProductProvider, error: unknown): RefreshResult {
+  return {
+    provider,
+    ingredientsChecked: 0,
+    productsStored: 0,
+    ingredientsWithoutMatch: 0,
+    errors: [errorMessage(error)],
+    abortedAfter: null,
+  };
 }

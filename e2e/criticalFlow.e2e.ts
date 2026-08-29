@@ -43,6 +43,18 @@ async function waitForBoodschappenSettled(target: Page) {
     .catch(() => {});
 }
 
+/** Wacht tot een voorwaarde waar is, of geef het na de deadline op met een
+ *  begrijpelijke melding. Gebruikt waar de database het betrouwbaarste signaal
+ *  is dat de server klaar is met een actie. */
+async function waitUntil(check: () => Promise<boolean>, message: string, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await check()) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`Time-out: ${message}`);
+}
+
 /** Het optiemenu op een productregel is een native <details>. Openzetten via de
  *  DOM in plaats van op de samenvatting klikken: idempotent, en niet gevoelig
  *  voor de layoutverschuiving die het uitklappen zelf veroorzaakt. */
@@ -1187,13 +1199,24 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         await chooseButton.scrollIntoViewIfNeeded();
         await chooseButton.click();
 
-        // Op het gedrag wachten, niet op de URL: de doorrekening hoort vanaf nu
-        // met het gekozen product te rekenen. Dat is wat dit werkpakket belooft
-        // — een rij in de database bewijst dat niet.
-        // Nadrukkelijk de vergelijkingscel van Albert Heijn, niet zomaar ergens
-        // op de regel: het bedrag staat ook in de keuzelijst, en daar zou de
-        // test op aanslaan zonder dat de doorrekening iets doet.
-        const ahCell = row.locator('[data-store-cell="AH"]');
+        // Wachten tot de server de keuze echt verwerkt heeft. Dat is een
+        // betrouwbaarder signaal dan een navigatie afwachten, en het maakt de
+        // volgende stap onafhankelijk van hoe de router die navigatie afhandelt.
+        await waitUntil(
+          async () =>
+            (await prisma.householdStoreProductChoice.findFirst({
+              where: { householdId, ingredientId: line.ingredientId, provider: "AH" },
+            })) !== null,
+          "de keuze hoort binnen enkele seconden opgeslagen te zijn"
+        );
+
+        // En dan het gedrag dat dit werkpakket belooft: de doorrekening rekent
+        // voortaan met het gekozen product. Nadrukkelijk de vergelijkingscel van
+        // Albert Heijn, niet zomaar ergens op de regel — het bedrag staat ook in
+        // de keuzelijst, en daar zou de test op aanslaan zonder dat de
+        // doorrekening iets doet.
+        await page.goto(`${server.baseURL}/prijzen`, { waitUntil: "load" });
+        const ahCell = page.locator(`#regel-${line.id}`).locator('[data-store-cell="AH"]');
         await ahCell.getByText("2,19").waitFor({ state: "visible", timeout: 15_000 });
 
         const choice = await prisma.householdStoreProductChoice.findFirst({
