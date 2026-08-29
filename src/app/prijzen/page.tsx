@@ -7,6 +7,7 @@ import { getBasketOverview, COMPARISON_PROVIDERS } from "@/lib/pricing/basket";
 import { EQUIVALENCE_LABELS, type EquivalenceLevel } from "@/domain/pricing/equivalence";
 import { PROVIDER_LABELS } from "@/domain/pricing/types";
 import { describeProviderSource } from "@/domain/pricing/providers/capabilities";
+import { describeSplitAdvice } from "@/domain/pricing/splitAdvice";
 import type { ProductProvider } from "@/generated/prisma/enums";
 import type { StorePriceForIngredient } from "@/lib/pricing/storePrices";
 import NavBar from "@/components/NavBar";
@@ -180,6 +181,54 @@ export default async function PrijzenPage({
                 );
               })}
             </section>
+
+            {/* Splitsingsadvies verschijnt alleen boven de drempel: een advies
+                dat elke week met € 0,40 komt, leert de gebruiker het te
+                negeren. */}
+            {overview.splitAdvice.map((advice) => (
+              <section
+                key={advice.provider}
+                className="mb-6 rounded-xl border border-line bg-surface-2 p-4"
+              >
+                <p className="text-sm font-medium text-ink">
+                  {describeSplitAdvice(advice, PROVIDER_LABELS[advice.provider])}
+                </p>
+                <ul className="mt-2 space-y-1">
+                  {advice.items.slice(0, 8).map((item) => (
+                    <li key={item.lineId} className="flex items-baseline justify-between gap-3 text-xs">
+                      <span className="min-w-0 truncate text-ink-muted">
+                        {item.ingredientName} — {item.productName}
+                      </span>
+                      <span className="shrink-0 text-ink">
+                        {euro(item.storeCost)} <span className="text-ink-faint">i.p.v. {euro(item.ownCost)}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+
+            {overview.stockUpAdvice.length > 0 && (
+              <section className="mb-6 rounded-xl border border-line bg-surface-2 p-4">
+                <p className="text-sm font-medium text-ink">Hier zou je nu extra van kunnen kopen</p>
+                <p className="mt-0.5 text-xs text-ink-faint">
+                  Alleen dingen die lang goed blijven, en nooit meer dan een paar — een kast vol dat over
+                  de datum gaat is de duurste besparing die er is.
+                </p>
+                <ul className="mt-2 space-y-1">
+                  {overview.stockUpAdvice.slice(0, 4).map((item) => (
+                    <li key={`${item.ingredientName}-${item.productName}`} className="text-xs">
+                      <span className="text-ink">
+                        {item.extraPackages}× extra {item.ingredientName.toLowerCase()}
+                      </span>{" "}
+                      <span className="text-ink-faint">
+                        scheelt {euro(item.saving)} — {item.reason}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
 
             <h2 className="mb-2 text-sm font-semibold text-ink">Regel voor regel</h2>
             {/* Een winkel waar we vandaag helemaal niets van weten krijgt geen

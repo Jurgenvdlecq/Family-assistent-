@@ -7,7 +7,9 @@ import {
   type StoreCandidateInput,
 } from "@/domain/pricing/basketComparison";
 import { deriveQualityTier } from "@/domain/pricing/qualityTier";
-import { judgeDiscount, type PriceSample } from "@/domain/pricing/priceHistory";
+import { judgeDiscount, summarizePriceHistory, type PriceSample } from "@/domain/pricing/priceHistory";
+import { buildSplitAdvice, type SplitAdvice } from "@/domain/pricing/splitAdvice";
+import { adviseStockUp, type StockUpAdvice } from "@/domain/pricing/stockUpAdvice";
 import { getPriceHistories } from "./observations";
 import { isUserChosenPackageCount } from "@/lib/shoppingList";
 import {
@@ -44,6 +46,13 @@ export interface BasketOverview {
    * tegenspreekt.
    */
   promoHighlights: PromoHighlight[];
+  /**
+   * Loont het om een deel van de lijst bij een andere winkel te halen?
+   * Leeg zolang het de moeite van een tweede winkel niet waard is.
+   */
+  splitAdvice: SplitAdvice[];
+  /** Houdbare producten waarvan het loont om er deze week extra van te kopen. */
+  stockUpAdvice: StockUpAdvice[];
   /** `null` betekent: er is deze week nog geen lijst om door te rekenen. */
   shoppingListId: string | null;
 }
@@ -93,6 +102,8 @@ export async function getBasketOverview(
     candidatesByIngredient: new Map(),
     lineMeta: new Map(),
     promoHighlights: [],
+    splitAdvice: [],
+    stockUpAdvice: [],
     shoppingListId: null,
   };
   if (!shoppingList || shoppingList.lines.length === 0) return empty;
@@ -125,6 +136,16 @@ export async function getBasketOverview(
   // maar een handvol kandidaten per winkel, en die verzameling verandert
   // naarmate er prijzen bijkomen — een keuze die daarbuiten valt zou anders
   // stilzwijgend verdwijnen en de regel als "niet gevonden" tonen.
+  // Wat er al in huis is — het hamsteradvies mag nooit adviseren om nog eens
+  // drie potten te kopen van iets waar de kast al vol mee ligt.
+  const inventoryItems = await prisma.inventoryItem.findMany({
+    where: { householdId, ingredientId: { in: ingredientIds } },
+    select: { ingredientId: true, quantity: true },
+  });
+  const inventoryByIngredient = new Map(
+    inventoryItems.map((item) => [item.ingredientId, item.quantity ?? 0])
+  );
+
   const pinned = await getStoreProductsByIds(choices.map((choice) => choice.productId), now);
   const pinnedById = new Map(pinned.map((product) => [product.productId, product]));
 
@@ -222,8 +243,48 @@ export async function getBasketOverview(
     candidatesByIngredient,
     lineMeta,
     promoHighlights: collectPromoHighlights(comparison, lineMeta),
+    splitAdvice: buildSplitAdvice(comparison),
+    stockUpAdvice: collectStockUpAdvice(comparison, histories, inventoryByIngredient, lineMeta),
     shoppingListId: shoppingList.id,
   };
+}
+
+/**
+ * Waarvan loont het om deze week extra te kopen?
+ *
+ * De "normale prijs" komt uit het prijsverloop dat hierboven toch al is
+ * opgehaald — zonder die geschiedenis is er geen advies, en dat is precies de
+ * bedoeling: zonder normale prijs weet je niet of dit een korting is.
+ */
+function collectStockUpAdvice(
+  comparison: BasketComparison,
+  histories: Map<string, PriceSample[]>,
+  inventoryByIngredient: Map<string, number>,
+  lineMeta: Map<string, { ingredientId: string }>
+): StockUpAdvice[] {
+  const advice: StockUpAdvice[] = [];
+
+  for (const line of comparison.lines) {
+    for (const store of line.stores.values()) {
+      if (store.cost === null || store.packagesToBuy === null || store.packagesToBuy <= 0) continue;
+      if (store.fakeDiscount) continue;
+
+      const history = summarizePriceHistory(histories.get(store.productId) ?? []);
+      const pricePerPackage = Number((store.cost / store.packagesToBuy).toFixed(2));
+      const item = adviseStockUp({
+        ingredientName: line.ingredientName,
+        productName: store.name,
+        packagesThisWeek: store.packagesToBuy,
+        pricePerPackage,
+        typicalPricePerPackage: history.typicalPrice,
+        inStock: inventoryByIngredient.get(lineMeta.get(line.lineId)?.ingredientId ?? "") ?? 0,
+        packageQuantity: store.packageQuantity,
+      });
+      if (item) advice.push(item);
+    }
+  }
+
+  return advice.sort((a, b) => b.saving - a.saving);
 }
 
 /**
