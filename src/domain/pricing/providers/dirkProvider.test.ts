@@ -200,3 +200,43 @@ test("Dirk: een naam die niet met een fotobeschrijving begint blijft ongemoeid",
   `;
   assert.equal(parseDirkProducts(html)[0].name, "Fotolijst van hout");
 });
+
+/**
+ * Gebruikersmelding met schermafbeelding: bij "Skinny Caffe Latte" stond bij
+ * Dirk "verpakkingsgrootte onbekend", terwijl de maat gewoon in de
+ * productnaam staat ("Starbucks ... 220 ml").
+ *
+ * De oorzaak zat in de leesvolgorde: de maat wordt gezocht in de tekst van
+ * het blok, en die tekst ontstaat door alle tags weg te strippen — inclusief
+ * hun attributen. De naam komt bij Dirk juist uit het `alt`-attribuut. Stond
+ * de maat alleen daar, dan was ze onzichtbaar.
+ */
+test("Dirk: een maat die alleen in de productnaam staat telt ook mee", () => {
+  const html = `
+    <div class="product-card">
+      <a href="/product/99887">
+        <img alt="Foto van Starbucks Skinny Caffe Latte 220 ml" src="/img/3.jpg">
+      </a>
+      <div class="price"><span class="price-large hasEuros">1</span><span class="price-small">99</span></div>
+    </div>
+  `;
+  const product = parseDirkProducts(html)[0];
+  assert.equal(product.packageSize, "220 ml");
+  assert.deepEqual(product.content, { amount: 220, unit: "ML" });
+});
+
+test("Dirk: een apart maatveld op de kaart gaat vóór de naam", () => {
+  // Staan er twee maten, dan is het losse veld de betrouwbaardere bron: dat
+  // gáát over de verpakking, terwijl een getal in de naam ook iets anders
+  // kan zijn.
+  const html = `
+    <div class="product-card">
+      <a href="/product/99888">
+        <img alt="Foto van Dubbeldrank 6 x 200 ml" src="/img/4.jpg">
+      </a>
+      <span class="product-unit">1,2 liter</span>
+      <div class="price"><span class="price-large hasEuros">2</span><span class="price-small">49</span></div>
+    </div>
+  `;
+  assert.equal(parseDirkProducts(html)[0].packageSize, "1,2 liter");
+});
