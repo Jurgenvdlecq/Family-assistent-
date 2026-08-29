@@ -11,7 +11,13 @@ import "dotenv/config";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { prisma } from "./prisma";
-import { getLatestPrices, getPriceHistories, isPriceStale, recordObservedProduct } from "./pricing/observations";
+import {
+  getLatestPrices,
+  getPriceHistories,
+  isPriceStale,
+  recordObservedProduct,
+  recordObservedProducts,
+} from "./pricing/observations";
 import { judgeDiscount } from "@/domain/pricing/priceHistory";
 import type { ProviderProduct } from "@/domain/pricing/types";
 
@@ -205,5 +211,50 @@ test("prijsverloop: de geschiedenis komt terug als reeks, en oude waarnemingen v
     assert.equal(verdict.kind, "NEPKORTING");
   } finally {
     await cleanup([product.id]);
+  }
+});
+
+test("prijswaarnemingen: een reeks producten van één ingrediënt gaat in één keer", async () => {
+  // Per product waren dit twee database-aanroepen achter elkaar. Bij acht
+  // kandidaten per ingrediënt per winkel liep dat zo hoog op dat de
+  // verversing haar tijdslimiet haalde na drie van de vijftien regels.
+  const ingredient = await prisma.ingredient.findFirstOrThrow({});
+  const products = [
+    ahProduct({ externalRef: `bundel-a-${Date.now()}`, name: "Bundel A", price: 1.11 }),
+    ahProduct({ externalRef: `bundel-b-${Date.now()}`, name: "Bundel B", price: 2.22 }),
+  ];
+
+  const stored = await recordObservedProducts({
+    products,
+    ingredientId: ingredient.id,
+    source: "API",
+  });
+
+  try {
+    assert.equal(stored.length, 2);
+    const latest = await getLatestPrices(stored.map((row) => row.id));
+    // Elk product heeft een eigen waarneming met de eigen prijs — bundelen mag
+    // niets door elkaar halen.
+    assert.equal(latest.get(stored[0].id)?.price, 1.11);
+    assert.equal(latest.get(stored[1].id)?.price, 2.22);
+
+    // Nog een keer dezelfde producten: bijwerken in plaats van verdubbelen,
+    // met een tweede waarneming erbij.
+    const again = await recordObservedProducts({
+      products: products.map((product) => ({ ...product, price: 3.33 })),
+      ingredientId: ingredient.id,
+      source: "API",
+    });
+    assert.deepEqual(
+      again.map((row) => row.id).sort(),
+      stored.map((row) => row.id).sort(),
+      "dezelfde rijen, geen nieuwe"
+    );
+    const observations = await prisma.priceObservation.count({
+      where: { productId: { in: stored.map((row) => row.id) } },
+    });
+    assert.equal(observations, 4, "twee producten, twee keer waargenomen");
+  } finally {
+    await cleanup(stored.map((row) => row.id));
   }
 });
