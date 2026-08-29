@@ -5,6 +5,7 @@ import { rankStoreProducts } from "@/domain/pricing/storeMatch";
 import type { StorePriceProvider } from "@/domain/pricing/types";
 import { recordObservedProduct } from "./observations";
 import { ahPriceProvider, fetchAhProductExtras } from "./ahClient";
+import { crawlDirkCatalogue } from "./dirkClient";
 
 /**
  * De dagelijkse prijsverversing.
@@ -165,9 +166,90 @@ export async function refreshStorePrices(
   return result;
 }
 
-/** Alle winkels die de app zelf kan bevragen. Picnic hoort hier niet bij: dat loopt via de huishoudsessie. */
+/** Alle winkels die de app per ingrediënt kan bevragen. Picnic hoort hier niet bij: dat loopt via de huishoudsessie. */
 export function refreshableProviders(): StorePriceProvider[] {
   return [ahPriceProvider];
+}
+
+/**
+ * Dirk ververst anders dan de rest: eerst crawlen, dan pas matchen.
+ *
+ * Dirk heeft geen bruikbare zoekfunctie (de zoekpagina laadt client-side), dus
+ * per ingrediënt een zoekopdracht doen kan niet. In plaats daarvan wordt de
+ * catalogus één keer gecrawld en daarna lokaal doorzocht — dat is meteen
+ * verkeersvriendelijker dan honderden losse aanvragen.
+ *
+ * Alleen wat bij een van ónze ingrediënten past wordt bewaard. De rest van het
+ * assortiment opslaan zou de database vullen met producten die niemand ooit
+ * ziet.
+ */
+export async function refreshDirkPrices(options?: {
+  limitIngredients?: number;
+  maxCategories?: number;
+}): Promise<RefreshResult> {
+  const correlationId = createCorrelationId();
+  const ingredients = (await getPricedIngredients()).slice(0, options?.limitIngredients ?? Infinity);
+  const result: RefreshResult = {
+    provider: "DIRK",
+    ingredientsChecked: 0,
+    productsStored: 0,
+    ingredientsWithoutMatch: 0,
+    errors: [],
+    abortedAfter: null,
+  };
+
+  let catalogue;
+  try {
+    catalogue = await crawlDirkCatalogue({ maxCategories: options?.maxCategories });
+  } catch (error) {
+    // Een mislukte crawl is een storing, geen lege winkel. Luid melden en
+    // stoppen; de eerder opgeslagen prijzen blijven staan.
+    result.errors.push(errorMessage(error));
+    logEvent({
+      level: "error",
+      area: "pricing",
+      message: "Dirk-verversing mislukt",
+      correlationId,
+      meta: { error: errorMessage(error) },
+    });
+    return result;
+  }
+
+  for (const ingredient of ingredients) {
+    result.ingredientsChecked += 1;
+    const matches = rankStoreProducts(ingredient.name, catalogue.products, CANDIDATES_PER_INGREDIENT);
+    if (matches.length === 0) {
+      result.ingredientsWithoutMatch += 1;
+      continue;
+    }
+    for (const match of matches) {
+      await recordObservedProduct({
+        product: match.product,
+        ingredientId: ingredient.id,
+        // Dirk is een scrape, en dat blijft zichtbaar tot in de waarneming.
+        source: "SCRAPE",
+      });
+      result.productsStored += 1;
+    }
+  }
+
+  const failed = result.productsStored === 0 && result.ingredientsChecked > 0;
+  logEvent({
+    level: failed ? "error" : "info",
+    area: "pricing",
+    message: failed ? "Dirk-verversing leverde niets op" : "Dirk-verversing afgerond",
+    correlationId,
+    meta: {
+      ingredientsChecked: result.ingredientsChecked,
+      productsStored: result.productsStored,
+      withoutMatch: result.ingredientsWithoutMatch,
+      catalogueSize: catalogue.products.length,
+      categoriesVisited: catalogue.categoriesVisited,
+      categoriesFailed: catalogue.categoriesFailed.length,
+    },
+  });
+
+  return result;
 }
 
 export async function refreshAllStorePrices(): Promise<RefreshResult[]> {
@@ -175,5 +257,8 @@ export async function refreshAllStorePrices(): Promise<RefreshResult[]> {
   for (const provider of refreshableProviders()) {
     results.push(await refreshStorePrices(provider, { withExtras: true }));
   }
+  // Dirk apart, omdat de vorm van die verversing anders is. Een mislukte
+  // Dirk-crawl mag de AH-prijzen niet meeslepen: die zijn gewoon opgehaald.
+  results.push(await refreshDirkPrices());
   return results;
 }

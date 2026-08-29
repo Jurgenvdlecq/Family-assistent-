@@ -36,7 +36,13 @@ export async function GET(request: Request) {
     // Een verversing die niets opleverde is een storing, geen uitslag — dat
     // moet ook in de HTTP-status te zien zijn, anders staat de cron op groen
     // terwijl de prijzen bevriezen.
-    const failed = results.some((result) => result.ingredientsChecked > 0 && result.productsStored === 0);
+    // Twee vormen van "niets opgeleverd", allebei een storing: wél gezocht
+    // maar niets gevonden, en helemaal niet aan zoeken toegekomen (zoals een
+    // mislukte Dirk-crawl, die vóór de ingrediënten afbreekt).
+    const failed = results.some(
+      (result) =>
+        result.productsStored === 0 && (result.ingredientsChecked > 0 || result.errors.length > 0)
+    );
     return Response.json({ results }, { status: failed ? 500 : 200 });
   } catch (error) {
     logEvent({
