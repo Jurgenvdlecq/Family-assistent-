@@ -67,6 +67,15 @@ export function deriveQualityTier(input: QualityTierInput): QualityTier | null {
   // budget en A-merk in.
   if (input.brand && houseBrands.some((house) => brand.trim() === house)) return "STANDAARD";
 
+  // Staat de winkelnaam vooraan in de productnaam, dan is het het huismerk van
+  // die winkel — ook als het merkveld leeg is. "Picnic Hagelslag" ís de
+  // hagelslag van Picnic. Dit is een aflezing en geen gok: alleen aan het
+  // begin, en alleen voor de winkel waar het product vandaan komt. Zonder deze
+  // regel bleef élk Picnic-product zonder merkveld "niet vast te stellen", en
+  // dan valt er nergens iets te vergelijken.
+  const name = normalize(input.name).trim();
+  if (houseBrands.some((house) => name.startsWith(`${house} `))) return "STANDAARD";
+
   // Een echt A-merk herkennen we niet betrouwbaar aan de naam alleen, en
   // gokken is hier duurder dan zwijgen.
   return input.brand ? "STANDAARD" : null;

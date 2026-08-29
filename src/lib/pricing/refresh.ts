@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { logEvent, createCorrelationId, errorMessage } from "@/lib/logger";
 import type { ProductProvider } from "@/generated/prisma/enums";
-import { rankStoreProducts } from "@/domain/pricing/storeMatch";
+import { rankStoreProducts, storeSearchTerm } from "@/domain/pricing/storeMatch";
 import type { StorePriceProvider } from "@/domain/pricing/types";
 import { recordObservedProduct } from "./observations";
 import { ahPriceProvider, fetchAhProductExtras } from "./ahClient";
@@ -36,14 +36,60 @@ function sleep(ms: number) {
  * De ingrediënten die het waard zijn om prijzen van bij te houden: alles wat
  * in een recept voorkomt of een vaste boodschap is.
  */
-export async function getPricedIngredients() {
-  return prisma.ingredient.findMany({
+export interface PricedIngredientOptions {
+  /** Zet de ingrediënten van de boodschappenlijst van dit huishouden vooraan. */
+  prioritiseHouseholdId?: string;
+  /**
+   * Van wélke week. Verplicht bij prioriteren: zonder deze afbakening zouden
+   * alle weeklijsten ooit meetellen, en dan verdringt de geschiedenis binnen
+   * die groep alsnog alfabetisch de lijst van nu — precies de fout die het
+   * prioriteren moest oplossen.
+   */
+  weekStart?: Date;
+}
+
+export async function getPricedIngredients(options?: PricedIngredientOptions) {
+  const householdId = options?.prioritiseHouseholdId;
+  const weekStart = options?.weekStart;
+
+  // Regels die de gebruiker zelf heeft toegevoegd (handmatig, of uit de
+  // voorraadcontrole) zitten soms in geen enkel recept en zijn geen vaste
+  // boodschap. Zonder deze derde tak zouden ze nooit een prijs krijgen, en
+  // prioriteren kan daar per definitie niets aan veranderen.
+  const onCurrentList =
+    householdId && weekStart
+      ? { shoppingListLines: { some: { shoppingList: { mealPlan: { householdId, weekStart } } } } }
+      : null;
+
+  const ingredients = await prisma.ingredient.findMany({
     where: {
-      OR: [{ recipeIngredients: { some: {} } }, { fixedGroceries: { some: {} } }],
+      OR: [
+        { recipeIngredients: { some: {} } },
+        { fixedGroceries: { some: {} } },
+        ...(onCurrentList ? [onCurrentList] : []),
+      ],
     },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
+
+  if (!householdId || !weekStart) return ingredients;
+
+  // Bij een verversing die maar een deel van de lijst pakt (de knop "nu
+  // verversen") moet dát deel wél gaan over wat de gebruiker op dit moment
+  // voor zich heeft. Alfabetisch de eerste vijftien pakken leverde in de
+  // praktijk één prijs op vijftien regels op.
+  const onTheList = await prisma.shoppingListLine.findMany({
+    where: { shoppingList: { mealPlan: { householdId, weekStart } } },
+    select: { ingredientId: true },
+    distinct: ["ingredientId"],
+  });
+  const priority = new Set(onTheList.map((line) => line.ingredientId));
+
+  return [
+    ...ingredients.filter((ingredient) => priority.has(ingredient.id)),
+    ...ingredients.filter((ingredient) => !priority.has(ingredient.id)),
+  ];
 }
 
 export interface RefreshResult {
@@ -51,6 +97,17 @@ export interface RefreshResult {
   ingredientsChecked: number;
   productsStored: number;
   ingredientsWithoutMatch: number;
+  /**
+   * Hoeveel producten de winkel überhaupt opleverde, vóór het matchen.
+   *
+   * Nodig om twee heel verschillende situaties uit elkaar te houden die er op
+   * het scherm anders hetzelfde uitzien: "de koppeling werkt niet" en "de
+   * koppeling werkt, maar niets van dit aanbod past bij jullie ingrediënten".
+   *
+   * `null` betekent onbekend — dat is iets anders dan nul, en het scherm zegt
+   * dan ook niets over de oorzaak.
+   */
+  itemsSeen: number | null;
   errors: string[];
   /** Bij een storing: hoeveel ingrediënten er niet meer geprobeerd zijn. */
   abortedAfter: number | null;
@@ -65,15 +122,24 @@ export interface RefreshResult {
  */
 export async function refreshStorePrices(
   provider: StorePriceProvider,
-  options?: { limitIngredients?: number; withExtras?: boolean }
+  options?: { limitIngredients?: number; withExtras?: boolean } & PricedIngredientOptions
 ): Promise<RefreshResult> {
   const correlationId = createCorrelationId();
-  const ingredients = (await getPricedIngredients()).slice(0, options?.limitIngredients ?? Infinity);
+  const ingredients = (
+    await getPricedIngredients({
+      prioritiseHouseholdId: options?.prioritiseHouseholdId,
+      weekStart: options?.weekStart,
+    })
+  ).slice(0, options?.limitIngredients ?? Infinity);
   const result: RefreshResult = {
     provider: provider.provider,
     ingredientsChecked: 0,
     productsStored: 0,
     ingredientsWithoutMatch: 0,
+    // Nog niet gemeten: pas als er echt gezocht is weten we hoeveel de winkel
+    // teruggaf. Zonder dat onderscheid zou een mislukte verversing als
+    // "helemaal niets teruggekregen" gelezen worden.
+    itemsSeen: null,
     errors: [],
     abortedAfter: null,
   };
@@ -85,8 +151,9 @@ export async function refreshStorePrices(
     result.ingredientsChecked += 1;
 
     try {
-      const found = await provider.search(ingredient.name, { limit: 10 });
+      const found = await provider.search(storeSearchTerm(ingredient.name), { limit: 10 });
       consecutiveFailures = 0;
+      result.itemsSeen = (result.itemsSeen ?? 0) + found.length;
 
       const matches = rankStoreProducts(ingredient.name, found, CANDIDATES_PER_INGREDIENT);
       if (matches.length === 0) {
@@ -183,17 +250,22 @@ export function refreshableProviders(): StorePriceProvider[] {
  * assortiment opslaan zou de database vullen met producten die niemand ooit
  * ziet.
  */
-export async function refreshDirkPrices(options?: {
-  limitIngredients?: number;
-  maxCategories?: number;
-}): Promise<RefreshResult> {
+export async function refreshDirkPrices(
+  options?: { limitIngredients?: number; maxCategories?: number } & PricedIngredientOptions
+): Promise<RefreshResult> {
   const correlationId = createCorrelationId();
-  const ingredients = (await getPricedIngredients()).slice(0, options?.limitIngredients ?? Infinity);
+  const ingredients = (
+    await getPricedIngredients({
+      prioritiseHouseholdId: options?.prioritiseHouseholdId,
+      weekStart: options?.weekStart,
+    })
+  ).slice(0, options?.limitIngredients ?? Infinity);
   const result: RefreshResult = {
     provider: "DIRK",
     ingredientsChecked: 0,
     productsStored: 0,
     ingredientsWithoutMatch: 0,
+    itemsSeen: null,
     errors: [],
     abortedAfter: null,
   };
@@ -214,6 +286,10 @@ export async function refreshDirkPrices(options?: {
     });
     return result;
   }
+
+  // Hoeveel de site opleverde: zonder dit getal is "geen passend product" niet
+  // te onderscheiden van "de scraper leest niets meer".
+  result.itemsSeen = catalogue.products.length;
 
   for (const ingredient of ingredients) {
     result.ingredientsChecked += 1;

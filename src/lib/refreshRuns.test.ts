@@ -27,6 +27,7 @@ function result(overrides: Partial<RefreshResult> = {}): RefreshResult {
     ingredientsChecked: 15,
     productsStored: 40,
     ingredientsWithoutMatch: 2,
+    itemsSeen: 30,
     errors: [],
     abortedAfter: null,
     ...overrides,
@@ -147,6 +148,7 @@ test("verversingen: de tekst onderscheidt gelukt, deels gelukt, niets gevonden e
     startedAt: new Date("2026-08-29T05:00:00Z"),
     finishedAt: new Date("2026-08-29T05:02:00Z"),
     ingredientsChecked: 15,
+    itemsSeen: 30,
     trigger: "CRON" as const,
   };
 
@@ -160,8 +162,25 @@ test("verversingen: de tekst onderscheidt gelukt, deels gelukt, niets gevonden e
     describeRefreshRun({ ...basis, productsStored: 40, error: "Kip: 503" }, "Albert Heijn"),
     /40 producten bijgewerkt.*maar niet alles lukte.*503/
   );
+  // Het onderscheid dat op het scherm ontbrak: de winkel gaf wél producten,
+  // maar geen daarvan paste — dat vraagt iets heel anders dan een kapotte
+  // koppeling die niets teruggeeft.
+  // Het onderscheid dat op het scherm ontbrak: de winkel gaf wél aanbod, maar
+  // niets paste — dat vraagt iets heel anders dan een kapotte koppeling die
+  // niets teruggeeft. Het áántal noemen we bewust niet: bij AH is dat de som
+  // van de zoekresultaten, bij Dirk de omvang van de catalogus.
   assert.match(
     describeRefreshRun({ ...basis, productsStored: 0, error: null }, "Albert Heijn"),
+    /wel aanbod teruggekregen, maar niets dat bij die ingrediënten paste/
+  );
+  assert.match(
+    describeRefreshRun({ ...basis, productsStored: 0, itemsSeen: 0, error: null }, "Albert Heijn"),
+    /helemaal niets teruggekregen/
+  );
+  // En een rij van vóór deze meting weet het simpelweg niet — dan mag er geen
+  // conclusie over de koppeling uit gelezen worden.
+  assert.match(
+    describeRefreshRun({ ...basis, productsStored: 0, itemsSeen: null, error: null }, "Albert Heijn"),
     /geen enkel passend product gevonden/
   );
   assert.match(
@@ -182,6 +201,7 @@ test("verversingen: het tijdstip staat in Nederlandse tijd, niet in servertijd",
       finishedAt: new Date("2026-08-29T05:02:00Z"),
       ingredientsChecked: 15,
       productsStored: 40,
+      itemsSeen: 30,
       error: null,
       trigger: "CRON",
     },

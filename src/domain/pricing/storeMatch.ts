@@ -23,12 +23,22 @@ function normalize(value: string): string {
     .trim();
 }
 
-/** Woorden die niets zeggen over wélk product het is. */
+/**
+ * Woorden die niets zeggen over wélk product het is.
+ *
+ * De winkelnamen staan hier niet toevallig bij. Onze eigen ingrediëntnamen
+ * komen uit Picnic-producten en heten daardoor soms letterlijk "Picnic
+ * Appelmoes". Zonder "picnic" als ruiswoord haalt dat ingrediënt bij Albert
+ * Heijn nooit de drempel — "AH Appelmoes" dekt dan maar één van de twee
+ * woorden — en meldt het scherm "niet gevonden" terwijl het product er gewoon
+ * ligt. In productie was dat op de meeste regels het geval.
+ */
 const NOISE_WORDS = new Set([
   "ah",
   "albert",
   "heijn",
   "dirk",
+  "picnic",
   "de",
   "het",
   "een",
@@ -50,6 +60,19 @@ function contentWords(value: string): string[] {
 }
 
 export const STORE_MATCH_THRESHOLD = 0.6;
+
+/**
+ * Waarmee we bij een winkel zoeken.
+ *
+ * Niet de ingrediëntnaam zelf: die kan de naam van een andere winkel bevatten
+ * ("Picnic Appelmoes"), en daar zoekt Albert Heijn niets nuttigs op. Blijft er
+ * niets over, dan valt het terug op de oorspronkelijke naam — liever een
+ * matige zoekopdracht dan een lege.
+ */
+export function storeSearchTerm(ingredientName: string): string {
+  const words = contentWords(ingredientName);
+  return words.length > 0 ? words.join(" ") : ingredientName;
+}
 
 /**
  * Hoe goed dekt dit winkelproduct de naam van het ingrediënt?

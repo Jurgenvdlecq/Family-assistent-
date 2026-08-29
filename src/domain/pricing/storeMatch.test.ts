@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rankStoreProducts, scoreStoreProductForIngredient } from "./storeMatch";
+import { rankStoreProducts, scoreStoreProductForIngredient, storeSearchTerm } from "./storeMatch";
 import type { ProviderProduct } from "./types";
 
 function product(name: string, overrides: Partial<ProviderProduct> = {}): ProviderProduct {
@@ -76,4 +76,18 @@ test("rankStoreProducts is deterministisch bij gelijke score en gelijke inhoud",
   ];
   assert.equal(rankStoreProducts("Halfvolle melk", options)[0].product.externalRef, "a");
   assert.equal(rankStoreProducts("Halfvolle melk", [...options].reverse())[0].product.externalRef, "a");
+});
+
+test("zoeken: de naam van een andere winkel telt niet mee in de match", () => {
+  // Uit productiegebruik: onze ingrediënten heten "Picnic Appelmoes". Zonder
+  // "picnic" als ruiswoord haalde "AH Appelmoes" de drempel niet, en meldde
+  // het scherm "niet gevonden" terwijl het product er gewoon ligt.
+  assert.equal(scoreStoreProductForIngredient("Picnic Appelmoes", "AH Appelmoes"), 1);
+  assert.equal(storeSearchTerm("Picnic Appelmoes"), "appelmoes");
+  assert.equal(storeSearchTerm("Picnic Hagelslag"), "hagelslag");
+});
+
+test("zoeken: blijft er niets over, dan zoeken we met de naam zelf", () => {
+  // Liever een matige zoekopdracht dan een lege.
+  assert.equal(storeSearchTerm("Dirk"), "Dirk");
 });

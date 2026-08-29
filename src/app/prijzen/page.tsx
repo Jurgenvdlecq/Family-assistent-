@@ -9,7 +9,11 @@ import { PROVIDER_LABELS } from "@/domain/pricing/types";
 import { describeProviderSource } from "@/domain/pricing/providers/capabilities";
 import { describeSplitAdvice } from "@/domain/pricing/splitAdvice";
 import { getLastRefreshRuns, describeRefreshRun } from "@/lib/pricing/refreshRuns";
-import { compareLineAcrossStores, comparisonColumns } from "@/domain/pricing/lineComparison";
+import {
+  compareLineAcrossStores,
+  comparisonColumns,
+  describeUncomparableStore,
+} from "@/domain/pricing/lineComparison";
 import type { ProductProvider } from "@/generated/prisma/enums";
 import type { StorePriceForIngredient } from "@/lib/pricing/storePrices";
 import NavBar from "@/components/NavBar";
@@ -269,26 +273,33 @@ export default async function PrijzenPage({
                   const total = comparison.totals.get(provider);
                   if (!total) return null;
                   const source = describeProviderSource(provider);
+                  const label = PROVIDER_LABELS[provider];
+                  // Of we van deze winkel überhaupt een prijs hebben, los van de
+                  // vraag of er iets vergelijkbaars bij zat.
+                  // De reden wordt uit de regels zelf afgeleid, niet
+                  // aangenomen: het scherm mag nooit iets beweren dat de
+                  // regels eronder tegenspreken.
+                  const uncomparable = describeUncomparableStore(comparison.lines, provider, label);
                   return (
                     <div key={provider} className="text-xs text-ink-faint">
-                      {total.linesCompared === 0 ? (
-                        <p className="text-ink-muted">
-                          Van {PROVIDER_LABELS[provider]} hebben we nog geen prijzen. Dat is geen
-                          €&nbsp;0 — die winkel is hier gewoon nog niet te vergelijken.
+                      {uncomparable ? (
+                        <p className="flex items-start gap-1.5 text-ink-muted">
+                          <AlertTriangle size={13} className="mt-0.5 shrink-0 text-tag-amber-ink" />
+                          <span>{uncomparable}</span>
                         </p>
                       ) : (
                         total.linesMissing > 0 && (
                           <p className="flex items-start gap-1.5">
                             <AlertTriangle size={13} className="mt-0.5 shrink-0 text-tag-amber-ink" />
                             <span>
-                              {PROVIDER_LABELS[provider]}: {total.linesMissing}{" "}
-                              {total.linesMissing === 1 ? "regel telt" : "regels tellen"} niet mee, dus dit
-                              is geen prijs voor je hele lijst.
+                              {`${label}: ${total.linesMissing} ${
+                                total.linesMissing === 1 ? "regel telt" : "regels tellen"
+                              } niet mee, dus dit is geen prijs voor je hele lijst.`}
                             </span>
                           </p>
                         )
                       )}
-                      {source && <p>{PROVIDER_LABELS[provider]}: {source}.</p>}
+                      {source && <p>{`${label}: ${source}.`}</p>}
                       {total.anyStale && total.oldestObservation && (
                         <p>
                           {PROVIDER_LABELS[provider]}: oudste prijs van{" "}

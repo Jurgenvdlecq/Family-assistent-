@@ -61,3 +61,16 @@ test("vers/houdbaar: onbekend tegenover onbekend is geen bezwaar", () => {
   assert.equal(comparablePreservation("VERS", "VERS"), true);
   assert.equal(comparablePreservation("VERS", "HOUDBAAR"), false);
 });
+
+test("klasse: de winkelnaam vooraan in de productnaam telt als huismerk", () => {
+  // Uit productiegebruik: onze eigen ingrediënten heten "Picnic Hagelslag" en
+  // hebben géén merkveld. Zonder deze aflezing bleef élke regel "soort product
+  // niet vast te stellen" en viel er niets te vergelijken.
+  assert.equal(deriveQualityTier({ provider: "PICNIC", name: "Picnic Hagelslag" }), "STANDAARD");
+  assert.equal(deriveQualityTier({ provider: "AH", name: "AH Halfvolle melk" }), "STANDAARD");
+});
+
+test("klasse: de winkelnaam middenin de naam telt níét als huismerk", () => {
+  // Alleen vooraan, anders wordt elke toevallige woordcombinatie een merk.
+  assert.equal(deriveQualityTier({ provider: "PICNIC", name: "Kaas voor de picnic" }), null);
+});

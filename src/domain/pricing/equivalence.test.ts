@@ -65,12 +65,37 @@ test("bio tegenover niet-bio is een alternatief, in beide richtingen", () => {
   assert.equal(compareEquivalence(gewoon, { ...bio, brand: "Zuiver" }).level, "ALTERNATIEF");
 });
 
-test("onbekende klasse is niet vergelijkbaar, niet 'waarschijnlijk wel goed'", () => {
+test("een onbekend merk staat gelijkwaardigheid niet in de weg", () => {
+  // Bewuste bijsturing door de gebruiker: "als het qua product maar
+  // vergelijkbaar is — verse melk = verse melk, merk maakt dan niet uit".
+  // Eerder gold hier "niet vergelijkbaar", en omdat onze eigen producten
+  // zelden een merkveld hebben viel er daardoor nergens iets te vergelijken.
   const verdict = compareEquivalence(
     { name: "Halfvolle melk", brand: null, packageSize: "1 l", qualityTier: null, gtin: null },
     { name: "Halfvolle melk", brand: "Dirk", packageSize: "500 ml", qualityTier: "STANDAARD", gtin: null }
   );
-  assert.equal(verdict.level, "NIET_VERGELIJKBAAR");
+  assert.equal(verdict.level, "GELIJKWAARDIG");
+  assert.match(verdict.reason, /ander merk/);
+});
+
+test("maar het soort product blijft wél tellen, ook als het merk onbekend is", () => {
+  // De bescherming die er echt toe doet blijft staan: dit is precies het
+  // voorbeeld waar de opdracht mee opent.
+  const verdict = compareEquivalence(
+    { name: "Verse halfvolle melk", brand: null, packageSize: "1 l", qualityTier: null, gtin: null },
+    { name: "AH Houdbare halfvolle melk", brand: "AH", packageSize: "1 l", qualityTier: "STANDAARD", gtin: null }
+  );
+  assert.equal(verdict.level, "ALTERNATIEF");
+  assert.equal(verdict.reason, "houdbaar in plaats van vers");
+});
+
+test("en een bekend verschil in klasse blijft een alternatief", () => {
+  const verdict = compareEquivalence(
+    { name: "Melk", brand: "Campina", packageSize: "1 l", qualityTier: "STANDAARD", gtin: null },
+    { name: "AH Basic melk", brand: "AH Basic", packageSize: "1 l", qualityTier: "BUDGET", gtin: null }
+  );
+  assert.equal(verdict.level, "ALTERNATIEF");
+  assert.match(verdict.reason, /voordeelmerk/);
 });
 
 test("alleen identiek en gelijkwaardig tellen in het harde bedrag", () => {

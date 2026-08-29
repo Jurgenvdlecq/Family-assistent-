@@ -115,3 +115,47 @@ export function compareLineAcrossStores(
 export function comparisonColumns(providers: ProductProvider[]): ProductProvider[] {
   return ["PICNIC", ...providers.filter((provider) => provider !== "PICNIC")];
 }
+
+/**
+ * Waarom telt deze winkel niet mee in het totaal?
+ *
+ * Bestaat omdat de eerdere versie hiervan op het scherm aannam wat de reden
+ * was ("staat er als 'ander soort' bij") terwijl de regels eronder soms iets
+ * anders zeiden — precies de tegenstrijdigheid die dit scherm moet vermijden.
+ * De reden wordt daarom uit de regels zelf afgeleid, niet verondersteld.
+ *
+ * `null` betekent: er valt niets toe te lichten, deze winkel telt gewoon mee.
+ */
+export function describeUncomparableStore(
+  lines: BasketLineResult[],
+  provider: ProductProvider,
+  label: string
+): string | null {
+  const results = lines.map((line) => line.stores.get(provider)).filter((store) => store !== undefined);
+  const withPrice = results.filter((store) => store.cost !== null);
+  if (withPrice.some((store) => countsAsHardMatch(store.level) && store.missingReason === null)) {
+    return null;
+  }
+
+  if (withPrice.length === 0) {
+    return `Van ${label} hebben we nog geen prijzen. Dat is geen € 0 — die winkel is hier gewoon nog niet te vergelijken.`;
+  }
+
+  const alternatives = withPrice.filter((store) => store.level === "ALTERNATIEF").length;
+  const ownPriceMissing = withPrice.filter(
+    (store) => store.missingReason === "onze eigen prijs is onbekend"
+  ).length;
+
+  // Eén formulering die in álle gevallen waar is, met de precieze reden erbij
+  // waar we die kennen. De regels eronder vertellen het verhaal per product.
+  const detail =
+    alternatives > 0 && ownPriceMissing > 0
+      ? " Bij een deel staat een ander soort product, bij een deel kennen we onze eigen prijs niet."
+      : alternatives > 0
+        ? " Wat er staat is een ander soort product."
+        : ownPriceMissing > 0
+          ? " Onze eigen prijs kennen we hier niet, dus valt er niets naast te leggen."
+          : "";
+
+  return `Van ${label} hebben we wel prijzen, maar geen enkele regel telt mee in het totaal.${detail} Per regel staat eronder waarom.`;
+}

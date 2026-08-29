@@ -25,6 +25,7 @@ export interface RefreshRunSummary {
   finishedAt: Date | null;
   ingredientsChecked: number;
   productsStored: number;
+  itemsSeen: number | null;
   error: string | null;
   trigger: PriceRefreshTrigger;
 }
@@ -69,6 +70,7 @@ export async function finishRefreshRun(
       finishedAt,
       ingredientsChecked: result.ingredientsChecked,
       productsStored: result.productsStored,
+      itemsSeen: result.itemsSeen,
       // Alleen de eerste fout: die zegt bijna altijd genoeg, en tien
       // varianten van dezelfde storing helpen niemand verder.
       error: result.errors.length > 0 ? result.errors[0].slice(0, MAX_ERROR_LENGTH) : null,
@@ -121,6 +123,7 @@ export async function getLastRefreshRuns(
       finishedAt: run.finishedAt,
       ingredientsChecked: run.ingredientsChecked,
       productsStored: run.productsStored,
+      itemsSeen: run.itemsSeen,
       error: run.error,
       trigger: run.trigger,
     });
@@ -167,9 +170,26 @@ export function describeRefreshRun(run: RefreshRunSummary | undefined, label: st
   }
   if (run.error) return `${label}: het ophalen ging mis op ${when} — ${run.error}`;
   if (run.productsStored === 0) {
+    // Het verschil dat er hier toe doet: heeft de winkel wél iets opgeleverd
+    // (dan is het een kwestie van matchen) of helemaal niets (dan is de
+    // koppeling zelf stuk)? Dat zag je op het scherm niet, en het bepaalt
+    // volledig wat er moet gebeuren.
+    //
+    // Het áántal noemen we bewust niet: bij Albert Heijn is dat de som van de
+    // zoekresultaten over alle ingrediënten (met dubbelingen), bij Dirk de
+    // omvang van de gecrawlde catalogus. Twee verschillende grootheden onder
+    // één noemer zou een preciezer getal suggereren dan het is. Het
+    // ondérscheid is wat telt.
+    const cause =
+      run.itemsSeen === null
+        ? "geen enkel passend product gevonden"
+        : run.itemsSeen > 0
+          ? "wel aanbod teruggekregen, maar niets dat bij die ingrediënten paste"
+          : "helemaal niets teruggekregen van de winkel";
+    const scope = run.trigger === "CRON" ? "" : " van je lijst";
     return `${label}: op ${when} ${run.ingredientsChecked} ${
       run.ingredientsChecked === 1 ? "ingrediënt" : "ingrediënten"
-    } bekeken, maar geen enkel passend product gevonden.`;
+    }${scope} bekeken en ${cause}.`;
   }
   return `${label}: ${stored} bijgewerkt op ${when}, van ${run.ingredientsChecked} ${
     run.ingredientsChecked === 1 ? "ingrediënt" : "ingrediënten"
