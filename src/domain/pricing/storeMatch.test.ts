@@ -255,3 +255,62 @@ test("woorden van twee letters tellen mee, maatafkortingen niet", () => {
   assert.deepEqual(contentWords("Halfvolle melk 1 l"), ["halfvolle", "melk"]);
   assert.deepEqual(contentWords("Beschuit 13 st"), ["beschuit"]);
 });
+
+/**
+ * Gebruikersmelding: bij eieren stond zowel bij Dirk als in de vergelijking
+ * "niet gevonden", terwijl elke winkel eieren verkoopt.
+ *
+ * De toelating had twee regels: eerst een "of" (bij het ingrediënt óf bij ons
+ * eigen product), en daaronder een tweede die gelijkenis met ons eigen product
+ * alsnog verplicht stelde. Daarmee werkte het "of" in de praktijk als "en".
+ * Ons product heet "scharreleieren" — één samengesteld woord — en dus viel elk
+ * ei dat gewoon "eieren" heet af, met een perfecte score op de ingrediëntnaam.
+ */
+test("toelating: een treffer op de ingrediëntnaam telt ook als ons eigen product anders heet", () => {
+  const kandidaten = [
+    product("1 de Beste Eieren vrije uitloop 10 stuks"),
+    product("Kipster eieren 6 stuks"),
+    product("1 de Beste Scharreleieren 10 stuks"),
+  ];
+  const namen = rankStoreProducts("Eieren 10 Stuks", kandidaten, 8, {
+    name: "Picnic scharreleieren 10 stuks M",
+  }).map((match) => match.product.name);
+
+  assert.equal(namen.length, 3, "alle drie horen kandidaat te zijn");
+  assert.equal(
+    namen[0],
+    "1 de Beste Scharreleieren 10 stuks",
+    "en wat wij zelf kopen staat vooraan, ook al bevat die naam het woord 'eieren' niet"
+  );
+});
+
+test("toelating: printerpapier blijft buiten, ook zonder de strengere tweede regel", () => {
+  // Het geval waarvoor die tweede regel ooit bedoeld was. Dat het nu zónder
+  // die regel goed gaat, komt door twee eerdere reparaties: korte woorden als
+  // "wc" tellen weer mee, en er wordt alleen op hele woorden gematcht.
+  const kandidaten = [
+    product("HP Printerpapier A4 500 vel"),
+    product("Kopieerpapier A4 wit"),
+    product("Page Toiletpapier original 9 rollen"),
+  ];
+  const namen = rankStoreProducts("Wc Papier", kandidaten, 8, {
+    name: "Page toiletpapier 9 rollen",
+  }).map((match) => match.product.name);
+
+  assert.deepEqual(namen, ["Page Toiletpapier original 9 rollen"]);
+});
+
+test("toelating: een ingrediëntnaam die alleen een merk is, mag niets extra toelaten", () => {
+  // De tegenhanger, en de reden dat het geen kaal "of" kan zijn. Bij "Alpro"
+  // staat er in de ingrediëntnaam geen woord dat niet al in onze eigen
+  // productnaam staat. Een treffer daarop zegt dan alleen "van hetzelfde
+  // merk", en dan wordt koffiemelk een kandidaat voor yoghurt.
+  const kandidaten = [
+    product("Alpro Barista koffiemelk"),
+    product("Alpro Mild & creamy zonder suikers"),
+  ];
+  const namen = rankStoreProducts("Alpro", kandidaten, 8, { name: "Alpro mild & creamy" }).map(
+    (match) => match.product.name
+  );
+  assert.deepEqual(namen, ["Alpro Mild & creamy zonder suikers"]);
+});

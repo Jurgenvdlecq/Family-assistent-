@@ -235,7 +235,23 @@ export function rankStoreProducts(
   const wanted = new Set(contentWords(ingredientName));
   const referenceWords = contentWords(reference?.name ?? "");
   const referenceForm = derivePackageForm(reference?.packageSize, reference?.name);
-  const knowsOwnProduct = referenceWords.length > 0;
+
+  /**
+   * Voegt de ingrediëntnaam iets toe dat ons eigen product niet al zegt?
+   *
+   * Dit onderscheidt twee gevallen die er anders hetzelfde uitzien.
+   *
+   * - "Eieren 10 stuks" tegenover ons "scharreleieren": het woord "eieren"
+   *   komt in ons product niet voor, dus een treffer daarop is een eigen
+   *   aanwijzing. Elk ei bij de winkel hoort erbij te mogen.
+   * - "Alpro" tegenover ons "Alpro mild & creamy": de ingrediëntnaam is hier
+   *   niets anders dan een deel van onze eigen productnaam — een merk. Een
+   *   treffer daarop zegt alleen "van hetzelfde merk", en dan is Alpro
+   *   koffiemelk ineens een kandidaat voor yoghurt. Daar is de gelijkenis met
+   *   ons eigen product wél het enige bruikbare houvast.
+   */
+  const ingredientAddsNothing =
+    referenceWords.length > 0 && [...wanted].every((word) => referenceWords.includes(word));
 
   return products
     .map((product) => ({
@@ -252,30 +268,48 @@ export function rankStoreProducts(
     }))
     .filter((match) => {
       // Toegelaten als het bij het ingrediënt hoort óf op ons eigen product
-      // lijkt. Dat "of" is niet vrijblijvend: de ingrediëntnaam is soms
-      // ronduit misleidend. Bij "Wc papier" blijft na het filteren alleen
-      // "papier" over, en dan haalde printerpapier een perfecte score terwijl
-      // het échte toiletpapier werd weggegooid — want dat heet "toiletpapier"
-      // en bevat het woord "papier" niet als los woord.
-      const belongsHere =
-        match.score >= STORE_MATCH_THRESHOLD || match.referenceScore >= STORE_MATCH_THRESHOLD;
-      if (!belongsHere) return false;
+      // lijkt. Dat "of" is niet vrijblijvend, want beide kanten kunnen op
+      // zichzelf misleiden:
+      //
+      // - De ingrediëntnaam. Bij "Wc papier" blijft na het filteren "wc" en
+      //   "papier" over, en zonder de andere kant zou elk soort papier passen.
+      // - Ons eigen product. Bij "Eieren 10 stuks" heet het onze
+      //   "scharreleieren" — één samengesteld woord. Elk ei bij de winkel dat
+      //   gewoon "eieren" heet dekt dáár niets van, ook al is het precies wat
+      //   het ingrediënt vraagt.
+      //
+      // Hier stond een tweede, strengere regel onder: kenden we ons eigen
+      // product, dán was gelijkenis daarmee verplicht. Daarmee werkte het "of"
+      // in de praktijk als "en", en verdween bij eieren élke kandidaat met een
+      // perfecte score op de ingrediëntnaam. Die regel is weggehaald na een
+      // meting van het geval waarvoor ze ooit bedoeld was: printerpapier
+      // scoort tegenwoordig 0,00 op "Wc papier", omdat korte woorden als "wc"
+      // weer meetellen en er alleen nog op hele woorden gematcht wordt. Die
+      // twee eerdere reparaties vangen het al; deze derde kostte alleen nog
+      // maar goede producten.
+      //
+      // Behalve waar de ingrediëntnaam niets toevoegt (zie hierboven): dan is
+      // een treffer daarop geen aanwijzing en blijft ons eigen product de
+      // enige maatstaf.
+      if (ingredientAddsNothing) return match.referenceScore >= REFERENCE_MATCH_THRESHOLD;
 
-      // En omgekeerd: kennen we ons eigen product, dan is iets dat daar
-      // nauwelijks op lijkt geen kandidaat. Het werd eerder wél getoond, met
-      // "ander soort" erbij — maar een doos printerpapier naast je
-      // toiletpapier zetten is geen nuttige vergelijking, hoe eerlijk het
-      // label er ook bij staat. Dan liever "niet gevonden", en de gebruiker
-      // kan zelf het juiste product aanwijzen.
-      return !knowsOwnProduct || match.referenceScore >= REFERENCE_MATCH_THRESHOLD;
+      return (
+        match.score >= STORE_MATCH_THRESHOLD || match.referenceScore >= REFERENCE_MATCH_THRESHOLD
+      );
     })
     .sort(
       (a, b) =>
-        b.score - a.score ||
+        // Hoe goed past dit aan de béste van de twee kanten? Alleen op de
+        // ingrediëntscore sorteren zette bij eieren precies het verkeerde
+        // vooraan: "Scharreleieren" is exact wat wij kopen, maar scoort 0,00
+        // op het woord "eieren" en belandde daarmee achter drie willekeurige
+        // eieren. Toelating kijkt naar beide kanten, dus de volgorde ook.
+        Math.max(b.score, b.referenceScore) - Math.max(a.score, a.referenceScore) ||
         // Lijkt het op wat wij zelf kopen? Dat weegt zwaarder dan alle
         // vuistregels hieronder, die alleen bestaan omdat we vroeger niets
         // beters hadden.
         b.referenceScore - a.referenceScore ||
+        b.score - a.score ||
         // Zelfde verpakkingsvorm. Beslissend zodra de naam niets meer
         // onderscheidt, zoals bij appelmoes.
         Number(b.sameForm) - Number(a.sameForm) ||
