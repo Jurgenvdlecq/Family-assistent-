@@ -418,10 +418,11 @@ async function refreshDirkViaSearch(
 /**
  * Dirk ververst anders dan de rest: eerst crawlen, dan pas matchen.
  *
- * Dirk heeft geen bruikbare zoekfunctie (de zoekpagina laadt client-side), dus
- * per ingrediënt een zoekopdracht doen kan niet. In plaats daarvan wordt de
- * catalogus één keer gecrawld en daarna lokaal doorzocht — dat is meteen
- * verkeersvriendelijker dan honderden losse aanvragen.
+ * Er zijn twee wegen, en welke het wordt stelt de verversing zelf vast. Werkt
+ * Dirks zoekpagina, dan gaat het per ingrediënt, net als bij Albert Heijn.
+ * Werkt ze niet, dan wordt de catalogus gecrawld en lokaal doorzocht. Die
+ * tweede weg was jarenlang de enige, op grond van een aanname over die
+ * zoekpagina die nooit gemeten was.
  *
  * Alleen wat bij een van ónze ingrediënten past wordt bewaard. De rest van het
  * assortiment opslaan zou de database vullen met producten die niemand ooit
