@@ -163,13 +163,13 @@ export async function getStoreCandidatesForIngredients(
   perProviderLimit = 8,
   now: Date = new Date(),
   /**
-   * Per ingrediënt de naam van het product dat wij zelf kopen.
+   * Per ingrediënt het product dat wij zelf kopen: naam én verpakking.
    *
    * Zonder dit rangschikt deze functie alleen op de ingrediëntnaam, en die is
    * soms alleen een merk — dan scoren alle varianten gelijk en beslist een
    * willekeurige tiebreak welke er overblijven bij het afkappen.
    */
-  referenceNameByIngredient?: Map<string, string | null>
+  referenceByIngredient?: Map<string, { name: string | null; packageSize: string | null }>
 ): Promise<StoreCandidatesByIngredient> {
   const result: StoreCandidatesByIngredient = new Map();
   if (ingredientIds.length === 0 || providers.length === 0) return result;
@@ -228,7 +228,7 @@ export async function getStoreCandidatesForIngredients(
         })
       ),
       perProviderLimit,
-      referenceNameByIngredient?.get(ingredientId) ?? null
+      referenceByIngredient?.get(ingredientId) ?? null
     );
     if (ranked.length === 0) continue;
 

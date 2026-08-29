@@ -1,4 +1,5 @@
 import type { ProviderProduct } from "./types";
+import { derivePackageForm } from "./packageForm";
 
 /**
  * Welk winkelproduct hoort bij welk ingrediënt?
@@ -159,6 +160,8 @@ export interface StoreMatchResult {
   surplusWords: number;
   /** Hoe sterk dit lijkt op het product dat wij zelf kopen; 0 als we dat niet weten. */
   referenceScore: number;
+  /** Zelfde verpakkingsvorm als het onze (losse porties of één verpakking). */
+  sameForm: boolean;
 }
 
 /**
@@ -174,7 +177,7 @@ export function rankStoreProducts(
   products: ProviderProduct[],
   limit = 5,
   /**
-   * De naam van het product dat wij zelf kopen, als we die kennen.
+   * Het product dat wij zelf kopen, als we dat kennen.
    *
    * Dit is het verschil tussen "hoort dit bij dit ingrediënt" en "is dit
    * hetzelfde als wat wij kopen". De ingrediëntnaam is soms alleen een merk —
@@ -182,15 +185,22 @@ export function rankStoreProducts(
    * een willekeurige tiebreak welke er bewaard blijven. In productie leverde
    * dat koffiemelk op terwijl Albert Heijn precies hetzelfde product verkoopt.
    *
-   * De toelating verandert er niet door: of iets bij dit ingrediënt hoort
+   * De verpakking telt apart mee, en dat is geen luxe: bij appelmoes heet ons
+   * eigen product "Picnic appelmoes", en na het weglaten van de winkelnaam
+   * blijft daar precies hetzelfde woord van over als de ingrediëntnaam. De
+   * naam onderscheidt dan niets meer, en het enige wat onze cupjes van een pot
+   * onderscheidt is de vorm van de verpakking.
+   *
+   * De toelating verandert hier niet door: of iets bij dit ingrediënt hoort
    * blijft de ingrediëntnaam bepalen. Alleen de volgorde wordt hiermee
    * gemaakt, zodat het product dat het meest op het onze lijkt vooraan komt en
    * niet wegvalt bij het afkappen.
    */
-  referenceProductName?: string | null
+  reference?: { name?: string | null; packageSize?: string | null } | null
 ): StoreMatchResult[] {
   const wanted = new Set(contentWords(ingredientName));
-  const referenceWords = contentWords(referenceProductName ?? "");
+  const referenceWords = contentWords(reference?.name ?? "");
+  const referenceForm = derivePackageForm(reference?.packageSize, reference?.name);
 
   return products
     .map((product) => ({
@@ -198,6 +208,11 @@ export function rankStoreProducts(
       score: scoreStoreProductForIngredient(ingredientName, product.name),
       referenceScore:
         referenceWords.length > 0 ? wordCoverage(referenceWords, contentWords(product.name)) : 0,
+      // Losse porties horen bij losse porties, een pot bij een pot. Onbekend
+      // telt nooit als verschil — dan weten we het simpelweg niet.
+      sameForm:
+        referenceForm !== null &&
+        derivePackageForm(product.packageSize, product.name) === referenceForm,
       surplusWords: contentWords(product.name).filter((word) => !wanted.has(word)).length,
     }))
     .filter((match) => match.score >= STORE_MATCH_THRESHOLD)
@@ -208,6 +223,9 @@ export function rankStoreProducts(
         // vuistregels hieronder, die alleen bestaan omdat we vroeger niets
         // beters hadden.
         b.referenceScore - a.referenceScore ||
+        // Zelfde verpakkingsvorm. Beslissend zodra de naam niets meer
+        // onderscheidt, zoals bij appelmoes.
+        Number(b.sameForm) - Number(a.sameForm) ||
         // Het minst specifieke product voorop: dat is de gewone variant.
         a.surplusWords - b.surplusWords ||
         // Daarna de kleinste verpakking — meestal het normale formaat, niet
