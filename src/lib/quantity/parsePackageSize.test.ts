@@ -38,8 +38,36 @@ test("'per stuk' en 'per kilo' zonder getal zijn ondubbelzinnig genoeg om te ver
 test("ontbrekende of niet-herleidbare verpakking geeft null, geen gok", () => {
   assert.equal(parsePackageQuantity(null, "GRAM"), null);
   assert.equal(parsePackageQuantity(undefined, "GRAM"), null);
-  assert.equal(parsePackageQuantity("3 bollen", "PIECE"), null); // onbekende eenheid "bollen"
+  assert.equal(parsePackageQuantity("3 bollen", "PIECE"), null); // een bol knoflook is geen teentje
   assert.equal(parsePackageQuantity("12 blokjes", "ML"), null); // onbekende eenheid "blokjes"
+});
+
+test("telwoorden die de inhoud van de verpakking noemen tellen mee", () => {
+  // Gebruikersmelding-achtergrond: "9 rollen" toiletpapier had helemaal geen
+  // verpakkingsinhoud, dus ook geen prijs per rol en geen pakkenberekening.
+  assert.equal(parsePackageQuantity("9 rollen", "PIECE"), 9);
+  assert.equal(parsePackageQuantity("1 rol", "PIECE"), 1);
+  assert.equal(parsePackageQuantity("20 sneetjes", "PIECE"), 20);
+  assert.equal(parsePackageQuantity("10 zakjes", "PIECE"), 10);
+  assert.equal(parsePackageQuantity("36 wasbeurten", "PIECE"), 36);
+  assert.equal(parsePackageQuantity("80 doekjes", "PIECE"), 80);
+  assert.equal(parsePackageQuantity("6 flessen", "PIECE"), 6);
+});
+
+test("een verpakkingswoord in enkelvoud telt niet: dat noemt de verpakking, niet de inhoud", () => {
+  // "1 pak" brood zegt niets over het aantal sneetjes waarin een recept
+  // rekent. Meervoud is wél inhoud: dan is het een multipack.
+  assert.equal(parsePackageQuantity("1 pak", "PIECE"), null);
+  assert.equal(parsePackageQuantity("1 zak", "PIECE"), null);
+  assert.equal(parsePackageQuantity("1 blik", "PIECE"), null);
+  assert.equal(parsePackageQuantity("4 pakken", "PIECE"), 4);
+});
+
+test("een telwoord in stuks telt niet mee voor een ingrediënt in gram of ml", () => {
+  assert.equal(parsePackageQuantity("9 rollen", "GRAM"), null);
+  assert.equal(parsePackageQuantity("20 sneetjes", "ML"), null);
+  // En andersom blijft het gewicht winnen als dat erbij staat.
+  assert.equal(parsePackageQuantity("20 sneetjes, 800 gram", "GRAM"), 800);
 });
 
 test("eenheid-mismatch tussen tekst en ingrediënt levert bewust null op (geen gok)", () => {
