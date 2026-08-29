@@ -525,6 +525,18 @@ export default async function PrijzenPage({
                               {cell.packagesToBuy}×{cell.packageSize ? ` ${cell.packageSize}` : ""}
                             </p>
                           )}
+                          {/* Kan de regel niet doorgerekend worden, dan blijft
+                              het bedrag hierboven een streep — dat is eerlijk.
+                              Maar we wéten wat één verpakking kost, en dat
+                              verzwijgen is alleen maar karig. Nadrukkelijk mét
+                              "per verpakking" erbij: dit getal mag niet voor
+                              een regeltotaal aangezien worden. */}
+                          {cell.cost === null && cell.packagePrice !== null && (
+                            <p className="text-[11px] text-ink-faint">
+                              {euro(cell.packagePrice)} per verpakking
+                              {cell.packageSize ? ` · ${cell.packageSize}` : ""}
+                            </p>
+                          )}
                           {/* Het enige getal dat over verpakkingsgroottes heen
                               vergelijkt: €/liter of €/kilo. */}
                           {cell.unitPriceLabel && (
@@ -649,7 +661,9 @@ export default async function PrijzenPage({
                                 {store.name}
                                 {store.brand ? ` · ${store.brand}` : ""}
                                 {store.packageSize ? ` · ${store.packageSize}` : ""}
-                                {store.packagesToBuy !== null ? ` · ${store.packagesToBuy}x` : ""}
+                                {store.packagesToBuy !== null
+                                  ? ` · ${store.packagesToBuy}x`
+                                  : ` · ${euro(store.packagePrice)} per verpakking`}
                               </p>
                               {/* €/liter of €/kilo: het enige getal waarmee een
                                   pak van 500 ml en een pak van 1 l eerlijk

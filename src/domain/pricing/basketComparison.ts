@@ -99,6 +99,17 @@ export interface BasketLineStoreResult {
   packagesToBuy: number | null;
   /** Wat dat kost. `null` als de verpakking onbekend is: dan valt er niets te rekenen. */
   cost: number | null;
+  /**
+   * Wat één verpakking kost bij deze winkel.
+   *
+   * Staat los van `cost`, en dat verschil is precies waar dit veld voor
+   * bestaat. Kan de app niet uitrekenen hoevéél verpakkingen je nodig hebt —
+   * omdat de inhoud onbekend is — dan is `cost` terecht `null`, maar dan stond
+   * er op het scherm alleen een streep. Terwijl we wel degelijk weten wat het
+   * ding kost. Dat is karig tegenover de gebruiker: een prijs met "per
+   * verpakking" erbij is eerlijk én bruikbaar, een streep is alleen eerlijk.
+   */
+  packagePrice: number;
   /** Hoeveel je overhoudt — 2 liter kopen voor 1,5 liter is geen besparing als de rest weg moet. */
   surplus: number | null;
   level: EquivalenceLevel;
@@ -342,6 +353,7 @@ function priceLineAtStore(
     packageQuantity: candidate.packageQuantity,
     packagesToBuy,
     cost,
+    packagePrice: candidate.price,
     surplus: packaging.surplus,
     level: verdict.level,
     levelReason: verdict.reason,

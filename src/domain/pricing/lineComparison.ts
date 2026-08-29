@@ -21,6 +21,13 @@ export interface StoreCell {
   provider: ProductProvider;
   /** Wat deze regel hier kost; `null` als we het niet weten. */
   cost: number | null;
+  /**
+   * Wat één verpakking kost, ook als de regel zelf niet door te rekenen is.
+   *
+   * `null` als er hier helemaal geen product gevonden is — dán is er ook
+   * niets te melden.
+   */
+  packagePrice: number | null;
   packagesToBuy: number | null;
   packageSize: string | null;
   productName: string | null;
@@ -99,6 +106,8 @@ export function compareLineAcrossStores(
     {
       provider: "PICNIC",
       cost: line.referenceCost,
+      // Ons eigen product: hier ís de prijs per verpakking al wat er staat.
+      packagePrice: line.referencePrice,
       packagesToBuy: line.referencePackages,
       packageSize: line.referencePackageSize,
       productName: line.referenceName,
@@ -125,6 +134,7 @@ export function compareLineAcrossStores(
       cells.push({
         provider,
         cost: null,
+        packagePrice: null,
         packagesToBuy: null,
         packageSize: null,
         productName: null,
@@ -148,6 +158,7 @@ export function compareLineAcrossStores(
     cells.push({
       provider,
       cost: store.cost,
+      packagePrice: store.packagePrice,
       packagesToBuy: store.packagesToBuy,
       packageSize: store.packageSize,
       productName: store.name,
