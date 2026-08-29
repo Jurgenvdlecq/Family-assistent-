@@ -55,7 +55,12 @@ test("recordProductChosen: hetzelfde product nogmaals verhoogt timesChosen", asy
 test("recordProductChosen: een ander product reset de telling (het oude aantal zegt niets over het nieuwe product)", async () => {
   const household = await prisma.household.create({ data: { name: "WP5 integratietest — ander product" } });
   const kipfilet = await prisma.ingredient.findUniqueOrThrow({ where: { name: "Kipfilet" } });
-  const products = await prisma.product.findMany({ where: { ingredientId: kipfilet.id } });
+  // Dezelfde afbakening als de matcher zelf: alleen Picnic-producten zijn
+  // kandidaat. Zonder dit zou deze test wisselend gaan uitvallen zodra er
+  // een AH- of Dirk-product voor Kipfilet in de database staat.
+  const products = await prisma.product.findMany({
+    where: { ingredientId: kipfilet.id, provider: "PICNIC" },
+  });
   if (products.length < 2) throw new Error("Deze test heeft minstens 2 Kipfilet-producten in de seed nodig.");
 
   try {
@@ -72,7 +77,12 @@ test("recordProductChosen: een ander product reset de telling (het oude aantal z
 test("recordProductRejected sluit een product uit van toekomstige matches voor dit ingrediënt", async () => {
   const household = await prisma.household.create({ data: { name: "WP5 integratietest — afwijzen" } });
   const kipfilet = await prisma.ingredient.findUniqueOrThrow({ where: { name: "Kipfilet" } });
-  const products = await prisma.product.findMany({ where: { ingredientId: kipfilet.id } });
+  // Dezelfde afbakening als de matcher zelf: alleen Picnic-producten zijn
+  // kandidaat. Zonder dit zou deze test wisselend gaan uitvallen zodra er
+  // een AH- of Dirk-product voor Kipfilet in de database staat.
+  const products = await prisma.product.findMany({
+    where: { ingredientId: kipfilet.id, provider: "PICNIC" },
+  });
   if (products.length < 2) throw new Error("Deze test heeft minstens 2 Kipfilet-producten in de seed nodig.");
 
   try {
@@ -90,7 +100,12 @@ test("recordProductRejected sluit een product uit van toekomstige matches voor d
 test("een expliciet gekozen product levert MATCHED_TRUSTED op via de volledige matchIngredient-flow", async () => {
   const household = await prisma.household.create({ data: { name: "WP5 integratietest — end-to-end" } });
   const kipfilet = await prisma.ingredient.findUniqueOrThrow({ where: { name: "Kipfilet" } });
-  const products = await prisma.product.findMany({ where: { ingredientId: kipfilet.id } });
+  // Dezelfde afbakening als de matcher zelf: alleen Picnic-producten zijn
+  // kandidaat. Zonder dit zou deze test wisselend gaan uitvallen zodra er
+  // een AH- of Dirk-product voor Kipfilet in de database staat.
+  const products = await prisma.product.findMany({
+    where: { ingredientId: kipfilet.id, provider: "PICNIC" },
+  });
 
   try {
     // Zonder voorkeur: meerdere kandidaten -> twijfelgeval.

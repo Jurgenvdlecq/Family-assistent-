@@ -25,6 +25,21 @@ function fakeAddProductFetch(callLog: string[]) {
   }) as typeof fetch;
 }
 
+/**
+ * Een huishouden met een weekmenu dat één eigen ingrediënt nodig heeft, en
+ * precies één bestelbaar product daarvoor.
+ *
+ * Bewust alles zelf aangemaakt — eigen ingrediënt, eigen recept, eigen
+ * product — en niet `findFirstOrThrow({})` op de seed. Dat laatste stond hier
+ * eerst en werkte alleen bij toeval: het pakte een willekeurig seed-ingrediënt
+ * en een willekeurig seed-recept, die niets met elkaar te maken hoefden te
+ * hebben. Zodra "mandje legen" de lijst opnieuw opbouwt vanuit het weekmenu,
+ * hangt het dan van de inhoud van de database af of dat ingrediënt er
+ * überhaupt nog op staat en of het een product met een Picnic-id krijgt — en
+ * seedproducten hebben dat niet. Op een volle ontwikkeldatabase slaagde de
+ * test daardoor, op de verse database van de CI niet. Nu is er precies één
+ * kandidaat en is de herbouw dus voorspelbaar.
+ */
 async function makeHouseholdWithShoppingListLine(name: string) {
   const household = await prisma.household.create({
     data: {
@@ -33,11 +48,30 @@ async function makeHouseholdWithShoppingListLine(name: string) {
       persons: { create: [{ name: "Test", role: "PARENT" }] },
     },
   });
-  const ingredient = await prisma.ingredient.findFirstOrThrow({});
-  const product = await prisma.product.create({
-    data: { name: "Testproduct", externalRef: `picnic-test-${household.id}`, ingredientId: ingredient.id },
+  const ingredient = await prisma.ingredient.create({
+    data: { name: `WP7 testingrediënt ${household.id}`, unit: "PIECE", category: "OTHER" },
   });
-  const variant = await prisma.recipeVariant.findFirstOrThrow({});
+  const product = await prisma.product.create({
+    data: {
+      name: "Testproduct",
+      externalRef: `picnic-test-${household.id}`,
+      ingredientId: ingredient.id,
+      // Zonder dit geldt het product als "niet beschikbaar" (de matcher kijkt
+      // naar een venster van 30 dagen) en levert de herbouw een regel zónder
+      // product op. Precies daar liep deze test op stuk.
+      lastSeenAvailable: new Date(),
+    },
+  });
+  const recipe = await prisma.recipe.create({
+    data: {
+      title: `WP7 testgerecht ${household.id}`,
+      category: "OTHER",
+      ingredients: { create: [{ ingredientId: ingredient.id, quantity: 1, unit: "PIECE" }] },
+      variants: { create: [{ variantType: "FAST" }] },
+    },
+    include: { variants: true },
+  });
+  const variant = recipe.variants[0];
   const mealPlan = await prisma.mealPlan.create({
     data: {
       householdId: household.id,
@@ -67,9 +101,22 @@ async function makeHouseholdWithShoppingListLine(name: string) {
   return { household, shoppingList };
 }
 
+/**
+ * Alles opruimen wat deze fixtures hebben aangemaakt — óók de losse
+ * ingrediënten, recepten en producten.
+ *
+ * Die stonden er eerder niet bij, en dat is precies hoe de ontwikkeldatabase
+ * vol raakte met testproducten die een Picnic-id hadden: daardoor slaagden
+ * tests hier die op de verse database van de CI omvielen. Elk record dat een
+ * fixture aanmaakt draagt het huishouden-id in zijn naam of externe id, zodat
+ * het hier terug te vinden is zonder iets van de seed te raken.
+ */
 async function cleanup(householdId: string) {
   await prisma.shoppingList.deleteMany({ where: { mealPlan: { householdId } } });
   await prisma.mealPlan.deleteMany({ where: { householdId } });
+  await prisma.product.deleteMany({ where: { externalRef: { contains: householdId } } });
+  await prisma.recipe.deleteMany({ where: { title: { contains: householdId } } });
+  await prisma.ingredient.deleteMany({ where: { name: { contains: householdId } } });
   await prisma.person.deleteMany({ where: { householdId } });
   await prisma.household.delete({ where: { id: householdId } });
 }
@@ -616,5 +663,54 @@ test("producten die ná een bevestigde bestelling worden overgedragen maken die 
   } finally {
     global.fetch = originalFetch;
     await cleanup(household.id);
+  }
+});
+
+test("mandje vullen: een product van een andere winkel gaat nooit naar Picnic", async () => {
+  // De laatste horde. Een AH-product heeft wél een `externalRef` (het
+  // webshop-id van die winkel), dus de "geen bevestigd Picnic-product"-
+  // controle slaat er niet op aan. Zo'n id naar Picnic sturen levert meestal
+  // een foutmelding op — maar in het ergste geval bestaat datzelfde id daar
+  // toevallig ook, en dan ligt er stilzwijgend een verkeerd product in het
+  // mandje. Handmatige en al overgedragen regels overleven elke herbouw, dus
+  // het filter bij de matcher alleen is niet genoeg.
+  const originalFetch = global.fetch;
+  let household: Awaited<ReturnType<typeof makeHouseholdWithShoppingListLine>>["household"] | undefined;
+
+  try {
+    const fixture = await makeHouseholdWithShoppingListLine("Winkelproduct in het mandje");
+    household = fixture.household;
+    const line = await prisma.shoppingListLine.findFirstOrThrow({
+      where: { shoppingListId: fixture.shoppingList.id },
+    });
+    const ahProduct = await prisma.product.create({
+      data: {
+        name: "AH Testproduct",
+        provider: "AH",
+        externalRef: `ah-test-${household.id}`,
+        ingredientId: line.ingredientId,
+        lastSeenAvailable: new Date(),
+      },
+    });
+    await prisma.shoppingListLine.update({ where: { id: line.id }, data: { productId: ahProduct.id } });
+
+    const callLog: string[] = [];
+    global.fetch = fakeAddProductFetch(callLog);
+
+    const result = await addShoppingListToPicnicCart(fixture.shoppingList.id);
+    assert.equal(result.added.length, 0);
+    assert.equal(
+      callLog.filter((url) => url.includes("/cart/add_product")).length,
+      0,
+      "er mag geen enkele aanroep naar Picnic zijn gedaan"
+    );
+    assert.equal(result.errors.length, 1);
+    assert.match(result.errors[0].message, /andere winkel/);
+
+    const after = await prisma.shoppingListLine.findUniqueOrThrow({ where: { id: line.id } });
+    assert.equal(after.transferredToPicnicAt, null, "en de regel geldt niet als overgedragen");
+  } finally {
+    global.fetch = originalFetch;
+    if (household) await cleanup(household.id);
   }
 });

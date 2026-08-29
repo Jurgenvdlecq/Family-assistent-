@@ -617,7 +617,12 @@ async function searchQuickOrderPreview(
         const trustedMap = await getTrustedPreferences(householdId, [existingIngredient.id]);
         const trusted = trustedMap.get(existingIngredient.id);
         const product = trusted ? await prisma.product.findUnique({ where: { id: trusted.productId } }) : null;
-        if (product && product.externalRef) {
+        // Alleen een Picnic-product mag hier als "jullie eerdere keuze"
+        // langskomen. Wees een vertrouwde voorkeur naar een product van een
+        // andere winkel, dan zou het webshop-id daarvan hieronder als
+        // Picnic-product worden opgeslagen — en dan is de vervuiling
+        // blijvend en ontsnapt ze aan elk filter verderop.
+        if (product && product.provider === "PICNIC" && product.externalRef) {
           lines.push({
             raw: parsed.raw,
             searchTerm: parsed.searchTerm,

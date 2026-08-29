@@ -116,6 +116,27 @@ export async function addShoppingListToPicnicCart(
         continue;
       }
 
+      // De laatste horde vóór het mandje: staat hier een product van een
+      // andere winkel, dan is `externalRef` wél gevuld (het webshop-id van die
+      // winkel) en slaat de controle hierboven dus niet aan. Zo'n id naar
+      // Picnic sturen levert meestal een foutmelding op, maar in het ergste
+      // geval bestaat datzelfde id daar toevallig ook — en dan ligt er
+      // stilzwijgend een verkeerd product in het mandje. Dat mag deze app
+      // nooit doen (PRODUCT_VISION.md: nooit ongecontroleerd bestellen).
+      //
+      // Deze controle staat hier bewust, en niet alleen bij de matcher: ze
+      // dekt ook de regels die al een product van een andere winkel dragen
+      // (handmatige en al overgedragen regels overleven elke herbouw) en elke
+      // toekomstige plek die het filter vergeet.
+      if (line.product && line.product.provider !== "PICNIC") {
+        result.errors.push({
+          ingredientName: line.ingredient.name,
+          message:
+            "Hier staat een vergelijkingsproduct van een andere winkel. Kies eerst een Picnic-product op het Controle-scherm.",
+        });
+        continue;
+      }
+
       const packageCount = getPackageCountForLine(line);
       await client.addProduct(picnicProductId, packageCount);
       result.added.push({ ingredientName: line.ingredient.name, picnicName, count: packageCount });
