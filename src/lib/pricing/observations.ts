@@ -30,19 +30,14 @@ export function isPriceStale(observedAt: Date, now: Date = new Date()): boolean 
  * "de prijs was gisteren ook al €1,29" is zelf informatie — zonder dat is een
  * nep-korting niet te herkennen.
  */
-export async function recordObservedProduct(input: {
-  product: ProviderProduct;
-  /**
-   * Bij welk ingrediënt dit product hoort. Verplicht: een winkelproduct
-   * zonder ingrediënt heeft niets om mee vergeleken te worden, en de app
-   * zoekt sowieso pér ingrediënt.
-   */
-  ingredientId: string;
-  source: ObservationSource;
-  observedAt?: Date;
-}) {
-  const { product } = input;
-  const observedAt = input.observedAt ?? new Date();
+/**
+ * De velden waarmee één waargenomen product wordt aangemaakt of bijgewerkt.
+ *
+ * Apart gezet zodat het opslaan van één product en het bundelen van een hele
+ * reeks gegarandeerd hetzelfde wegschrijven — anders groeien die twee wegen
+ * uit elkaar zodra er een veld bij komt.
+ */
+function upsertArgsFor(product: ProviderProduct, ingredientId: string, observedAt: Date) {
   const qualityTier = deriveQualityTier({
     provider: product.provider,
     name: product.name,
@@ -54,16 +49,16 @@ export async function recordObservedProduct(input: {
   // in plaats van een geraden aantal.
   const packageQuantity = product.content?.amount ?? null;
 
-  const stored = await prisma.product.upsert({
+  return {
     where: {
       ingredientId_provider_externalRef: {
-        ingredientId: input.ingredientId,
+        ingredientId,
         provider: product.provider,
         externalRef: product.externalRef,
       },
     },
     create: {
-      ingredientId: input.ingredientId,
+      ingredientId,
       provider: product.provider,
       externalRef: product.externalRef,
       name: product.name,
@@ -95,21 +90,68 @@ export async function recordObservedProduct(input: {
       ...(product.freeFromAllergens.length > 0 ? { freeFromAllergens: product.freeFromAllergens } : {}),
       lastSeenAvailable: observedAt,
     },
-  });
+  };
+}
 
+/** De waarneming die bij dat product hoort. */
+function observationDataFor(
+  product: ProviderProduct,
+  productId: string,
+  observedAt: Date,
+  source: ObservationSource
+) {
+  return {
+    productId,
+    price: product.price,
+    wasPrice: product.wasPrice,
+    unitPrice: product.unitPrice?.amount ?? null,
+    unitPriceUnit: product.unitPrice?.unit ?? null,
+    promoType: product.promoType,
+    promoLabel: product.promoLabel,
+    promoUntil: product.promoUntil,
+    observedAt,
+    source,
+  };
+}
+
+export async function recordObservedProduct(input: {
+  product: ProviderProduct;
+  /**
+   * Bij welk ingrediënt dit product hoort. Verplicht: een winkelproduct
+   * zonder ingrediënt heeft niets om mee vergeleken te worden, en de app
+   * zoekt sowieso pér ingrediënt.
+   */
+  ingredientId: string;
+  source: ObservationSource;
+  observedAt?: Date;
+}) {
+  const observedAt = input.observedAt ?? new Date();
+  const stored = await prisma.product.upsert(
+    upsertArgsFor(input.product, input.ingredientId, observedAt)
+  );
   await prisma.priceObservation.create({
-    data: {
-      productId: stored.id,
-      price: product.price,
-      wasPrice: product.wasPrice,
-      unitPrice: product.unitPrice?.amount ?? null,
-      unitPriceUnit: product.unitPrice?.unit ?? null,
-      promoType: product.promoType,
-      promoLabel: product.promoLabel,
-      promoUntil: product.promoUntil,
-      observedAt,
-      source: input.source,
-    },
+    data: observationDataFor(input.product, stored.id, observedAt, input.source),
+  });
+  return stored;
+}
+
+export async function recordObservedProducts(input: {
+  products: ProviderProduct[];
+  ingredientId: string;
+  source: ObservationSource;
+  observedAt?: Date;
+}) {
+  if (input.products.length === 0) return [];
+  const observedAt = input.observedAt ?? new Date();
+
+  const stored = await Promise.all(
+    input.products.map((product) =>
+      prisma.product.upsert(upsertArgsFor(product, input.ingredientId, observedAt))
+    )
+  );
+
+  await prisma.priceObservation.createMany({
+    data: stored.map((row, index) => observationDataFor(input.products[index], row.id, observedAt, input.source)),
   });
 
   return stored;

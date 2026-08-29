@@ -2,8 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { logEvent, createCorrelationId, errorMessage } from "@/lib/logger";
 import type { ProductProvider } from "@/generated/prisma/enums";
 import { rankStoreProducts, storeSearchTerm } from "@/domain/pricing/storeMatch";
-import type { StorePriceProvider } from "@/domain/pricing/types";
-import { recordObservedProduct } from "./observations";
+import type { ProviderProduct, StorePriceProvider } from "@/domain/pricing/types";
+import { recordObservedProducts } from "./observations";
 import { ahPriceProvider, fetchAhProductExtras } from "./ahClient";
 import { crawlDirkCatalogue, dirkSearchWorks, searchDirkPage } from "./dirkClient";
 
@@ -253,6 +253,7 @@ export async function refreshStorePrices(
         continue;
       }
 
+      const enriched: ProviderProduct[] = [];
       for (const match of matches) {
         let product = match.product;
         // De barcode en de allergeeninformatie staan alleen op het
@@ -280,13 +281,19 @@ export async function refreshStorePrices(
           }
         }
 
-        await recordObservedProduct({
-          product,
-          ingredientId: ingredient.id,
-          source: provider.capabilities.reliability === "api" ? "API" : "SCRAPE",
-        });
-        result.productsStored += 1;
+        enriched.push(product);
       }
+
+      // Alles van dit ingrediënt in één keer wegschrijven. Per product apart
+      // waren dit twee database-aanroepen achter elkaar, en dat liep bij acht
+      // kandidaten zo hoog op dat de verversing haar tijdslimiet haalde
+      // voordat ze de halve lijst had gehad.
+      await recordObservedProducts({
+        products: enriched,
+        ingredientId: ingredient.id,
+        source: provider.capabilities.reliability === "api" ? "API" : "SCRAPE",
+      });
+      result.productsStored += enriched.length;
     } catch (error) {
       consecutiveFailures += 1;
       result.errors.push(`${ingredient.name}: ${errorMessage(error)}`);
@@ -387,14 +394,12 @@ async function refreshDirkViaSearch(
         result.ingredientsWithoutMatch += 1;
         continue;
       }
-      for (const match of matches) {
-        await recordObservedProduct({
-          product: match.product,
-          ingredientId: ingredient.id,
-          source: "SCRAPE",
-        });
-        result.productsStored += 1;
-      }
+      await recordObservedProducts({
+        products: matches.map((match) => match.product),
+        ingredientId: ingredient.id,
+        source: "SCRAPE",
+      });
+      result.productsStored += matches.length;
     } catch (error) {
       result.errors.push(`${ingredient.name}: ${errorMessage(error)}`);
     }
@@ -503,15 +508,13 @@ export async function refreshDirkPrices(
       result.ingredientsWithoutMatch += 1;
       continue;
     }
-    for (const match of matches) {
-      await recordObservedProduct({
-        product: match.product,
-        ingredientId: ingredient.id,
-        // Dirk is een scrape, en dat blijft zichtbaar tot in de waarneming.
-        source: "SCRAPE",
-      });
-      result.productsStored += 1;
-    }
+    await recordObservedProducts({
+      products: matches.map((match) => match.product),
+      ingredientId: ingredient.id,
+      // Dirk is een scrape, en dat blijft zichtbaar tot in de waarneming.
+      source: "SCRAPE",
+    });
+    result.productsStored += matches.length;
   }
 
   const failed = result.productsStored === 0 && result.ingredientsChecked > 0;

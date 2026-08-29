@@ -183,12 +183,12 @@ const MANUAL_DIRK_CATEGORY_LIMIT = 14;
 /**
  * Hoeveel tijd de hele knop mag kosten, verdeeld over de winkels.
  *
- * Ruim onder de 60 seconden die de pagina zichzelf toestaat: de laatste
- * seconden zijn nodig om de uitslag weg te schrijven en door te sturen. Wordt
+ * Onder de 60 seconden die de pagina zichzelf toestaat: er blijft ruim tijd
+ * over om de uitslag per winkel weg te schrijven en door te sturen. Wordt
  * dit aan de hostingpartij overgelaten, dan wordt de aanroep midden in het
  * werk afgekapt en blijft de knop eindeloos op "bezig met ophalen" staan.
  */
-const MANUAL_TIME_BUDGET_MS = 40_000;
+const MANUAL_TIME_BUDGET_MS = 48_000;
 
 /** Een winkel die helemaal niet bereikbaar was, in dezelfde vorm als een gewone uitslag. */
 function failedRun(provider: ProductProvider, error: unknown): RefreshResult {
