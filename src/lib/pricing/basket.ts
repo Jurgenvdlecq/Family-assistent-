@@ -40,7 +40,7 @@ export interface BasketOverview {
 }
 
 /** De winkels waar we vandaag inzicht in hebben. Picnic is de referentie, geen kolom. */
-export const COMPARISON_PROVIDERS: ProductProvider[] = ["AH"];
+export const COMPARISON_PROVIDERS: ProductProvider[] = ["AH", "DIRK"];
 
 /**
  * Rekent de huidige boodschappenlijst van een huishouden door.

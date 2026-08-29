@@ -928,7 +928,7 @@ export default async function BoodschappenPage({
       // nooit op een externe winkel.
       getStorePricesForIngredients(
         shoppingList.lines.map((line) => line.ingredientId),
-        ["AH"]
+        COMPARISON_PROVIDERS
       ),
       // Alleen nodig om een bevestiging te kunnen tonen bij een harde regel
       // van dit huishouden — nooit om er zelf iets uit te concluderen.

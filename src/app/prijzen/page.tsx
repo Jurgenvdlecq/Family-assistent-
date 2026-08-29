@@ -6,6 +6,7 @@ import { getCurrentWeekStart } from "@/lib/week";
 import { getBasketOverview, COMPARISON_PROVIDERS } from "@/lib/pricing/basket";
 import { EQUIVALENCE_LABELS, type EquivalenceLevel } from "@/domain/pricing/equivalence";
 import { PROVIDER_LABELS } from "@/domain/pricing/types";
+import { describeProviderSource } from "@/domain/pricing/providers/capabilities";
 import type { ProductProvider } from "@/generated/prisma/enums";
 import type { StorePriceForIngredient } from "@/lib/pricing/storePrices";
 import NavBar from "@/components/NavBar";
@@ -71,6 +72,9 @@ export default async function PrijzenPage({
   const overview = await getBasketOverview(household.id, mealPlan.id);
   const { comparison, candidatesByIngredient, choicesByIngredient, lineMeta } = overview;
   const providers = COMPARISON_PROVIDERS;
+  const providersWithData = providers.filter((provider) =>
+    comparison.lines.some((line) => line.stores.has(provider))
+  );
 
   return (
     <div className="mx-auto flex min-h-screen w-full min-w-0 max-w-2xl flex-col pb-[calc(6rem+env(safe-area-inset-bottom))]">
@@ -125,6 +129,9 @@ export default async function PrijzenPage({
                 return (
                   <div key={provider} className="mt-4 border-t border-line pt-4">
                     <p className="text-sm font-medium text-ink">Bij {PROVIDER_LABELS[provider]}</p>
+                    {describeProviderSource(provider) && (
+                      <p className="text-xs text-ink-faint">{describeProviderSource(provider)}</p>
+                    )}
                     {total.linesCompared === 0 ? (
                       <p className="mt-1 text-sm text-ink-muted">
                         Nog geen enkele regel te vergelijken. Dat is geen €&nbsp;0 — het betekent dat we
@@ -175,6 +182,9 @@ export default async function PrijzenPage({
             </section>
 
             <h2 className="mb-2 text-sm font-semibold text-ink">Regel voor regel</h2>
+            {/* Een winkel waar we vandaag helemaal niets van weten krijgt geen
+                kolom per regel: vijftien keer "geen prijs bekend" voegt niets
+                toe aan het ene bericht hierboven. */}
             <div className="mb-8 divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
               {comparison.lines.map((line) => {
                 const meta = lineMeta.get(line.lineId);
@@ -202,7 +212,7 @@ export default async function PrijzenPage({
                         : "nog geen product gekozen"}
                     </p>
 
-                    {providers.map((provider) => {
+                    {providersWithData.map((provider) => {
                       const store = line.stores.get(provider);
                       const chosenProductId = ingredientId
                         ? choicesByIngredient.get(ingredientId)?.get(provider)
