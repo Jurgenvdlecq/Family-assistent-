@@ -20,7 +20,32 @@ test("klasse: keurmerken tellen mee, niet alleen de naam", () => {
 
 test("klasse: voordeellijnen worden als BUDGET herkend", () => {
   assert.equal(deriveQualityTier({ provider: "AH", name: "AH Basic halfvolle melk", brand: "AH" }), "BUDGET");
-  assert.equal(deriveQualityTier({ provider: "DIRK", name: "1 de Beste kipfilet", brand: "1 de Beste" }), "BUDGET");
+  // G'woon is bij Dirk de goedkope lijn ónder het huismerk — het equivalent
+  // van AH Basic, niet van AH zelf.
+  assert.equal(deriveQualityTier({ provider: "DIRK", name: "G'woon kipfilet", brand: "G'woon" }), "BUDGET");
+});
+
+/**
+ * Gebruikersmelding met schermafbeelding: bij rijstwafels stond bij Dirk
+ * "ander soort — voordeelmerk in plaats van wat jullie normaal kopen", voor
+ * "1 de Beste Rijstwafels" naast onze eigen "Picnic rijstwafels".
+ *
+ * "1 de Beste" is het gewone huismerk van Dirk, het equivalent van "AH" bij
+ * Albert Heijn — niet van "AH Basic". Het stond ook al in `HOUSE_BRANDS`,
+ * maar de budgetcontrole staat eerder en liet die regel nooit aan bod komen.
+ * Omdat bijna elk Dirk-product dit merk draagt, viel bijna elke Dirk-regel
+ * daardoor uit het harde totaal.
+ */
+test("klasse: het huismerk van Dirk staat gelijk aan dat van Albert Heijn", () => {
+  const dirk = deriveQualityTier({
+    provider: "DIRK",
+    name: "1 de Beste Rijstwafels dun met zeezout",
+    brand: "1 de Beste",
+  });
+  const ah = deriveQualityTier({ provider: "AH", name: "AH Rijstwafels naturel", brand: "AH" });
+  assert.equal(dirk, "STANDAARD");
+  assert.equal(ah, "STANDAARD");
+  assert.equal(dirk, ah, "twee huismerken horen in dezelfde klasse te vallen");
 });
 
 test("klasse: premiumlijnen worden als PREMIUM herkend", () => {
