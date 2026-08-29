@@ -259,14 +259,61 @@ export default async function PrijzenPage({
                       );
                     })}
                   </tr>
-                  <tr className="text-xs text-ink-faint">
+                  {/* Zonder eigen regelteller las "3 van de 15" hierboven als
+                      "Dirk vond maar drie producten", terwijl er op zes regels
+                      wél iets lag — de andere drie waren een ander soort. Die
+                      telling hoort dus bij dít bedrag te staan, niet alleen bij
+                      het harde. */}
+                  <tr className="border-b border-line text-xs text-ink-faint">
                     <td className="px-3 py-2">Met alternatieven erbij</td>
                     {columns.map((provider) => {
                       if (provider === "PICNIC") return <td key={provider} className="px-3 py-2" />;
                       const total = comparison.totals.get(provider);
+                      const alternativeLines = total
+                        ? total.linesCompared + total.linesWithAlternative
+                        : 0;
                       return (
                         <td key={provider} className="px-3 py-2 text-right">
-                          {total && total.linesWithAlternative > 0 ? euro(total.alternativeTotal) : "—"}
+                          {total && total.linesWithAlternative > 0 ? (
+                            <>
+                              {euro(total.alternativeTotal)}
+                              <span className="block text-ink-muted">
+                                {alternativeLines} van de {comparison.lines.length} regels
+                              </span>
+                            </>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  {/* Hetzelfde eerlijke vergelijkingspunt als hierboven, maar
+                      dan over de regels die in het alternatieve bedrag zitten.
+                      Zonder deze rij zou dat bedrag naast het harde
+                      referentiebedrag komen te staan, dat over minder regels
+                      gaat. */}
+                  <tr className="text-xs text-ink-faint">
+                    <td className="px-3 py-2">Bij Picnic, die regels</td>
+                    {columns.map((provider) => {
+                      if (provider === "PICNIC") return <td key={provider} className="px-3 py-2" />;
+                      const total = comparison.totals.get(provider);
+                      if (!total || total.linesWithAlternative === 0) {
+                        return (
+                          <td key={provider} className="px-3 py-2 text-right">
+                            —
+                          </td>
+                        );
+                      }
+                      const difference = describeDifference(
+                        total.alternativeTotal,
+                        total.referenceTotalForAlternativeLines,
+                        total.linesCompared + total.linesWithAlternative
+                      );
+                      return (
+                        <td key={provider} className="px-3 py-2 text-right">
+                          {euro(total.referenceTotalForAlternativeLines)}
+                          {difference ? <span className="block text-ink-muted">{difference}</span> : null}
                         </td>
                       );
                     })}

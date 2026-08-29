@@ -145,21 +145,35 @@ function parseName(chunk: string): string | null {
   return null;
 }
 
+// Dezelfde telwoorden die `parsePackContent` kent, anders vindt de lezer
+// "9 rollen" hier niet eens en komt het nooit bij de inhoudsbepaling aan.
+const PACKAGE_SIZE_PATTERN =
+  /\b\d+(?:[.,]\d+)?\s*(?:x\s*\d+(?:[.,]\d+)?\s*)?(?:gram|kg|g|ml|cl|liter|l|stuks|stuk|st|rollen|rol|zakjes|zakje|zakken|zak|plakken|plak|sneetjes|sneetje|bollen|bol|blikken|blik|flessen|fles|pakken|pak|tabletten|tablet|capsules|capsule|doekjes|doekje|wasbeurten|wasbeurt|repen|reep)\b/i;
+
 /**
  * De verpakkingsgrootte, zoals ze op de pagina staat.
  *
  * Gezocht in de tekst van het blok, niet in een specifieke klasse: de klasse
  * is precies het soort ding dat bij een herontwerp verandert, de notatie
  * "500 ml" niet.
+ *
+ * Daarna nog een keer in de productnaam, en dat is niet dubbelop.
+ * `textOf()` gooit alle tags weg, inclusief hun attributen — en de naam komt
+ * bij Dirk juist uit het `alt`-attribuut van de afbeelding. Staat de maat
+ * alléén in de naam ("Starbucks Skinny Caffe Latte 220 ml"), dan zag deze
+ * lezer haar dus nooit: het scherm meldde "verpakkingsgrootte onbekend" voor
+ * een product waar de maat gewoon bij stond, en zonder inhoud valt er niets
+ * te vergelijken.
+ *
+ * De zichtbare tekst blijft wel voorgaan: staat er een apart maatveld op de
+ * kaart, dan is dat de betrouwbaardere bron.
  */
-function parsePackageSize(chunk: string): string | null {
-  const text = textOf(chunk);
-  // Dezelfde telwoorden die `parsePackContent` kent, anders vindt de lezer
-  // "9 rollen" hier niet eens en komt het nooit bij de inhoudsbepaling aan.
-  const match = text.match(
-    /\b\d+(?:[.,]\d+)?\s*(?:x\s*\d+(?:[.,]\d+)?\s*)?(?:gram|kg|g|ml|cl|liter|l|stuks|stuk|st|rollen|rol|zakjes|zakje|zakken|zak|plakken|plak|sneetjes|sneetje|bollen|bol|blikken|blik|flessen|fles|pakken|pak|tabletten|tablet|capsules|capsule|doekjes|doekje|wasbeurten|wasbeurt|repen|reep)\b/i
-  );
-  return match ? match[0].trim() : null;
+function parsePackageSize(chunk: string, name: string | null): string | null {
+  const fromBlock = textOf(chunk).match(PACKAGE_SIZE_PATTERN);
+  if (fromBlock) return fromBlock[0].trim();
+
+  const fromName = name?.match(PACKAGE_SIZE_PATTERN);
+  return fromName ? fromName[0].trim() : null;
 }
 
 /** Het merk staat bij Dirk niet apart in de opsomming; alleen de naam is er. */
@@ -237,7 +251,7 @@ export function parseDirkProducts(html: string): ProviderProduct[] {
     if (!externalRef || !name || seen.has(externalRef)) continue;
     seen.add(externalRef);
 
-    const packageSize = parsePackageSize(chunk);
+    const packageSize = parsePackageSize(chunk, name);
     const content = parsePackContent(packageSize);
 
     products.push({
