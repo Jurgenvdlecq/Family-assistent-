@@ -45,7 +45,11 @@ export function derivePackageForm(
   const pack = (packageSize ?? "").toLowerCase();
   const text = `${pack} ${(name ?? "").toLowerCase()}`;
 
-  if (MULTIPACK.test(pack)) return "LOSSE_PORTIES";
+  // Ook in de productnaam kijken: niet elke winkel zet "4 x 100 g" in het
+  // verpakkingsveld — sommige noteren daar het totaalgewicht en staat het
+  // aantal alleen in de naam. Dan zou de vorm ten onrechte "één verpakking"
+  // heten.
+  if (MULTIPACK.test(pack) || MULTIPACK.test((name ?? "").toLowerCase())) return "LOSSE_PORTIES";
   if (PORTION_WORDS.some((word) => new RegExp(`\\b${word}\\b`).test(text))) return "LOSSE_PORTIES";
 
   // Eén getal met een eenheid en verder niets: één verpakking. Staat er niets

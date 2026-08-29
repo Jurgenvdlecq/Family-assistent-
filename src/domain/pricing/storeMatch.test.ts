@@ -127,3 +127,29 @@ test("matching: los of aaneen geschreven blijft wél matchen, in beide richtinge
   assert.equal(scoreStoreProductForIngredient("Allesreiniger doekjes", "AH Allesreinigerdoekjes"), 1);
   assert.equal(scoreStoreProductForIngredient("Toiletpapier", "AH Toiletpapier 8 rollen"), 1);
 });
+
+test("rangschikken: het product dat op ons eigen product lijkt komt vooraan", () => {
+  // Gebruikersmelding: "Alpro heeft AH zelfs exact dezelfde, gek dat ie deze
+  // niet pakt." Het ingrediënt heet alleen naar het merk, dus alle
+  // Alpro-artikelen scoren daar even hoog en besliste een willekeurige
+  // tiebreak. Koffiemelk won.
+  const alpro = [
+    product("Alpro Barista koffiemelk"),
+    product("Alpro Mild & Creamy naturel"),
+    product("Alpro Soya drink ongezoet"),
+  ];
+
+  const zonder = rankStoreProducts("Alpro", alpro, 8).map((match) => match.product.name);
+  assert.equal(zonder[0], "Alpro Barista koffiemelk", "zo ging het mis");
+
+  const met = rankStoreProducts("Alpro", alpro, 8, "Alpro Mild & Creamy 750g").map(
+    (match) => match.product.name
+  );
+  assert.equal(met[0], "Alpro Mild & Creamy naturel");
+});
+
+test("zoekterm: getallen en verpakkingsmaten horen niet in de zoekopdracht", () => {
+  // Zoeken op "alpro mild creamy 750g" levert bij een winkel niets op.
+  assert.equal(storeSearchTerm("Alpro Mild & Creamy 750g"), "alpro mild creamy");
+  assert.equal(storeSearchTerm("Halfvolle melk 1 l"), "halfvolle melk");
+});

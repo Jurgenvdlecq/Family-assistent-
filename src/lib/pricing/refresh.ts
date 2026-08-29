@@ -26,7 +26,11 @@ import { crawlDirkCatalogue } from "./dirkClient";
 const REQUEST_SPACING_MS = 350;
 
 /** Hoeveel kandidaten per ingrediënt bewaard worden voor de vergelijking. */
-const CANDIDATES_PER_INGREDIENT = 3;
+// Ruimer dan de drie van vroeger. Drie was te krap zodra een winkel meerdere
+// varianten van hetzelfde merk voert: het juiste product viel dan buiten de
+// boot en niets verderop kon dat nog goedmaken — afwaarderen kan alleen wat
+// er ligt.
+const CANDIDATES_PER_INGREDIENT = 8;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -61,7 +65,7 @@ export async function getPricedIngredients(options?: PricedIngredientOptions) {
       ? { shoppingListLines: { some: { shoppingList: { mealPlan: { householdId, weekStart } } } } }
       : null;
 
-  const ingredients = await prisma.ingredient.findMany({
+  const found = await prisma.ingredient.findMany({
     where: {
       OR: [
         { recipeIngredients: { some: {} } },
@@ -69,9 +73,29 @@ export async function getPricedIngredients(options?: PricedIngredientOptions) {
         ...(onCurrentList ? [onCurrentList] : []),
       ],
     },
-    select: { id: true, name: true },
+    select: {
+      id: true,
+      name: true,
+      // Het Picnic-product dat we hier werkelijk voor kopen. Dat is waarmee we
+      // bij de andere winkels gaan zoeken: de ingrediëntnaam is soms alleen
+      // een merk ("Alpro"), en daar vindt een winkel van alles bij behalve het
+      // juiste. Het meest recent geziene product is de beste beschikbare
+      // benadering van "wat kopen we nu".
+      products: {
+        where: { provider: "PICNIC" },
+        select: { name: true },
+        orderBy: { lastSeenAvailable: { sort: "desc", nulls: "last" } },
+        take: 1,
+      },
+    },
     orderBy: { name: "asc" },
   });
+
+  const ingredients = found.map((ingredient) => ({
+    id: ingredient.id,
+    name: ingredient.name,
+    referenceProductName: ingredient.products[0]?.name ?? null,
+  }));
 
   if (!householdId || !weekStart) return ingredients;
 
@@ -151,11 +175,29 @@ export async function refreshStorePrices(
     result.ingredientsChecked += 1;
 
     try {
-      const found = await provider.search(storeSearchTerm(ingredient.name), { limit: 10 });
+      // Zoeken op wat we werkelijk kopen, niet op de ingrediëntnaam. Levert
+      // dat niets op — de winkel voert dat product simpelweg niet — dan
+      // alsnog op het ingrediënt, want een lege uitslag is erger dan een
+      // ruwere. Alleen bij nul resultaten, zodat dit geen verdubbeling van
+      // het verkeer wordt.
+      const ownTerm = ingredient.referenceProductName
+        ? storeSearchTerm(ingredient.referenceProductName)
+        : null;
+      const fallbackTerm = storeSearchTerm(ingredient.name);
+      let found = await provider.search(ownTerm ?? fallbackTerm, { limit: 10 });
+      if (found.length === 0 && ownTerm !== null && ownTerm !== fallbackTerm) {
+        await sleep(REQUEST_SPACING_MS);
+        found = await provider.search(fallbackTerm, { limit: 10 });
+      }
       consecutiveFailures = 0;
       result.itemsSeen = (result.itemsSeen ?? 0) + found.length;
 
-      const matches = rankStoreProducts(ingredient.name, found, CANDIDATES_PER_INGREDIENT);
+      const matches = rankStoreProducts(
+        ingredient.name,
+        found,
+        CANDIDATES_PER_INGREDIENT,
+        ingredient.referenceProductName
+      );
       if (matches.length === 0) {
         result.ingredientsWithoutMatch += 1;
         continue;
@@ -293,7 +335,12 @@ export async function refreshDirkPrices(
 
   for (const ingredient of ingredients) {
     result.ingredientsChecked += 1;
-    const matches = rankStoreProducts(ingredient.name, catalogue.products, CANDIDATES_PER_INGREDIENT);
+    const matches = rankStoreProducts(
+      ingredient.name,
+      catalogue.products,
+      CANDIDATES_PER_INGREDIENT,
+      ingredient.referenceProductName
+    );
     if (matches.length === 0) {
       result.ingredientsWithoutMatch += 1;
       continue;

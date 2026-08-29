@@ -53,10 +53,20 @@ const NOISE_WORDS = new Set([
   "verpakking",
 ]);
 
+/**
+ * Getallen met of zonder eenheid: "750g", "1l", "500", "6x".
+ *
+ * Die horen niet in een zoekterm en zeggen niets over wélk product het is —
+ * de verpakkingsgrootte wordt apart en veel zorgvuldiger gelezen. Zonder deze
+ * filter zou zoeken op onze eigen productnaam "alpro mild creamy 750g"
+ * opleveren, en daar vindt een winkel niets bij.
+ */
+const NUMBER_LIKE = /^\d+(?:[.,]\d+)?(?:g|gr|gram|kg|ml|cl|l|st|stuk|stuks|x)?$/;
+
 export function contentWords(value: string): string[] {
   return normalize(value)
     .split(" ")
-    .filter((word) => word.length > 2 && !NOISE_WORDS.has(word));
+    .filter((word) => word.length > 2 && !NOISE_WORDS.has(word) && !NUMBER_LIKE.test(word));
 }
 
 export const STORE_MATCH_THRESHOLD = 0.6;
@@ -147,6 +157,8 @@ export interface StoreMatchResult {
    * gewone.
    */
   surplusWords: number;
+  /** Hoe sterk dit lijkt op het product dat wij zelf kopen; 0 als we dat niet weten. */
+  referenceScore: number;
 }
 
 /**
@@ -160,20 +172,42 @@ export interface StoreMatchResult {
 export function rankStoreProducts(
   ingredientName: string,
   products: ProviderProduct[],
-  limit = 5
+  limit = 5,
+  /**
+   * De naam van het product dat wij zelf kopen, als we die kennen.
+   *
+   * Dit is het verschil tussen "hoort dit bij dit ingrediënt" en "is dit
+   * hetzelfde als wat wij kopen". De ingrediëntnaam is soms alleen een merk —
+   * "Alpro" — en dan scoren álle artikelen van dat merk even hoog en bepaalt
+   * een willekeurige tiebreak welke er bewaard blijven. In productie leverde
+   * dat koffiemelk op terwijl Albert Heijn precies hetzelfde product verkoopt.
+   *
+   * De toelating verandert er niet door: of iets bij dit ingrediënt hoort
+   * blijft de ingrediëntnaam bepalen. Alleen de volgorde wordt hiermee
+   * gemaakt, zodat het product dat het meest op het onze lijkt vooraan komt en
+   * niet wegvalt bij het afkappen.
+   */
+  referenceProductName?: string | null
 ): StoreMatchResult[] {
   const wanted = new Set(contentWords(ingredientName));
+  const referenceWords = contentWords(referenceProductName ?? "");
 
   return products
     .map((product) => ({
       product,
       score: scoreStoreProductForIngredient(ingredientName, product.name),
+      referenceScore:
+        referenceWords.length > 0 ? wordCoverage(referenceWords, contentWords(product.name)) : 0,
       surplusWords: contentWords(product.name).filter((word) => !wanted.has(word)).length,
     }))
     .filter((match) => match.score >= STORE_MATCH_THRESHOLD)
     .sort(
       (a, b) =>
         b.score - a.score ||
+        // Lijkt het op wat wij zelf kopen? Dat weegt zwaarder dan alle
+        // vuistregels hieronder, die alleen bestaan omdat we vroeger niets
+        // beters hadden.
+        b.referenceScore - a.referenceScore ||
         // Het minst specifieke product voorop: dat is de gewone variant.
         a.surplusWords - b.surplusWords ||
         // Daarna de kleinste verpakking — meestal het normale formaat, niet
