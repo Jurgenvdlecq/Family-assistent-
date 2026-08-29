@@ -97,7 +97,7 @@ export async function clearStoreProductChoice(formData: FormData) {
 export async function refreshPricesNow() {
   // Alleen voor een ingelogd huishouden: dit doet echte aanvragen naar
   // externe winkels, dus geen open eindpunt.
-  await requireCurrentHousehold();
+  const household = await requireCurrentHousehold();
 
   // Twee tabbladen, of twee gezinsleden tegelijk, zouden de zorgvuldig
   // ingebouwde pauze tussen de aanvragen verdubbelen. En een blokkade door de
@@ -119,10 +119,12 @@ export async function refreshPricesNow() {
           ? await refreshStorePrices(ahPriceProvider, {
               limitIngredients: MANUAL_INGREDIENT_LIMIT,
               withExtras: false,
+              prioritiseHouseholdId: household.id,
             })
           : await refreshDirkPrices({
               limitIngredients: MANUAL_INGREDIENT_LIMIT,
               maxCategories: MANUAL_DIRK_CATEGORY_LIMIT,
+              prioritiseHouseholdId: household.id,
             });
     } catch (error) {
       result = failedRun(provider, error);
@@ -160,6 +162,7 @@ function failedRun(provider: ProductProvider, error: unknown): RefreshResult {
     ingredientsChecked: 0,
     productsStored: 0,
     ingredientsWithoutMatch: 0,
+    itemsSeen: 0,
     errors: [errorMessage(error)],
     abortedAfter: null,
   };

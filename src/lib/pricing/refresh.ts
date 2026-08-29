@@ -36,14 +36,33 @@ function sleep(ms: number) {
  * De ingrediënten die het waard zijn om prijzen van bij te houden: alles wat
  * in een recept voorkomt of een vaste boodschap is.
  */
-export async function getPricedIngredients() {
-  return prisma.ingredient.findMany({
+export async function getPricedIngredients(options?: { prioritiseHouseholdId?: string }) {
+  const ingredients = await prisma.ingredient.findMany({
     where: {
       OR: [{ recipeIngredients: { some: {} } }, { fixedGroceries: { some: {} } }],
     },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
+
+  if (!options?.prioritiseHouseholdId) return ingredients;
+
+  // Bij een verversing die maar een deel van de lijst pakt (de knop "nu
+  // verversen") moet dát deel wél gaan over wat de gebruiker op dit moment
+  // voor zich heeft. Alfabetisch de eerste vijftien pakken leverde in de
+  // praktijk één prijs op vijftien regels op: precies de ingrediënten van de
+  // boodschappenlijst zaten er niet bij.
+  const onTheList = await prisma.shoppingListLine.findMany({
+    where: { shoppingList: { mealPlan: { householdId: options.prioritiseHouseholdId } } },
+    select: { ingredientId: true },
+    distinct: ["ingredientId"],
+  });
+  const priority = new Set(onTheList.map((line) => line.ingredientId));
+
+  return [
+    ...ingredients.filter((ingredient) => priority.has(ingredient.id)),
+    ...ingredients.filter((ingredient) => !priority.has(ingredient.id)),
+  ];
 }
 
 export interface RefreshResult {
@@ -51,6 +70,14 @@ export interface RefreshResult {
   ingredientsChecked: number;
   productsStored: number;
   ingredientsWithoutMatch: number;
+  /**
+   * Hoeveel producten de winkel überhaupt opleverde, vóór het matchen.
+   *
+   * Nodig om twee heel verschillende situaties uit elkaar te houden die er op
+   * het scherm anders hetzelfde uitzien: "de koppeling werkt niet" en "de
+   * koppeling werkt, maar niets van dit aanbod past bij jullie ingrediënten".
+   */
+  itemsSeen: number;
   errors: string[];
   /** Bij een storing: hoeveel ingrediënten er niet meer geprobeerd zijn. */
   abortedAfter: number | null;
@@ -65,15 +92,18 @@ export interface RefreshResult {
  */
 export async function refreshStorePrices(
   provider: StorePriceProvider,
-  options?: { limitIngredients?: number; withExtras?: boolean }
+  options?: { limitIngredients?: number; withExtras?: boolean; prioritiseHouseholdId?: string }
 ): Promise<RefreshResult> {
   const correlationId = createCorrelationId();
-  const ingredients = (await getPricedIngredients()).slice(0, options?.limitIngredients ?? Infinity);
+  const ingredients = (
+    await getPricedIngredients({ prioritiseHouseholdId: options?.prioritiseHouseholdId })
+  ).slice(0, options?.limitIngredients ?? Infinity);
   const result: RefreshResult = {
     provider: provider.provider,
     ingredientsChecked: 0,
     productsStored: 0,
     ingredientsWithoutMatch: 0,
+    itemsSeen: 0,
     errors: [],
     abortedAfter: null,
   };
@@ -87,6 +117,7 @@ export async function refreshStorePrices(
     try {
       const found = await provider.search(ingredient.name, { limit: 10 });
       consecutiveFailures = 0;
+      result.itemsSeen += found.length;
 
       const matches = rankStoreProducts(ingredient.name, found, CANDIDATES_PER_INGREDIENT);
       if (matches.length === 0) {
@@ -186,14 +217,18 @@ export function refreshableProviders(): StorePriceProvider[] {
 export async function refreshDirkPrices(options?: {
   limitIngredients?: number;
   maxCategories?: number;
+  prioritiseHouseholdId?: string;
 }): Promise<RefreshResult> {
   const correlationId = createCorrelationId();
-  const ingredients = (await getPricedIngredients()).slice(0, options?.limitIngredients ?? Infinity);
+  const ingredients = (
+    await getPricedIngredients({ prioritiseHouseholdId: options?.prioritiseHouseholdId })
+  ).slice(0, options?.limitIngredients ?? Infinity);
   const result: RefreshResult = {
     provider: "DIRK",
     ingredientsChecked: 0,
     productsStored: 0,
     ingredientsWithoutMatch: 0,
+    itemsSeen: 0,
     errors: [],
     abortedAfter: null,
   };
@@ -214,6 +249,10 @@ export async function refreshDirkPrices(options?: {
     });
     return result;
   }
+
+  // Hoeveel de site opleverde: zonder dit getal is "geen passend product" niet
+  // te onderscheiden van "de scraper leest niets meer".
+  result.itemsSeen = catalogue.products.length;
 
   for (const ingredient of ingredients) {
     result.ingredientsChecked += 1;

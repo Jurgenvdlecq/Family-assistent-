@@ -950,6 +950,9 @@ model PriceRefreshRun {
   finishedAt         DateTime?           @map("finished_at")
   ingredientsChecked Int                 @default(0) @map("ingredients_checked")
   productsStored     Int                 @default(0) @map("products_stored")
+  /// Hoeveel producten de winkel opleverde vóór het matchen. Onderscheidt
+  /// "de koppeling werkt niet" van "er past niets bij onze ingrediënten".
+  itemsSeen          Int                 @default(0) @map("items_seen")
   /// De eerste foutmelding, in gewone taal; `null` als alles goed ging.
   error              String?
   trigger            PriceRefreshTrigger

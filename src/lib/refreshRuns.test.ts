@@ -27,6 +27,7 @@ function result(overrides: Partial<RefreshResult> = {}): RefreshResult {
     ingredientsChecked: 15,
     productsStored: 40,
     ingredientsWithoutMatch: 2,
+    itemsSeen: 30,
     errors: [],
     abortedAfter: null,
     ...overrides,
@@ -147,6 +148,7 @@ test("verversingen: de tekst onderscheidt gelukt, deels gelukt, niets gevonden e
     startedAt: new Date("2026-08-29T05:00:00Z"),
     finishedAt: new Date("2026-08-29T05:02:00Z"),
     ingredientsChecked: 15,
+    itemsSeen: 30,
     trigger: "CRON" as const,
   };
 
@@ -160,9 +162,16 @@ test("verversingen: de tekst onderscheidt gelukt, deels gelukt, niets gevonden e
     describeRefreshRun({ ...basis, productsStored: 40, error: "Kip: 503" }, "Albert Heijn"),
     /40 producten bijgewerkt.*maar niet alles lukte.*503/
   );
+  // Het onderscheid dat op het scherm ontbrak: de winkel gaf wél producten,
+  // maar geen daarvan paste — dat vraagt iets heel anders dan een kapotte
+  // koppeling die niets teruggeeft.
   assert.match(
     describeRefreshRun({ ...basis, productsStored: 0, error: null }, "Albert Heijn"),
-    /geen enkel passend product gevonden/
+    /30 producten van de winkel gelezen, maar geen daarvan paste/
+  );
+  assert.match(
+    describeRefreshRun({ ...basis, productsStored: 0, itemsSeen: 0, error: null }, "Albert Heijn"),
+    /niets van de winkel teruggekregen/
   );
   assert.match(
     describeRefreshRun({ ...basis, productsStored: 0, error: "403 van de winkel" }, "Albert Heijn"),
@@ -182,6 +191,7 @@ test("verversingen: het tijdstip staat in Nederlandse tijd, niet in servertijd",
       finishedAt: new Date("2026-08-29T05:02:00Z"),
       ingredientsChecked: 15,
       productsStored: 40,
+      itemsSeen: 30,
       error: null,
       trigger: "CRON",
     },
