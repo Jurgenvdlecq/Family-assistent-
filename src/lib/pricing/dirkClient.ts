@@ -93,6 +93,57 @@ export async function fetchDirkCategoryPaths(): Promise<string[]> {
   return paths.slice(0, MAX_CATEGORIES);
 }
 
+/**
+ * Het pad van Dirks zoekpagina.
+ *
+ * De zoekterm staat in het pad, niet in een queryparameter:
+ * `/zoeken/producten/Melk`. Door de gebruiker aangeleverd uit de adresbalk —
+ * geraden had hier niets opgeleverd.
+ */
+export function dirkSearchPath(term: string): string {
+  return `/zoeken/producten/${encodeURIComponent(term)}`;
+}
+
+/**
+ * Een term opzoeken op Dirks eigen zoekpagina.
+ *
+ * Levert alleen iets op als die pagina server-side gerenderd is. Was dat niet
+ * zo, dan komt er een lege huls terug en dus een lege lijst — geen fout: dit
+ * is precies de vraag die `dirkSearchWorks` hieronder beantwoordt.
+ */
+export async function searchDirkPage(term: string): Promise<ProviderProduct[]> {
+  return parseDirkProducts(await fetchPage(dirkSearchPath(term)));
+}
+
+/**
+ * Waarmee we vaststellen of Dirks zoekpagina bruikbaar is.
+ *
+ * Een gewoon woord dat een Nederlandse supermarkt gegarandeerd voert. Komt
+ * daar niets leesbaars uit, dan rendert die pagina client-side (of is de
+ * opmaak veranderd) — en in beide gevallen valt er niets uit te lezen en is
+ * crawlen de enige weg.
+ */
+const SEARCH_PROBE_TERM = "melk";
+
+/**
+ * Kan Dirks zoekpagina gelezen worden?
+ *
+ * Bestaat omdat het antwoord nooit gemeten was: de code ging ervan uit dat die
+ * pagina client-side laadt, en dat kwam uit de oorspronkelijke opdracht in
+ * plaats van uit een proef. Door het één keer per verversing echt te vragen
+ * hoeft niemand die aanname te geloven, en corrigeert de app zichzelf als
+ * Dirk haar site ooit omgooit — in welke richting dan ook.
+ */
+export async function dirkSearchWorks(): Promise<boolean> {
+  try {
+    return (await searchDirkPage(SEARCH_PROBE_TERM)).length > 0;
+  } catch {
+    // Onbereikbaar of een foutcode: dan weten we het niet, en dan is de
+    // beproefde weg (crawlen) de veiligste.
+    return false;
+  }
+}
+
 export interface DirkCrawlResult {
   products: ProviderProduct[];
   categoriesVisited: number;

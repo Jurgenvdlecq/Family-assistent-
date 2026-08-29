@@ -5,7 +5,7 @@ import { rankStoreProducts, storeSearchTerm } from "@/domain/pricing/storeMatch"
 import type { StorePriceProvider } from "@/domain/pricing/types";
 import { recordObservedProduct } from "./observations";
 import { ahPriceProvider, fetchAhProductExtras } from "./ahClient";
-import { crawlDirkCatalogue } from "./dirkClient";
+import { crawlDirkCatalogue, dirkSearchWorks, searchDirkPage } from "./dirkClient";
 
 /**
  * De dagelijkse prijsverversing.
@@ -57,6 +57,18 @@ export interface PricedIngredientOptions {
   weekStart?: Date;
 }
 
+/**
+ * Een ingrediënt zoals de verversing het nodig heeft: de naam waaronder wij
+ * het kennen, plus het Picnic-product dat we er werkelijk voor kopen. Dat
+ * laatste bepaalt waarmee er bij de winkels gezocht wordt.
+ */
+export interface PricedIngredient {
+  id: string;
+  name: string;
+  referenceProductName: string | null;
+  referencePackageSize: string | null;
+}
+
 export async function getPricedIngredients(options?: PricedIngredientOptions) {
   const householdId = options?.prioritiseHouseholdId;
   const weekStart = options?.weekStart;
@@ -96,7 +108,7 @@ export async function getPricedIngredients(options?: PricedIngredientOptions) {
     orderBy: { name: "asc" },
   });
 
-  const ingredients = found.map((ingredient) => ({
+  const ingredients: PricedIngredient[] = found.map((ingredient) => ({
     id: ingredient.id,
     name: ingredient.name,
     referenceProductName: ingredient.products[0]?.name ?? null,
@@ -319,6 +331,91 @@ export function refreshableProviders(): StorePriceProvider[] {
 }
 
 /**
+ * Dirk ververst via haar eigen zoekpagina: één zoekopdracht per ingrediënt.
+ *
+ * Precies de vorm die Albert Heijn ook heeft, en veel trefzekerder dan
+ * crawlen — er valt niets meer te gokken over in welke categorie iets ligt.
+ * Wordt alleen gebruikt als `dirkSearchWorks` net heeft vastgesteld dat die
+ * pagina server-side leesbaar is.
+ */
+async function refreshDirkViaSearch(
+  ingredients: PricedIngredient[],
+  result: RefreshResult,
+  correlationId: string,
+  deadline: number | undefined
+): Promise<RefreshResult> {
+  result.itemsSeen = 0;
+
+  for (const [index, ingredient] of ingredients.entries()) {
+    if (outOfTime(deadline)) {
+      result.abortedAfter = index;
+      result.errors.push(STOPPED_ON_TIME);
+      break;
+    }
+    if (index > 0) await sleep(REQUEST_SPACING_MS);
+    result.ingredientsChecked += 1;
+
+    const reference = {
+      name: ingredient.referenceProductName,
+      packageSize: ingredient.referencePackageSize,
+    };
+    const ownTerm = ingredient.referenceProductName
+      ? storeSearchTerm(ingredient.referenceProductName)
+      : null;
+    const fallbackTerm = storeSearchTerm(ingredient.name);
+
+    try {
+      // Een mislukte zoekopdracht op de specifieke term telt als "niets
+      // gevonden", niet als een storing: winkels antwoorden op een zoekterm
+      // zonder treffers geregeld met een foutcode in plaats van een lege
+      // lijst. Gaat de bredere zoekopdracht hieronder óók mis, dan is het wél
+      // een storing — en die wordt gewoon gemeld.
+      let found = await searchDirkPage(ownTerm ?? fallbackTerm).catch(() => []);
+      let matches = rankStoreProducts(ingredient.name, found, CANDIDATES_PER_INGREDIENT, reference);
+
+      // Zelfde terugval als bij Albert Heijn: pas breder zoeken als de
+      // specifieke zoekopdracht niets bruikbaars oplevert.
+      if (matches.length === 0 && ownTerm !== null && ownTerm !== fallbackTerm) {
+        await sleep(REQUEST_SPACING_MS);
+        const broader = await searchDirkPage(fallbackTerm);
+        found = [...found, ...broader];
+        matches = rankStoreProducts(ingredient.name, found, CANDIDATES_PER_INGREDIENT, reference);
+      }
+
+      result.itemsSeen += found.length;
+      if (matches.length === 0) {
+        result.ingredientsWithoutMatch += 1;
+        continue;
+      }
+      for (const match of matches) {
+        await recordObservedProduct({
+          product: match.product,
+          ingredientId: ingredient.id,
+          source: "SCRAPE",
+        });
+        result.productsStored += 1;
+      }
+    } catch (error) {
+      result.errors.push(`${ingredient.name}: ${errorMessage(error)}`);
+    }
+  }
+
+  logEvent({
+    level: result.errors.length > 0 ? "warn" : "info",
+    area: "pricing",
+    message: "Dirk-verversing via zoekpagina afgerond",
+    correlationId,
+    meta: {
+      ingredientsChecked: result.ingredientsChecked,
+      productsStored: result.productsStored,
+      withoutMatch: result.ingredientsWithoutMatch,
+      errors: result.errors.length,
+    },
+  });
+  return result;
+}
+
+/**
  * Dirk ververst anders dan de rest: eerst crawlen, dan pas matchen.
  *
  * Dirk heeft geen bruikbare zoekfunctie (de zoekpagina laadt client-side), dus
@@ -349,6 +446,15 @@ export async function refreshDirkPrices(
     errors: [],
     abortedAfter: null,
   };
+
+  // Eerst één keer vragen of Dirks eigen zoekpagina leesbaar is. Zo ja, dan
+  // zoeken we per ingrediënt — net als bij Albert Heijn, en dan verdwijnt het
+  // gokwerk over wélke categorie je moet bezoeken. Zo nee, dan crawlen we zoals
+  // hiervoor. De aanname dat die pagina onleesbaar is stond jarenlang in de
+  // code zonder ooit gemeten te zijn; nu wordt ze elke verversing getoetst.
+  if (await dirkSearchWorks()) {
+    return refreshDirkViaSearch(ingredients, result, correlationId, options?.deadline);
+  }
 
   let catalogue;
   try {
