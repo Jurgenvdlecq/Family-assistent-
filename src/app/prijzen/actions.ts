@@ -199,6 +199,9 @@ function failedRun(provider: ProductProvider, error: unknown): RefreshResult {
     ingredientsWithoutMatch: 0,
     itemsSeen: null,
     errors: [errorMessage(error)],
+    // Onbereikbaar is iets anders dan "de zoekopdrachten kwamen niet aan": er
+    // is er hier geen enkele gedaan.
+    searchFailures: [],
     abortedAfter: null,
   };
 }

@@ -29,6 +29,7 @@ function result(overrides: Partial<RefreshResult> = {}): RefreshResult {
     ingredientsWithoutMatch: 2,
     itemsSeen: 30,
     errors: [],
+    searchFailures: [],
     abortedAfter: null,
     ...overrides,
   };
@@ -208,4 +209,46 @@ test("verversingen: het tijdstip staat in Nederlandse tijd, niet in servertijd",
     "Albert Heijn"
   );
   assert.match(tekst, /29 augustus om 07:00/);
+});
+
+test("verversingen: een mislukte zoekopdracht verdringt de tijdslimiet-melding niet", async () => {
+  // Beide dingen kunnen in dezelfde ronde gebeuren, en dan is "gestopt bij het
+  // tijdslimiet" de belangrijkste mededeling: die zegt dat de rest nog komt.
+  // Zouden de mislukte zoekopdrachten in dezelfde lijst staan, dan zou één 404
+  // bij het eerste ingrediënt die melding wegdrukken.
+  try {
+    const ids = await startRefreshRuns(["DIRK"], "MANUAL");
+    await finishRefreshRun(
+      ids.get("DIRK")!,
+      result({
+        provider: "DIRK",
+        productsStored: 29,
+        errors: ["gestopt bij het tijdslimiet; de rest volgt bij de volgende verversing"],
+        searchFailures: ["Eieren 10 Stuks: Dirk antwoordde met 404", "Alpro: Dirk antwoordde met 404"],
+      })
+    );
+
+    const run = (await getLastRefreshRuns(["DIRK"])).get("DIRK")!;
+    assert.match(run.error!, /^gestopt bij het tijdslimiet/, "de tijdslimiet staat vooraan");
+    assert.match(run.error!, /2 zoekopdrachten kwamen niet aan/, "en de mislukte zoekopdrachten erachter");
+    assert.match(run.error!, /Eieren 10 Stuks/, "met een voorbeeld erbij");
+  } finally {
+    await cleanup();
+  }
+});
+
+test("verversingen: zonder andere fouten staan de mislukte zoekopdrachten er alleen", async () => {
+  try {
+    const ids = await startRefreshRuns(["DIRK"], "MANUAL");
+    await finishRefreshRun(
+      ids.get("DIRK")!,
+      result({ provider: "DIRK", productsStored: 12, errors: [], searchFailures: ["Alpro: Dirk antwoordde met 503"] })
+    );
+
+    const run = (await getLastRefreshRuns(["DIRK"])).get("DIRK")!;
+    assert.match(run.error!, /^1 zoekopdracht kwam niet aan/, "enkelvoud bij één");
+    assert.match(run.error!, /niet "niet gevonden"/, "en het scherm zegt waaróm dat verschil telt");
+  } finally {
+    await cleanup();
+  }
 });

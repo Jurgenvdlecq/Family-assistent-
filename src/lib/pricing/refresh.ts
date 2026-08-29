@@ -207,6 +207,19 @@ export interface RefreshResult {
    */
   itemsSeen: number | null;
   errors: string[];
+  /**
+   * Zoekopdrachten die de winkel niet beantwoordde, per ingrediënt.
+   *
+   * Bewust géén `errors`. Een winkel antwoordt op een zoekterm zonder treffers
+   * geregeld met een foutcode in plaats van een lege lijst, dus dit is geen
+   * storing en mag de verversing niet staken. Maar het is ook nadrukkelijk
+   * geen *uitslag*: tot nu toe werd zo'n foutcode stilzwijgend een lege lijst,
+   * en een lege lijst werd op het scherm "niet gevonden". Daarmee was er geen
+   * enkel verschil te zien tussen "deze winkel verkoopt dit niet" en "de vraag
+   * is nooit aangekomen" — precies het onderscheid dat je nodig hebt om te
+   * weten of er iemand naar de code moet kijken.
+   */
+  searchFailures: string[];
   /** Bij een storing: hoeveel ingrediënten er niet meer geprobeerd zijn. */
   abortedAfter: number | null;
 }
@@ -240,6 +253,7 @@ export async function refreshStorePrices(
     // "helemaal niets teruggekregen" gelezen worden.
     itemsSeen: null,
     errors: [],
+    searchFailures: [],
     abortedAfter: null,
   };
 
@@ -388,6 +402,28 @@ export function refreshableProviders(): StorePriceProvider[] {
  * Wordt alleen gebruikt als `dirkSearchWorks` net heeft vastgesteld dat die
  * pagina server-side leesbaar is.
  */
+/**
+ * Eén zoekopdracht bij Dirk, waarbij een fout wordt vastgelegd in plaats van
+ * weggegooid.
+ *
+ * Levert bij een fout een lege lijst op — de verversing gaat gewoon door met
+ * het volgende ingrediënt — maar noteert wél wát er misging en bij welk
+ * ingrediënt, zodat het scherm "de vraag kwam niet aan" kan onderscheiden van
+ * "deze winkel voert dit niet".
+ */
+async function searchWithoutFailing(
+  term: string,
+  ingredientName: string,
+  result: RefreshResult
+): Promise<ProviderProduct[]> {
+  try {
+    return await searchDirkPage(term);
+  } catch (error) {
+    result.searchFailures.push(`${ingredientName}: ${errorMessage(error)}`);
+    return [];
+  }
+}
+
 async function refreshDirkViaSearch(
   ingredients: PricedIngredient[],
   result: RefreshResult,
@@ -414,27 +450,41 @@ async function refreshDirkViaSearch(
       : null;
     const fallbackTerm = storeSearchTerm(ingredient.name);
 
+    // Waar de teller stond vóór dit ingrediënt, zodat we straks weten of het
+    // aan de zoekopdracht lag of aan het aanbod.
+    const failuresBefore = result.searchFailures.length;
+
     try {
-      // Een mislukte zoekopdracht op de specifieke term telt als "niets
-      // gevonden", niet als een storing: winkels antwoorden op een zoekterm
-      // zonder treffers geregeld met een foutcode in plaats van een lege
-      // lijst. Gaat de bredere zoekopdracht hieronder óók mis, dan is het wél
-      // een storing — en die wordt gewoon gemeld.
-      let found = await searchDirkPage(ownTerm ?? fallbackTerm).catch(() => []);
+      // Een mislukte zoekopdracht staakt de verversing niet: winkels
+      // antwoorden op een zoekterm zonder treffers geregeld met een foutcode
+      // in plaats van een lege lijst, en dan is doorgaan het juiste gedrag.
+      //
+      // Maar hij verdwijnt ook niet meer. Hier stond `.catch(() => [])`, en
+      // daarmee werd een foutcode een lege lijst en een lege lijst op het
+      // scherm "niet gevonden" — niet te onderscheiden van een winkel die dit
+      // product simpelweg niet voert. Precies het verschil dat bepaalt of er
+      // iemand naar de code moet kijken.
+      let found = await searchWithoutFailing(ownTerm ?? fallbackTerm, ingredient.name, result);
       let matches = rankStoreProducts(ingredient.name, found, CANDIDATES_PER_INGREDIENT, reference);
 
       // Zelfde terugval als bij Albert Heijn: pas breder zoeken als de
       // specifieke zoekopdracht niets bruikbaars oplevert.
       if (matches.length === 0 && ownTerm !== null && ownTerm !== fallbackTerm) {
         await sleep(REQUEST_SPACING_MS);
-        const broader = await searchDirkPage(fallbackTerm);
+        const broader = await searchWithoutFailing(fallbackTerm, ingredient.name, result);
         found = [...found, ...broader];
         matches = rankStoreProducts(ingredient.name, found, CANDIDATES_PER_INGREDIENT, reference);
       }
 
       result.itemsSeen += found.length;
       if (matches.length === 0) {
-        result.ingredientsWithoutMatch += 1;
+        // "Geen match" betekent: we hébben aanbod gezien en er zat niets bij.
+        // Kwam er niet eens antwoord, dan is dat iets anders, en die twee bij
+        // elkaar optellen maakt het getal onbruikbaar voor precies de vraag
+        // waarvoor het bestaat.
+        if (result.searchFailures.length === failuresBefore) {
+          result.ingredientsWithoutMatch += 1;
+        }
         continue;
       }
       await recordObservedProducts({
@@ -449,7 +499,7 @@ async function refreshDirkViaSearch(
   }
 
   logEvent({
-    level: result.errors.length > 0 ? "warn" : "info",
+    level: result.errors.length > 0 || result.searchFailures.length > 0 ? "warn" : "info",
     area: "pricing",
     message: "Dirk-verversing via zoekpagina afgerond",
     correlationId,
@@ -457,6 +507,8 @@ async function refreshDirkViaSearch(
       ingredientsChecked: result.ingredientsChecked,
       productsStored: result.productsStored,
       withoutMatch: result.ingredientsWithoutMatch,
+      searchesFailed: result.searchFailures.length,
+      firstSearchFailure: result.searchFailures[0] ?? null,
       errors: result.errors.length,
     },
   });
@@ -494,6 +546,7 @@ export async function refreshDirkPrices(
     ingredientsWithoutMatch: 0,
     itemsSeen: null,
     errors: [],
+    searchFailures: [],
     abortedAfter: null,
   };
 

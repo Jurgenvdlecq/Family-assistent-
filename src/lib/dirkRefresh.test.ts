@@ -337,3 +337,77 @@ test("Dirk-verversing: valt terug op crawlen als de zoekpagina niets leesbaars g
     await cleanupDirkProducts();
   }
 });
+
+/**
+ * De kern van "waarom vindt hij niets": een zoekopdracht die niet aankomt zag
+ * er op het scherm precies zo uit als een winkel die het product niet voert.
+ *
+ * Hier stond `.catch(() => [])` omheen — een foutcode werd een lege lijst, en
+ * een lege lijst werd "niet gevonden". Daardoor was er geen enkele manier om
+ * te zien of er iemand naar de code moest kijken. De zoekproef ("melk") lukt
+ * hier wél, dus de app gaat op zoeken over; alleen het ingrediënt zelf krijgt
+ * een 404.
+ */
+test("Dirk-verversing: een zoekopdracht die niet aankomt heet geen 'niets gevonden'", async () => {
+  const ingredients = await getPricedIngredients();
+  const target = ingredients[0];
+
+  try {
+    const result = await withFakeDirk(
+      {
+        // Alleen de proef bestaat. Elk ander zoekpad geeft 404 — precies wat
+        // de neppe site met een onbekend pad doet.
+        "/zoeken/producten/melk": categoryPage([
+          { id: "800", name: "Dirk Halfvolle melk", size: "1 liter", large: "1", small: "09", hasEuros: true },
+        ]),
+      },
+      () => refreshDirkPrices({ limitIngredients: 1 })
+    );
+
+    assert.ok(
+      result.searchFailures.length > 0,
+      `de mislukte zoekopdracht hoort gemeld te worden, kreeg: ${JSON.stringify(result.searchFailures)}`
+    );
+    assert.match(result.searchFailures[0], new RegExp(target.name.slice(0, 12), "i"));
+    assert.match(result.searchFailures.join(" "), /404/, "met de reden erbij, niet alleen 'mislukt'");
+    assert.equal(
+      result.ingredientsWithoutMatch,
+      0,
+      "en het telt niet als 'wel aanbod gezien, niets dat paste' — er was geen aanbod om te zien"
+    );
+    assert.equal(result.productsStored, 0);
+  } finally {
+    await cleanupDirkProducts();
+  }
+});
+
+test("Dirk-verversing: een zoekopdracht die wél aankomt maar niets passends geeft, telt als geen match", async () => {
+  // De tegenhanger, want anders bewijst de test hierboven niets: dit is het
+  // geval waarin "niet gevonden" wél het eerlijke antwoord is.
+  const ingredients = await getPricedIngredients();
+  const target = ingredients[0];
+  const term = storeSearchTerm(target.referenceProductName ?? target.name);
+
+  try {
+    const result = await withFakeDirk(
+      {
+        "/zoeken/producten/melk": categoryPage([
+          { id: "810", name: "Dirk Halfvolle melk", size: "1 liter", large: "1", small: "09", hasEuros: true },
+        ]),
+        [`/zoeken/producten/${encodeURIComponent(term)}`]: categoryPage([
+          { id: "811", name: "Hondenbrokken rundsmaak", size: "10 kg", large: "24", small: "99", hasEuros: true },
+        ]),
+        [`/zoeken/producten/${encodeURIComponent(storeSearchTerm(target.name))}`]: categoryPage([
+          { id: "812", name: "Hondenbrokken rundsmaak", size: "10 kg", large: "24", small: "99", hasEuros: true },
+        ]),
+      },
+      () => refreshDirkPrices({ limitIngredients: 1 })
+    );
+
+    assert.equal(result.searchFailures.length, 0, "er ging niets mis met de zoekopdracht zelf");
+    assert.equal(result.ingredientsWithoutMatch, 1, "er was aanbod, maar niets dat paste");
+    assert.equal(result.productsStored, 0);
+  } finally {
+    await cleanupDirkProducts();
+  }
+});

@@ -71,11 +71,37 @@ export async function finishRefreshRun(
       ingredientsChecked: result.ingredientsChecked,
       productsStored: result.productsStored,
       itemsSeen: result.itemsSeen,
-      // Alleen de eerste fout: die zegt bijna altijd genoeg, en tien
-      // varianten van dezelfde storing helpen niemand verder.
-      error: result.errors.length > 0 ? result.errors[0].slice(0, MAX_ERROR_LENGTH) : null,
+      error: describeWhatWentWrong(result),
     },
   });
+}
+
+/**
+ * De ene regel tekst die op het scherm terechtkomt, uit twee soorten
+ * tegenslag.
+ *
+ * Van de echte fouten alleen de eerste: die zegt bijna altijd genoeg, en tien
+ * varianten van dezelfde storing helpen niemand verder.
+ *
+ * De mislukte zoekopdrachten komen daar áchter, niet in plaats van. Ze in
+ * dezelfde lijst gooien zou betekenen dat één 404 bij het eerste ingrediënt de
+ * melding "gestopt bij het tijdslimiet" verdringt — en dan is de belangrijkste
+ * mededeling weg. Als aantal met één voorbeeld erbij, want dat is precies
+ * genoeg om te zien of het aan de winkel ligt of aan ons.
+ */
+function describeWhatWentWrong(result: RefreshResult): string | null {
+  const parts: string[] = [];
+  if (result.errors.length > 0) parts.push(result.errors[0]);
+
+  const failed = result.searchFailures.length;
+  if (failed > 0) {
+    parts.push(
+      `${failed} ${failed === 1 ? "zoekopdracht kwam" : "zoekopdrachten kwamen"} niet aan ` +
+        `(${result.searchFailures[0]}) — die regels zijn niet "niet gevonden", die zijn niet gelukt`
+    );
+  }
+
+  return parts.length > 0 ? parts.join("; ").slice(0, MAX_ERROR_LENGTH) : null;
 }
 
 /** Loopt er op dit moment al een verversing? */
