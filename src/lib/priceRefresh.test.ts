@@ -296,10 +296,14 @@ test("winkelprijzen: de link en de eenheidsprijs komen mee tot op het scherm", a
   // waarneming -> product -> wat de pagina terugleest.
   const ingredients = await prisma.ingredient.findMany({
     where: { OR: [{ recipeIngredients: { some: {} } }, { fixedGroceries: { some: {} } }] },
-    select: { id: true, name: true },
+    select: { id: true, name: true, unit: true },
     orderBy: { name: "asc" },
     take: 1,
   });
+  // Bewust de eenheid van het ingrediënt zelf: een eenheidsprijs in een andere
+  // eenheid wordt sinds kort onderdrukt, en terecht — "per liter" op iets dat
+  // we in stuks tellen is geen informatie.
+  const unit = ingredients[0].unit;
   try {
     await refreshStorePrices(
       fakeProvider(async (term) =>
@@ -308,7 +312,7 @@ test("winkelprijzen: de link en de eenheidsprijs komen mee tot op het scherm", a
               {
                 ...fakeProduct(`AH ${ingredients[0].name}`, 2.5),
                 url: "https://www.ah.nl/producten/product/wi100311",
-                unitPrice: { amount: 0.0025, unit: "ML" },
+                unitPrice: { amount: 0.0025, unit },
               },
             ]
           : []
@@ -321,7 +325,7 @@ test("winkelprijzen: de link en de eenheidsprijs komen mee tot op het scherm", a
     ).get(ingredients[0].id)?.get("AH");
     assert.equal(price?.productUrl, "https://www.ah.nl/producten/product/wi100311");
     assert.equal(price?.unitPrice, 0.0025);
-    assert.equal(price?.unitPriceUnit, "ML");
+    assert.equal(price?.unitPriceUnit, unit);
   } finally {
     await cleanupAhProducts();
   }
@@ -471,4 +475,67 @@ test("verversing: zonder tijdslimiet verandert er niets aan het gedrag", async (
     { limitIngredients: 3 }
   );
   assert.ok(asked.length >= 3, "alle drie de ingrediënten zijn gewoon bevraagd");
+});
+
+test("verversing: een tweede ronde begint bij wat het langst niet is bijgewerkt", async () => {
+  // Stopt een verversing op het tijdslimiet, dan begon de volgende weer bij
+  // hetzelfde ingrediënt — en kwam de staart van de lijst er structureel nooit
+  // aan, hoe vaak je ook op de knop drukte.
+  const eersteRonde: string[] = [];
+  const tweedeRonde: string[] = [];
+
+  try {
+    await refreshStorePrices(
+      fakeProvider(async (term) => {
+        eersteRonde.push(term);
+        return [fakeProduct(`AH ${term}`, 1.5)];
+      }),
+      { limitIngredients: 3 }
+    );
+
+    await refreshStorePrices(
+      fakeProvider(async (term) => {
+        tweedeRonde.push(term);
+        return [fakeProduct(`AH ${term}`, 1.5)];
+      }),
+      { limitIngredients: 3 }
+    );
+
+    assert.equal(eersteRonde.length >= 3, true);
+    const overlap = tweedeRonde.filter((term) => eersteRonde.includes(term));
+    assert.deepEqual(
+      overlap,
+      [],
+      `de tweede ronde hoort andere ingrediënten te pakken; eerste: ${eersteRonde.join(", ")} / tweede: ${tweedeRonde.join(", ")}`
+    );
+  } finally {
+    await cleanupAhProducts();
+  }
+});
+
+test("winkelprijzen: een eenheidsprijs in een andere eenheid dan het ingrediënt wordt niet doorgegeven", async () => {
+  // "60 liter" op een pak vuilniszakken is de maat van één zak, niet de inhoud
+  // van het pak. Daar "€ 0,03 per liter" van maken is ruis die er overtuigend
+  // uitziet.
+  const ingredient = await prisma.ingredient.findFirstOrThrow({
+    where: { OR: [{ recipeIngredients: { some: {} } }, { fixedGroceries: { some: {} } }], unit: "PIECE" },
+    select: { id: true, name: true },
+  });
+  try {
+    await refreshStorePrices(
+      fakeProvider(async (term) =>
+        term === storeSearchTerm(ingredient.name)
+          ? [{ ...fakeProduct(`AH ${ingredient.name}`, 1.99), unitPrice: { amount: 0.03, unit: "ML" } }]
+          : []
+      ),
+      { limitIngredients: 200 }
+    );
+
+    const price = (await getStorePricesForIngredients([ingredient.id], ["AH"])).get(ingredient.id)?.get("AH");
+    assert.ok(price, "het product zelf hoort er gewoon te zijn");
+    assert.equal(price.unitPrice, null, "maar de prijs per liter niet");
+    assert.equal(price.unitPriceUnit, null);
+  } finally {
+    await cleanupAhProducts();
+  }
 });

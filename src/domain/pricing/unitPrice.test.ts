@@ -91,3 +91,24 @@ test("een multipack wordt vermenigvuldigd, zodat €/liter over winkels heen klo
   assert.deepEqual(parsePackContent("4 x 125 gram"), { amount: 500, unit: "GRAM" });
   assert.equal(formatUnitPrice(unitPriceFor(6, parsePackContent("6 x 1 liter"))), "€ 1,00 per liter");
 });
+
+test("telwoorden: 'rollen' en soortgelijke tellen als stuks", () => {
+  // Gebruikersmelding: wc-papier was niet te vergelijken. De lezer kende maar
+  // vier telwoorden, en "9 rollen" viel er buiten. Erger dan een ontbrekende
+  // eenheidsprijs: zonder inhoud kan de vergelijking niet zien dát negen
+  // rollen iets anders is dan twaalf stuks, en telde ze het duurdere pak
+  // stilzwijgend mee als gelijkwaardig.
+  assert.deepEqual(parsePackContent("9 rollen"), { amount: 9, unit: "PIECE" });
+  assert.deepEqual(parsePackContent("1 rol"), { amount: 1, unit: "PIECE" });
+  assert.deepEqual(parsePackContent("12 zakjes"), { amount: 12, unit: "PIECE" });
+  assert.deepEqual(parsePackContent("20 sneetjes"), { amount: 20, unit: "PIECE" });
+  assert.deepEqual(parsePackContent("6 blikken"), { amount: 6, unit: "PIECE" });
+});
+
+test("telwoorden: gewicht en inhoud blijven gewoon gewicht en inhoud", () => {
+  // De nieuwe woorden mogen niets kapotmaken aan wat al werkte.
+  assert.deepEqual(parsePackContent("500 gram"), { amount: 500, unit: "GRAM" });
+  assert.deepEqual(parsePackContent("1 l"), { amount: 1000, unit: "ML" });
+  assert.deepEqual(parsePackContent("4 x 200 g"), { amount: 800, unit: "GRAM" });
+  assert.equal(parsePackContent("een handjevol"), null);
+});

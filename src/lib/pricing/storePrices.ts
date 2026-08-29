@@ -66,6 +66,25 @@ function packageContentUnit(packageSize: string | null, ingredientUnit: Unit | n
   return parsePackContent(packageSize)?.unit ?? ingredientUnit;
 }
 
+/**
+ * Een eenheidsprijs die niet in dezelfde eenheid staat als het ingrediënt,
+ * zeggen we liever niet.
+ *
+ * Aanleiding: bij vuilniszakken staat "60 liter" op de verpakking. Dat is hoe
+ * groot één zák is, niet wat er in het pak zit — en toch werd er "€ 0,03 per
+ * liter" van gemaakt. Wij tellen vuilniszakken in stuks, dus een prijs per
+ * liter hoort daar niet. Zo'n getal ziet er overtuigend uit en betekent niets,
+ * en dat is precies het soort fout dat dit scherm niet mag maken.
+ */
+function comparableUnitPrice(
+  amount: number | null,
+  unit: Unit | null,
+  ingredientUnit: Unit | null
+): { amount: number | null; unit: Unit | null } {
+  const usable = amount !== null && unit !== null && (ingredientUnit === null || unit === ingredientUnit);
+  return usable ? { amount, unit } : { amount: null, unit: null };
+}
+
 /** Per ingrediënt, per winkel: het best passende product met zijn laatste prijs. */
 export type StorePricesByIngredient = Map<string, Map<ProductProvider, StorePriceForIngredient>>;
 
@@ -123,6 +142,8 @@ export async function getStoreProductsByIds(
       const price = latest.get(product.id);
       // Zonder waarneming is er geen prijs — en dat is geen prijs van nul.
       if (!price) return null;
+      const ingredientUnit = product.ingredient?.unit ?? null;
+      const unitPrice = comparableUnitPrice(price.unitPrice, price.unitPriceUnit, ingredientUnit);
       return {
         provider: product.provider,
         productId: product.id,
@@ -130,13 +151,13 @@ export async function getStoreProductsByIds(
         brand: product.brand,
         packageSize: product.packageSize,
         packageQuantity: product.packageQuantity,
-        unit: packageContentUnit(product.packageSize, product.ingredient?.unit ?? null),
+        unit: packageContentUnit(product.packageSize, ingredientUnit),
         qualityTier: product.qualityTier,
         gtin: product.gtin,
         freeFromAllergens: product.freeFromAllergens,
         productUrl: displayableProductUrl(product.productUrl),
-        unitPrice: price.unitPrice,
-        unitPriceUnit: price.unitPriceUnit,
+        unitPrice: unitPrice.amount,
+        unitPriceUnit: unitPrice.unit,
         price: price.price,
         wasPrice: price.wasPrice,
         promoLabel: price.promoLabel,
@@ -237,6 +258,8 @@ export async function getStoreCandidatesForIngredients(
       const chosen = withPrice.find((candidate) => candidate.id === match.product.externalRef);
       if (!chosen) continue;
       const price = latest.get(chosen.id)!;
+      const ingredientUnit = chosen.ingredient?.unit ?? null;
+      const unitPrice = comparableUnitPrice(price.unitPrice, price.unitPriceUnit, ingredientUnit);
       perIngredient.push({
         provider,
         productId: chosen.id,
@@ -244,13 +267,13 @@ export async function getStoreCandidatesForIngredients(
         brand: chosen.brand,
         packageSize: chosen.packageSize,
         packageQuantity: chosen.packageQuantity,
-        unit: packageContentUnit(chosen.packageSize, chosen.ingredient?.unit ?? null),
+        unit: packageContentUnit(chosen.packageSize, ingredientUnit),
         qualityTier: chosen.qualityTier,
         gtin: chosen.gtin,
         freeFromAllergens: chosen.freeFromAllergens,
         productUrl: displayableProductUrl(chosen.productUrl),
-        unitPrice: price.unitPrice,
-        unitPriceUnit: price.unitPriceUnit,
+        unitPrice: unitPrice.amount,
+        unitPriceUnit: unitPrice.unit,
         price: price.price,
         wasPrice: price.wasPrice,
         promoLabel: price.promoLabel,

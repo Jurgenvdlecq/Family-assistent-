@@ -190,8 +190,14 @@ export async function getBasketOverview(
       (line.product?.packageQuantity != null
         ? { amount: line.product.packageQuantity, unit: line.ingredient.unit }
         : null);
-    const referenceUnitPrice =
+    // Alleen een eenheidsprijs in de eenheid waarin we dit ingrediënt
+    // bijhouden. "60 liter" op een pak vuilniszakken is de maat van één zak,
+    // niet de inhoud van het pak — daar is "€ 0,03 per liter" geen informatie
+    // maar ruis, en ruis die er overtuigend uitziet.
+    const referenceRaw =
       line.product?.price == null ? null : unitPriceFor(Number(line.product.price), referenceContent);
+    const referenceUnitPrice =
+      referenceRaw && referenceRaw.unit === line.ingredient.unit ? referenceRaw : null;
 
     basketLines.push({
       lineId: line.id,
