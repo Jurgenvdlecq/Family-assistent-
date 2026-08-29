@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   DIRK_CAPABILITIES,
+  dirkProductUrl,
   parseDirkBrand,
   parseDirkCategoryPaths,
   parseDirkPrice,
@@ -119,4 +120,24 @@ test("Dirk: de mogelijkheden zijn eerlijk opgeschreven", () => {
   assert.equal(DIRK_CAPABILITIES.hasAllergens, false);
   assert.equal(DIRK_CAPABILITIES.canOrder, false, "bestellen blijft bij Picnic");
   assert.equal(DIRK_CAPABILITIES.reliability, "scrape");
+});
+
+test("Dirk: de link naar het product komt van de pagina zelf", () => {
+  const products = parseDirkProducts(CATEGORY_HTML);
+  assert.equal(
+    products[0].url,
+    "https://www.dirk.nl/boodschappen/zuivel/melk/verse-halfvolle-melk-1-liter/213456",
+    "de gebruiker moet zelf kunnen nakijken of dit hetzelfde product is"
+  );
+});
+
+test("Dirk: alleen een adres dat echt op dirk.nl staat wordt een link", () => {
+  assert.equal(dirkProductUrl("/boodschappen/zuivel/melk/123"), "https://www.dirk.nl/boodschappen/zuivel/melk/123");
+  assert.equal(dirkProductUrl("https://www.dirk.nl/product/123"), "https://www.dirk.nl/product/123");
+  // Een gewijzigde pagina mag geen link naar een andere site op ons scherm
+  // kunnen zetten — en al helemaal geen adres dat code uitvoert.
+  assert.equal(dirkProductUrl("https://kwaadaardig.example/product/123"), null);
+  assert.equal(dirkProductUrl("//kwaadaardig.example/product/123"), null);
+  assert.equal(dirkProductUrl("javascript:alert(1)"), null);
+  assert.equal(dirkProductUrl(null), null);
 });

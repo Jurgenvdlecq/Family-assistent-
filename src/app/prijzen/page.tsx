@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronLeft, Tags, AlertTriangle } from "lucide-react";
+import { ChevronLeft, Tags, AlertTriangle, ExternalLink } from "lucide-react";
 import { requireCurrentHousehold } from "@/lib/auth";
 import { ensureMealPlan } from "@/lib/mealPlan";
 import { getCurrentWeekStart } from "@/lib/week";
@@ -13,7 +13,9 @@ import {
   compareLineAcrossStores,
   comparisonColumns,
   describeUncomparableStore,
+  showsPromotion,
 } from "@/domain/pricing/lineComparison";
+import { formatUnitPrice } from "@/domain/pricing/unitPrice";
 import type { ProductProvider } from "@/generated/prisma/enums";
 import type { StorePriceForIngredient } from "@/lib/pricing/storePrices";
 import NavBar from "@/components/NavBar";
@@ -46,6 +48,10 @@ export const maxDuration = 60;
 
 function euro(value: number) {
   return `€ ${value.toFixed(2).replace(".", ",")}`;
+}
+
+function formatDay(date: Date) {
+  return date.toLocaleDateString("nl-NL", { day: "numeric", month: "long" });
 }
 
 function formatQuantity(quantity: number, unit: string) {
@@ -405,9 +411,19 @@ export default async function PrijzenPage({
                             cell.cheapest ? "border-tag-green-ink/40 bg-tag-green-bg" : "border-line bg-surface-2"
                           }`}
                         >
-                          <p className="truncate text-[11px] font-medium text-ink-muted">
-                            {PROVIDER_LABELS[cell.provider]}
-                          </p>
+                          <div className="flex items-baseline justify-between gap-1">
+                            <p className="truncate text-[11px] font-medium text-ink-muted">
+                              {PROVIDER_LABELS[cell.provider]}
+                            </p>
+                            {/* Zichtbaar in het overzicht zelf, niet pas na
+                                uitklappen. Een nep-korting krijgt geen
+                                markering — zie `showsPromotion`. */}
+                            {showsPromotion(cell) && (
+                              <span className="shrink-0 rounded bg-tag-green-bg px-1 text-[10px] font-semibold text-tag-green-ink">
+                                Actie
+                              </span>
+                            )}
+                          </div>
                           <p
                             className={`tabular-nums text-sm font-semibold ${
                               cell.cheapest ? "text-tag-green-ink" : "text-ink"
@@ -415,10 +431,36 @@ export default async function PrijzenPage({
                           >
                             {cell.cost !== null ? euro(cell.cost) : "—"}
                           </p>
+                          {/* Welk product dit dan is — met de link erachter waar
+                              we die kennen, zodat je zelf kunt nakijken of het
+                              echt hetzelfde is. Picnic heeft geen publieke
+                              productpagina; daar staat dus alleen de naam. */}
+                          {cell.productName &&
+                            (cell.productUrl ? (
+                              <a
+                                href={cell.productUrl}
+                                target="_blank"
+                                rel="noreferrer noopener"
+                                className="flex items-center gap-0.5 text-[11px] text-accent underline"
+                              >
+                                <span className="truncate">{cell.productName}</span>
+                                <ExternalLink size={9} className="shrink-0" />
+                              </a>
+                            ) : (
+                              <p className="truncate text-[11px] text-ink-muted">{cell.productName}</p>
+                            ))}
                           {cell.cost !== null && cell.packagesToBuy !== null && (
                             <p className="text-[11px] text-ink-faint">
                               {cell.packagesToBuy}×{cell.packageSize ? ` ${cell.packageSize}` : ""}
                             </p>
+                          )}
+                          {/* Het enige getal dat over verpakkingsgroottes heen
+                              vergelijkt: €/liter of €/kilo. */}
+                          {cell.unitPriceLabel && (
+                            <p className="text-[11px] text-ink-faint">{cell.unitPriceLabel}</p>
+                          )}
+                          {showsPromotion(cell) && (
+                            <p className="text-[11px] text-tag-green-ink">{cell.promoLabel}</p>
                           )}
                           {cell.note && <p className="text-[11px] text-ink-faint">{cell.note}</p>}
                         </div>
@@ -432,11 +474,24 @@ export default async function PrijzenPage({
                       <p className="mt-2 text-xs text-ink-faint">
                         Picnic:{" "}
                         {line.referenceName
-                          ? `${line.referenceName}${
+                          ? [
+                              line.referenceName,
+                              line.referenceBrand,
+                              line.referencePackageSize,
+                              formatUnitPrice(
+                                line.referenceUnitPrice !== null && line.referenceUnitPriceUnit !== null
+                                  ? {
+                                      amount: line.referenceUnitPrice,
+                                      unit: line.referenceUnitPriceUnit,
+                                    }
+                                  : null
+                              ),
                               line.referenceCost !== null
-                                ? ` · ${line.referencePackages}x · ${euro(line.referenceCost)}`
-                                : " · prijs onbekend"
-                            }`
+                                ? `${line.referencePackages}x · ${euro(line.referenceCost)}`
+                                : "prijs onbekend",
+                            ]
+                              .filter((part) => part !== null && part !== "")
+                              .join(" · ")
                           : "nog geen product gekozen"}
                       </p>
 
@@ -469,9 +524,35 @@ export default async function PrijzenPage({
                             <>
                               <p className="mt-0.5 text-xs text-ink-muted">
                                 {store.name}
+                                {store.brand ? ` · ${store.brand}` : ""}
                                 {store.packageSize ? ` · ${store.packageSize}` : ""}
                                 {store.packagesToBuy !== null ? ` · ${store.packagesToBuy}x` : ""}
                               </p>
+                              {/* €/liter of €/kilo: het enige getal waarmee een
+                                  pak van 500 ml en een pak van 1 l eerlijk
+                                  naast elkaar staan. */}
+                              {store.unitPrice !== null && store.unitPriceUnit !== null && (
+                                <p className="text-xs text-ink-faint">
+                                  {formatUnitPrice({
+                                    amount: store.unitPrice,
+                                    unit: store.unitPriceUnit,
+                                  })}
+                                </p>
+                              )}
+                              {/* De link naar de winkel zelf: de app zegt
+                                  "gelijkwaardig", deze pagina laat het je
+                                  nakijken. */}
+                              {store.productUrl && (
+                                <a
+                                  href={store.productUrl}
+                                  target="_blank"
+                                  rel="noreferrer noopener"
+                                  className="mt-0.5 inline-flex items-center gap-1 text-xs font-medium text-accent underline"
+                                >
+                                  Bekijk bij {PROVIDER_LABELS[provider]}
+                                  <ExternalLink size={11} />
+                                </a>
+                              )}
                               <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
                                 <span className={`rounded px-1.5 py-0.5 ${LEVEL_STYLES[store.level]}`}>
                                   {EQUIVALENCE_LABELS[store.level]}
@@ -496,6 +577,10 @@ export default async function PrijzenPage({
                                   store.costWithoutPromo > store.cost
                                     ? ` · zonder actie ${euro(store.costWithoutPromo)}`
                                     : ""}
+                                  {/* Tot wanneer je erop kunt rekenen. Alleen als
+                                      de winkel het meegeeft — een verzonnen
+                                      einddatum is erger dan geen. */}
+                                  {store.promoUntil ? ` · t/m ${formatDay(store.promoUntil)}` : ""}
                                 </p>
                               )}
                               {store.fakeDiscount && (
@@ -580,15 +665,47 @@ function StoreCandidateRow({
   lineId: string;
   selected: boolean;
 }) {
+  const unitPriceLabel = formatUnitPrice(
+    candidate.unitPrice !== null && candidate.unitPriceUnit !== null
+      ? { amount: candidate.unitPrice, unit: candidate.unitPriceUnit }
+      : null
+  );
+
   return (
     <form action={chooseStoreProduct} className="flex items-center justify-between gap-3">
       <input type="hidden" name="ingredientId" value={ingredientId} />
       <input type="hidden" name="productId" value={candidate.productId} />
       <input type="hidden" name="provider" value={candidate.provider satisfies ProductProvider} />
       <input type="hidden" name="lineId" value={lineId} />
-      <span className="min-w-0 truncate text-xs text-ink-muted">
-        {candidate.name}
-        {candidate.packageSize ? ` · ${candidate.packageSize}` : ""} · {euro(candidate.price)}
+      <span className="min-w-0 text-xs text-ink-muted">
+        <span className="block truncate">
+          {candidate.name}
+          {candidate.brand ? ` · ${candidate.brand}` : ""}
+          {candidate.packageSize ? ` · ${candidate.packageSize}` : ""} · {euro(candidate.price)}
+          {/* Bewust géén actielabel hier. De kiezer weet niet of de van-prijs
+              volgens de geschiedenis klopt — dat oordeel komt uit de
+              doorrekening. Anders zou hetzelfde product hierboven "let op:
+              die van-prijs is niet gerekend" krijgen en twee regels lager
+              alsnog "van 4,99 voor 3,87" als verkoopargument. */}
+        </span>
+        <span className="block truncate text-ink-faint">
+          {unitPriceLabel}
+          {/* De link staat bij elk alternatief, niet alleen bij het gekozen
+              product: juist bij het kiezen wil je kunnen nakijken wat het is. */}
+          {candidate.productUrl && (
+            <>
+              {unitPriceLabel ? " · " : ""}
+              <a
+                href={candidate.productUrl}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="text-accent underline"
+              >
+                bekijken
+              </a>
+            </>
+          )}
+        </span>
       </span>
       {selected ? (
         <span className="shrink-0 text-xs font-medium text-tag-green-ink">Gekozen</span>

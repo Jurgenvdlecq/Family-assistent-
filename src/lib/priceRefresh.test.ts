@@ -36,6 +36,7 @@ function fakeProduct(name: string, price: number, packageSize = "1 l"): Provider
     labels: [],
     freeFromAllergens: [],
     imageId: null,
+    url: null,
   };
 }
 
@@ -260,5 +261,42 @@ test("verversing: de ingrediënten van de lijst van déze week staan vooraan", a
     await prisma.shoppingList.deleteMany({ where: { mealPlanId: { in: plans.map((plan) => plan.id) } } });
     await prisma.mealPlan.deleteMany({ where: { householdId: household.id } });
     await prisma.household.delete({ where: { id: household.id } });
+  }
+});
+
+test("winkelprijzen: de link en de eenheidsprijs komen mee tot op het scherm", async () => {
+  // De gebruiker moet zelf kunnen nakijken of "gelijkwaardig" ook klopt. Dat
+  // werkt alleen als de link die de provider leest, de hele weg overleeft:
+  // waarneming -> product -> wat de pagina terugleest.
+  const ingredients = await prisma.ingredient.findMany({
+    where: { OR: [{ recipeIngredients: { some: {} } }, { fixedGroceries: { some: {} } }] },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+    take: 1,
+  });
+  try {
+    await refreshStorePrices(
+      fakeProvider(async (term) =>
+        term === storeSearchTerm(ingredients[0].name)
+          ? [
+              {
+                ...fakeProduct(`AH ${ingredients[0].name}`, 2.5),
+                url: "https://www.ah.nl/producten/product/wi100311",
+                unitPrice: { amount: 0.0025, unit: "ML" },
+              },
+            ]
+          : []
+      ),
+      { limitIngredients: 1 }
+    );
+
+    const price = (
+      await getStorePricesForIngredients([ingredients[0].id], ["AH"])
+    ).get(ingredients[0].id)?.get("AH");
+    assert.equal(price?.productUrl, "https://www.ah.nl/producten/product/wi100311");
+    assert.equal(price?.unitPrice, 0.0025);
+    assert.equal(price?.unitPriceUnit, "ML");
+  } finally {
+    await cleanupAhProducts();
   }
 });

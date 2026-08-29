@@ -1,6 +1,7 @@
-import type { ProductProvider } from "@/generated/prisma/enums";
+import type { ProductProvider, Unit } from "@/generated/prisma/enums";
 import { countsAsHardMatch, EQUIVALENCE_LABELS, type EquivalenceLevel } from "./equivalence";
 import type { BasketLineResult } from "./basketComparison";
+import { formatUnitPrice } from "./unitPrice";
 
 /**
  * Eén regel naast elkaar bij alle winkels — Picnic incluis.
@@ -23,6 +24,19 @@ export interface StoreCell {
   packagesToBuy: number | null;
   packageSize: string | null;
   productName: string | null;
+  /** Het merk, voor zover de winkel dat apart meegeeft. */
+  brand: string | null;
+  /**
+   * De productpagina bij de winkel. Bedoeld om zelf na te kijken of het echt
+   * hetzelfde product is: de app zegt "gelijkwaardig", de winkel bewijst het.
+   * `null` waar we geen betrouwbare link hebben — bij Picnic bestaat er geen
+   * publieke productpagina, dus daar blijft dit altijd leeg.
+   */
+  productUrl: string | null;
+  /** "€ 1,29 per liter" — het enige getal dat over verpakkingsgroottes heen vergelijkt. */
+  unitPriceLabel: string | null;
+  /** In welke eenheid die prijs staat, zodat twee cellen te vergelijken zijn. */
+  unitPriceUnit: Unit | null;
   /** `null` bij Picnic: dat ís het product waarmee vergeleken wordt. */
   level: EquivalenceLevel | null;
   /** Waarom er geen bedrag staat, of waarom het niet meetelt. */
@@ -30,7 +44,39 @@ export interface StoreCell {
   /** Goedkoopste van de vergelijkbare cellen. */
   cheapest: boolean;
   promoLabel: string | null;
+  /** Tot wanneer de actie loopt; `null` als de winkel dat niet meegeeft. */
+  promoUntil: Date | null;
+  /**
+   * De van-prijs klopt niet met de prijsgeschiedenis. Dan mag er geen
+   * actie-markering staan: een korting die geen korting is, hoort niet als
+   * voordeel op het scherm.
+   */
+  fakeDiscount: boolean;
+  /**
+   * Levert de actie hier ook echt voordeel op? Komt uit de doorrekening, die
+   * als enige weet hoeveel verpakkingen je nodig hebt en of de actie nog
+   * loopt.
+   */
+  promotionCounts: boolean;
   stale: boolean;
+}
+
+/**
+ * Mag deze cel een actie-markering krijgen?
+ *
+ * Het antwoord wordt niet hier bedacht: of een actie meetelt hangt af van het
+ * aantal verpakkingen en van de vraag of ze nog loopt, en dat weet alleen de
+ * doorrekening. De weergavelaag hoort geen tweede, net iets andere versie van
+ * die regel te hebben — dat is precies hoe een scherm iets gaat beweren dat de
+ * cijfers eronder tegenspreken.
+ */
+export function showsPromotion(cell: StoreCell): boolean {
+  return cell.promotionCounts && cell.promoLabel !== null;
+}
+
+function unitPriceLabelOf(amount: number | null, unit: Unit | null): string | null {
+  if (amount === null || unit === null) return null;
+  return formatUnitPrice({ amount, unit });
 }
 
 /**
@@ -54,12 +100,21 @@ export function compareLineAcrossStores(
       provider: "PICNIC",
       cost: line.referenceCost,
       packagesToBuy: line.referencePackages,
-      packageSize: null,
+      packageSize: line.referencePackageSize,
       productName: line.referenceName,
+      brand: line.referenceBrand,
+      // Picnic heeft geen publieke productpagina; een verzonnen link zou op een
+      // foutmelding uitkomen en dat is erger dan geen link.
+      productUrl: null,
+      unitPriceLabel: unitPriceLabelOf(line.referenceUnitPrice, line.referenceUnitPriceUnit),
+      unitPriceUnit: line.referenceUnitPriceUnit,
       level: null,
       note: line.referenceName === null ? "nog geen product gekozen" : line.referenceCost === null ? "prijs onbekend" : null,
       cheapest: false,
       promoLabel: null,
+      promoUntil: null,
+      fakeDiscount: false,
+      promotionCounts: false,
       stale: false,
     },
   ];
@@ -73,11 +128,18 @@ export function compareLineAcrossStores(
         packagesToBuy: null,
         packageSize: null,
         productName: null,
+        brand: null,
+        productUrl: null,
+        unitPriceLabel: null,
+        unitPriceUnit: null,
         level: null,
         // Nadrukkelijk niet € 0: niet gevonden is iets anders dan gratis.
         note: "niet gevonden",
         cheapest: false,
         promoLabel: null,
+        promoUntil: null,
+        fakeDiscount: false,
+        promotionCounts: false,
         stale: false,
       });
       continue;
@@ -89,12 +151,32 @@ export function compareLineAcrossStores(
       packagesToBuy: store.packagesToBuy,
       packageSize: store.packageSize,
       productName: store.name,
+      brand: store.brand,
+      productUrl: store.productUrl,
+      unitPriceLabel: unitPriceLabelOf(store.unitPrice, store.unitPriceUnit),
+      unitPriceUnit: store.unitPriceUnit,
       level: store.level,
       note: store.missingReason ?? (store.level === "ALTERNATIEF" ? EQUIVALENCE_LABELS.ALTERNATIEF : null),
       cheapest: false,
       promoLabel: store.promoLabel,
+      promoUntil: store.promoUntil,
+      fakeDiscount: store.fakeDiscount,
+      promotionCounts: store.promotionCounts,
       stale: store.stale,
     });
+  }
+
+  // Twee eenheidsprijzen naast elkaar die niet over dezelfde eenheid gaan, is
+  // geen vergelijking maar een valstrik: bij een ingrediënt in stuks kan de
+  // Picnic-cel "€ 2,29 per stuk" tonen terwijl Albert Heijn voor hetzelfde
+  // product "per kilo" meegeeft. In de smalle cel scheelt dat één woordje.
+  // Dan liever nergens een eenheidsprijs dan twee die je niet naast elkaar
+  // mag leggen — het uitklapblok toont ze nog wel, met ruimte eromheen.
+  const units = new Set(
+    cells.filter((cell) => cell.unitPriceLabel !== null).map((cell) => cell.unitPriceUnit)
+  );
+  if (units.size > 1) {
+    for (const cell of cells) cell.unitPriceLabel = null;
   }
 
   const comparable = cells.filter(

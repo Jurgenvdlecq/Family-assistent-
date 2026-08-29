@@ -403,3 +403,98 @@ test("het mandje: één stuk nodig blijft gewoon één verpakking bij elke winke
   );
   assert.equal(comparison.lines[0].stores.get("AH")!.cost, 2.95);
 });
+
+test("een verlopen actie staat niet meer als actie op de regel", () => {
+  const now = new Date("2026-08-29T10:00:00Z");
+  const verlopen = compareBasket(
+    [line()],
+    new Map([
+      [
+        "regel-melk",
+        [
+          candidate({
+            promoLabel: "1+1 gratis",
+            promoUntil: new Date("2026-08-24T00:00:00Z"),
+          }),
+        ],
+      ],
+    ]),
+    ["AH"],
+    now
+  );
+  const store = verlopen.lines[0].stores.get("AH")!;
+  assert.equal(store.promoLabel, null, "de actie liep tot vorige week");
+  assert.equal(store.cost, 3.87, "en de korting wordt ook niet gerekend");
+
+  const lopend = compareBasket(
+    [line()],
+    new Map([
+      [
+        "regel-melk",
+        [candidate({ promoLabel: "1+1 gratis", promoUntil: new Date("2026-09-05T00:00:00Z") })],
+      ],
+    ]),
+    ["AH"],
+    now
+  );
+  assert.equal(lopend.lines[0].stores.get("AH")!.promoLabel, "1+1 gratis");
+});
+
+test("een actie die bij dit aantal niets oplevert, telt niet als actie", () => {
+  // "1+1 gratis" bij één pak melk is geen voordeel. Het label blijft wel op de
+  // regel staan mét de uitleg — dat is informatie — maar het overzicht mag er
+  // geen aanbieding van maken. Dezelfde grens die de attentielijst al hanteert.
+  const eenPak = compareBasket(
+    [line({ neededQuantity: 1000 })],
+    new Map([["regel-melk", [candidate({ promoLabel: "1+1 gratis" })]]]),
+    ["AH"]
+  ).lines[0].stores.get("AH")!;
+  assert.equal(eenPak.packagesToBuy, 1);
+  assert.equal(eenPak.promotionCounts, false);
+  assert.equal(eenPak.promoLabel, "1+1 gratis", "het label en de uitleg blijven wel staan");
+
+  // Bij drie pakken levert dezelfde actie wél iets op.
+  const drieP = compareBasket(
+    [line()],
+    new Map([["regel-melk", [candidate({ promoLabel: "1+1 gratis" })]]]),
+    ["AH"]
+  ).lines[0].stores.get("AH")!;
+  assert.equal(drieP.packagesToBuy, 3);
+  assert.equal(drieP.promotionCounts, true);
+});
+
+test("een gewone bonusprijs telt wel als actie: de korting zit al in de prijs", () => {
+  // Hier is er geen mechanisme om door te rekenen — het bewijs is de van-prijs.
+  const bonus = compareBasket(
+    [line()],
+    new Map([["regel-melk", [candidate({ promoLabel: "Bonus", wasPrice: 1.59 })]]]),
+    ["AH"]
+  ).lines[0].stores.get("AH")!;
+  assert.equal(bonus.promotionCounts, true);
+
+  // Maar niet als de prijsgeschiedenis die van-prijs tegenspreekt.
+  const nep = compareBasket(
+    [line()],
+    new Map([
+      ["regel-melk", [candidate({ promoLabel: "Bonus", wasPrice: 1.59, fakeDiscount: true })]],
+    ]),
+    ["AH"]
+  ).lines[0].stores.get("AH")!;
+  assert.equal(nep.promotionCounts, false);
+});
+
+test("een verlopen actie telt niet, ook niet als ze bij dit aantal iets zou opleveren", () => {
+  const verlopen = compareBasket(
+    [line()],
+    new Map([
+      [
+        "regel-melk",
+        [candidate({ promoLabel: "1+1 gratis", promoUntil: new Date("2026-08-24T00:00:00Z") })],
+      ],
+    ]),
+    ["AH"],
+    new Date("2026-08-29T10:00:00Z")
+  ).lines[0].stores.get("AH")!;
+  assert.equal(verlopen.promotionCounts, false);
+  assert.equal(verlopen.promoLabel, null);
+});

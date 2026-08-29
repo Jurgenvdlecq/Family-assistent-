@@ -54,6 +54,12 @@ export interface ProviderProduct {
    */
   freeFromAllergens: string[];
   imageId: string | null;
+  /**
+   * De productpagina bij de winkel zelf, zodat je kunt nakijken of het echt
+   * hetzelfde product is. `null` waar we die niet betrouwbaar kennen — een
+   * gegokte link die op een foutpagina uitkomt is erger dan geen link.
+   */
+  url: string | null;
 }
 
 /**

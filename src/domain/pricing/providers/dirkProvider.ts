@@ -55,6 +55,31 @@ export function parseDirkPrice(large: string, small: string, hasEuros: boolean):
   return Number.isFinite(value) && value > 0 ? Number(value.toFixed(2)) : null;
 }
 
+/**
+ * De volledige productlink, of `null`.
+ *
+ * De href komt van een gescrapete pagina, en die link komt als `href` op ons
+ * eigen scherm terecht. Daarom alleen wat ondubbelzinnig een pad op dirk.nl
+ * is: een relatief pad krijgt het adres van Dirk ervoor, een absolute link
+ * moet zelf al op dirk.nl staan, en al het andere (een andere host, of iets
+ * dat helemaal geen http-adres is) levert `null`. Zonder die grens zou een
+ * gewijzigde pagina een link naar een willekeurige site op ons scherm kunnen
+ * zetten — of erger, een `javascript:`-adres.
+ */
+export function dirkProductUrl(href: string | null | undefined): string | null {
+  if (!href) return null;
+  // Een protocol-relatieve link (`//host/pad`) is geen pad op dirk.nl.
+  if (href.startsWith("/") && !href.startsWith("//")) return `https://www.dirk.nl${href}`;
+
+  try {
+    const url = new URL(href);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return url.hostname === "www.dirk.nl" || url.hostname === "dirk.nl" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Het Dirk-product-ID is het laatste getal in de product-URL. */
 export function parseDirkProductId(href: string): string | null {
   const match = href.match(/(\d+)(?:[/?#][^/]*)?$/);
@@ -210,6 +235,9 @@ export function parseDirkProducts(html: string): ProviderProduct[] {
       labels: [],
       freeFromAllergens: [],
       imageId: null,
+      // De link lezen we van de pagina zelf; niets aan geraden, en alleen als
+      // het ondubbelzinnig een adres op dirk.nl is.
+      url: dirkProductUrl(href),
     });
   }
 

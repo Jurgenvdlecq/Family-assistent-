@@ -37,6 +37,9 @@ export interface BasketLineInput {
         price: number | null;
         packageQuantity: number | null;
         packageUnit: Unit | null;
+        /** Prijs per liter/kilo/stuk, zodat verpakkingsgroottes vergelijkbaar zijn. */
+        unitPrice?: number | null;
+        unitPriceUnit?: Unit | null;
       })
     | null;
 }
@@ -64,6 +67,16 @@ export interface StoreCandidateInput extends EquivalenceCandidate {
    * op het scherm komen.
    */
   fakeDiscount?: boolean;
+  /**
+   * De productpagina bij de winkel zelf. Bedoeld om na te kunnen kijken of dit
+   * écht hetzelfde product is — de app zegt "gelijkwaardig", de winkelpagina
+   * bewijst het. `null` waar we de link niet betrouwbaar kennen; dan liever
+   * geen link dan een gokje dat op een 404 uitkomt.
+   */
+  productUrl?: string | null;
+  /** Prijs per liter/kilo/stuk, zoals de winkel of de verpakking hem geeft. */
+  unitPrice?: number | null;
+  unitPriceUnit?: Unit | null;
   observedAt: Date;
   stale: boolean;
 }
@@ -72,7 +85,14 @@ export interface BasketLineStoreResult {
   provider: ProductProvider;
   productId: string;
   name: string;
+  /** Het merk, voor zover de winkel dat apart meegeeft. */
+  brand: string | null;
   packageSize: string | null;
+  /** De productpagina bij de winkel, om zelf na te kijken of het hetzelfde is. */
+  productUrl: string | null;
+  /** Prijs per liter/kilo/stuk — het enige getal dat over verpakkingen heen vergelijkt. */
+  unitPrice: number | null;
+  unitPriceUnit: Unit | null;
   /** Wat er in één verpakking zit, in de eenheid van het ingrediënt. */
   packageQuantity: number | null;
   /** Aantal verpakkingen dat je moet kopen om aan de behoefte te komen. */
@@ -84,6 +104,20 @@ export interface BasketLineStoreResult {
   level: EquivalenceLevel;
   levelReason: string;
   promoLabel: string | null;
+  /** Tot wanneer de actie loopt; `null` als de winkel dat niet meegeeft. */
+  promoUntil: Date | null;
+  /** De van-prijs bij een actie, per verpakking. */
+  wasPrice: number | null;
+  /**
+   * Levert deze actie bij dít aantal verpakkingen ook echt voordeel op?
+   *
+   * Alleen dán mag er een actie-markering op het overzicht komen. Het label
+   * zelf blijft wél staan in het uitklapblok, mét de uitleg erbij ("je krijgt
+   * pas voordeel vanaf 2 stuks") — dat is informatie. Een groene "Actie" bij
+   * één pak melk is dat niet; dan is het een reclamebalk. Dezelfde grens die
+   * `collectPromoHighlights` al hanteerde, nu ook voor de markering.
+   */
+  promotionCounts: boolean;
   /** Wat de actie hier concreet doet: "3 halen, 2 betalen". */
   promoExplanation: string | null;
   /** Wat het zonder de actie gekost zou hebben; gelijk aan `cost` als er geen actie is. */
@@ -103,6 +137,11 @@ export interface BasketLineResult {
   unit: Unit;
   referencePrice: number | null;
   referenceName: string | null;
+  /** Merk en verpakking van ons eigen product, zodat de drie kolommen dezelfde velden tonen. */
+  referenceBrand: string | null;
+  referencePackageSize: string | null;
+  referenceUnitPrice: number | null;
+  referenceUnitPriceUnit: Unit | null;
   /** Wat deze regel bij ons eigen product kost, met dezelfde verpakkingsberekening. */
   referenceCost: number | null;
   referencePackages: number | null;
@@ -256,25 +295,50 @@ function priceLineAtStore(
   // korting, niet 50%, en bij één stuk helemaal geen. Alleen een mechanisme
   // dat we zeker herkennen én dat nog loopt wordt toegepast; de rest laat de
   // gewone prijs staan.
-  const mechanism = promotionIsActive(candidate.promoUntil, now)
-    ? parsePromoMechanism(candidate.promoLabel)
-    : null;
+  const active = promotionIsActive(candidate.promoUntil, now);
+  const mechanism = active ? parsePromoMechanism(candidate.promoLabel) : null;
   const outcome =
     packagesToBuy === null ? null : applyPromotion(packagesToBuy, candidate.price, mechanism);
   const cost = outcome?.cost ?? null;
+
+  // Twee soorten actie leveren op verschillende manieren voordeel op. Bij een
+  // mechanische actie ("1+1 gratis") zit het in het aantal: bij één pak is er
+  // niets gratis, en dan is er ook niets te melden. Bij een gewone bonusprijs
+  // zit de korting al in `price`, dus daar is de van-prijs het bewijs. Alleen
+  // met een van die twee mag er een markering komen.
+  const mechanicalSaving =
+    outcome === null ? 0 : Number((outcome.costWithoutPromo - outcome.cost).toFixed(2));
+  const lowerThanBefore = candidate.wasPrice !== null && candidate.wasPrice > candidate.price;
+  const promotionCounts =
+    active &&
+    candidate.promoLabel !== null &&
+    candidate.fakeDiscount !== true &&
+    (mechanicalSaving >= 0.01 || lowerThanBefore);
 
   return {
     provider: candidate.provider,
     productId: candidate.productId,
     name: candidate.name,
+    brand: candidate.brand,
     packageSize: candidate.packageSize,
+    productUrl: candidate.productUrl ?? null,
+    unitPrice: candidate.unitPrice ?? null,
+    unitPriceUnit: candidate.unitPriceUnit ?? null,
     packageQuantity: candidate.packageQuantity,
     packagesToBuy,
     cost,
     surplus: packaging.surplus,
     level: verdict.level,
     levelReason: verdict.reason,
-    promoLabel: candidate.promoLabel,
+    // Een verlopen actie is geen actie meer. Zolang het label alleen in het
+    // uitklapblok stond was dat hooguit rommelig; nu het als "Actie" in het
+    // overzicht komt, zou het een aanbieding beloven die er niet is.
+    // `promoUntil: null` betekent "de winkel zegt er niets over" en telt dus
+    // gewoon als lopend — dat is geen bewijs van het tegendeel.
+    promoLabel: active ? candidate.promoLabel : null,
+    promoUntil: candidate.promoUntil,
+    promotionCounts,
+    wasPrice: candidate.wasPrice,
     promoExplanation: outcome?.explanation ?? null,
     costWithoutPromo: outcome?.costWithoutPromo ?? null,
     // Een van-prijs die volgens de geschiedenis nooit gerekend is, mag niet
@@ -426,6 +490,10 @@ export function compareBasket(
       unit: line.unit,
       referencePrice: line.reference?.price ?? null,
       referenceName: line.reference?.name ?? null,
+      referenceBrand: line.reference?.brand ?? null,
+      referencePackageSize: line.reference?.packageSize ?? null,
+      referenceUnitPrice: line.reference?.unitPrice ?? null,
+      referenceUnitPriceUnit: line.reference?.unitPriceUnit ?? null,
       referenceCost,
       referencePackages,
       stores,

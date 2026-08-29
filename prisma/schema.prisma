@@ -824,6 +824,12 @@ model Product {
   provider          ProductProvider @default(PICNIC)
   externalRef       String?         @map("external_ref")
   picnicImageId     String?         @map("picnic_image_id")
+  // De pagina van dit product bij de winkel zelf, zodat je kunt nakijken of
+  // het echt hetzelfde product is. Alleen gevuld waar we de link betrouwbaar
+  // kennen: bij Albert Heijn is hij uit het webshop-id te vormen, bij Dirk
+  // lezen we hem van de categoriepagina. Voor Picnic bestaat er geen publieke
+  // productpagina — daar blijft dit dus leeg in plaats van een gokje.
+  productUrl        String?         @map("product_url")
   name              String
   brand             String?
   packageSize       String?         @map("package_size")
