@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import { prisma } from "./prisma";
 import { getPricedIngredients, refreshDirkPrices } from "./pricing/refresh";
+import { storeSearchTerm } from "@/domain/pricing/storeMatch";
 
 /** Een categoriepagina in de vorm die de opdracht beschrijft. */
 function categoryPage(entries: Array<{ id: string; name: string; size: string; large: string; small: string; hasEuros: boolean }>) {
@@ -252,6 +253,86 @@ test("Dirk-verversing: bezoekt eerst de categorieën waar de lijst iets te zoeke
       `de relevante categorie hoort bezocht te zijn, bezocht: ${bezocht.join(", ")}`
     );
     assert.ok(result.productsStored > 0, "en dat levert een match op in plaats van 'niets dat paste'");
+  } finally {
+    await cleanupDirkProducts();
+  }
+});
+
+test("Dirk-verversing: gebruikt de eigen zoekpagina zodra die leesbaar blijkt", async () => {
+  // De code ging ervan uit dat Dirks zoekpagina client-side laadt en dus
+  // onleesbaar is. Die aanname kwam uit de oorspronkelijke opdracht en was
+  // nooit gemeten. Nu wordt het per verversing echt gevraagd — en als het
+  // antwoord ja is, hoeft er niets meer gegokt te worden over categorieën.
+  const ingredients = await getPricedIngredients();
+  const target = ingredients[0];
+  const bezocht: string[] = [];
+
+  try {
+    const result = await withFakeDirk(
+      {
+        // De proef: zoeken op "melk" levert een leesbaar product op.
+        "/zoeken/producten/melk": categoryPage([
+          { id: "700", name: "Dirk Halfvolle melk", size: "1 liter", large: "1", small: "09", hasEuros: true },
+        ]),
+        [`/zoeken/producten/${encodeURIComponent(storeSearchTerm(target.name))}`]: categoryPage([
+          { id: "701", name: `Dirk ${target.name}`, size: "500 gram", large: "2", small: "49", hasEuros: true },
+        ]),
+        // De categoriepagina's bestaan wel, maar horen niet aangeraakt te worden.
+        "/boodschappen": `<a href="/boodschappen/test/categorie">Categorie</a>`,
+        "/boodschappen/test/categorie": categoryPage([
+          { id: "702", name: "Iets heel anders", size: "1 stuk", large: "9", small: "99", hasEuros: true },
+        ]),
+      },
+      async (site) => {
+        site.server.on("request", (request) => {
+          if (request.url) bezocht.push(request.url);
+        });
+        return refreshDirkPrices({ limitIngredients: 1 });
+      }
+    );
+
+    assert.ok(
+      bezocht.some((url) => url.startsWith("/zoeken/producten/")),
+      `de zoekpagina hoort gebruikt te zijn, bezocht: ${bezocht.join(", ")}`
+    );
+    assert.ok(
+      !bezocht.includes("/boodschappen"),
+      "en dan hoeft er niet meer gecrawld te worden"
+    );
+    assert.ok(result.productsStored > 0);
+  } finally {
+    await cleanupDirkProducts();
+  }
+});
+
+test("Dirk-verversing: valt terug op crawlen als de zoekpagina niets leesbaars geeft", async () => {
+  // Blijkt de oorspronkelijke aanname tóch te kloppen — de pagina rendert
+  // client-side — dan verandert er niets aan het bestaande gedrag.
+  const ingredients = await getPricedIngredients();
+  const target = ingredients[0];
+  const slug = target.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  const bezocht: string[] = [];
+
+  try {
+    const result = await withFakeDirk(
+      {
+        // Een lege huls, precies zoals een client-side gerenderde pagina.
+        "/zoeken/producten/melk": "<html><body><div id='app'></div></body></html>",
+        "/boodschappen": `<a href="/boodschappen/schap/${slug}">Doel</a>`,
+        [`/boodschappen/schap/${slug}`]: categoryPage([
+          { id: "703", name: `Dirk ${target.name}`, size: "500 gram", large: "2", small: "49", hasEuros: true },
+        ]),
+      },
+      async (site) => {
+        site.server.on("request", (request) => {
+          if (request.url) bezocht.push(request.url);
+        });
+        return refreshDirkPrices({ limitIngredients: 1 });
+      }
+    );
+
+    assert.ok(bezocht.includes("/boodschappen"), "er hoort alsnog gecrawld te zijn");
+    assert.ok(result.productsStored > 0, "en dat levert gewoon producten op");
   } finally {
     await cleanupDirkProducts();
   }
