@@ -61,9 +61,14 @@ function normalizedPack(value: string | null): string | null {
  *    keuze, ook al is het een ander merk.
  * 4. **Andere klasse of andere soort** — een alternatief. Mag voorgesteld
  *    worden, maar telt in een apart bedrag.
- * 5. **Klasse onbekend** — niet vergelijkbaar. Nadrukkelijk niet
- *    "waarschijnlijk wel goed": dat is precies de aanname die de vergelijking
- *    onbetrouwbaar maakt.
+ * 5. **Klasse onbekend aan één kant** — gelijkwaardig, mits soort en
+ *    vers/houdbaar kloppen. Bewuste keuze van de gebruiker: het merk doet er
+ *    niet toe, het soort product wel. Eerder gold hier "niet vergelijkbaar",
+ *    maar omdat onze eigen producten zelden een merkveld hebben, viel er
+ *    daardoor nergens iets te vergelijken.
+ *
+ * "Niet vergelijkbaar" blijft over voor het enige geval waarin er echt niets
+ * te zeggen valt: we weten niet wat wíj zouden kopen.
  */
 export function compareEquivalence(
   reference: EquivalenceCandidate,
@@ -103,18 +108,35 @@ export function compareEquivalence(
     return { level: "IDENTIEK", reason: "zelfde merk en verpakking" };
   }
 
-  if (reference.qualityTier === null || candidate.qualityTier === null) {
-    return { level: "NIET_VERGELIJKBAAR", reason: "soort product niet vast te stellen" };
+  // Twee bekende, verschillende klassen zijn een echt verschil: bio in plaats
+  // van gewoon, of een voordeelmerk in plaats van wat jullie normaal kopen.
+  if (
+    reference.qualityTier !== null &&
+    candidate.qualityTier !== null &&
+    !sameQualityTier(reference.qualityTier, candidate.qualityTier)
+  ) {
+    return {
+      level: "ALTERNATIEF",
+      reason: `${describeTierShift(reference.qualityTier, candidate.qualityTier)}`,
+    };
   }
 
   if (sameQualityTier(reference.qualityTier, candidate.qualityTier)) {
     return { level: "GELIJKWAARDIG", reason: "zelfde soort product" };
   }
 
-  return {
-    level: "ALTERNATIEF",
-    reason: `${describeTierShift(reference.qualityTier, candidate.qualityTier)}`,
-  };
+  // Van één van beide kanten weten we de klasse niet. Dat was eerder reden om
+  // "niet vergelijkbaar" te zeggen, maar dat bleek in de praktijk verkeerd:
+  // onze eigen producten hebben vaak geen merkveld, en dan viel er nergens
+  // meer iets te vergelijken. De gebruiker heeft de regel expliciet
+  // bijgestuurd: het merk doet er niet toe, het soort product wel. Verse melk
+  // hoort tegenover verse melk te staan, ongeacht van wie.
+  //
+  // Dat is verantwoord omdat de bescherming die er echt toe doet blijft
+  // staan: de vers/houdbaar-controle hierboven, en een bekend verschil in
+  // klasse hier vlak boven. Wat overblijft is "we weten het merk niet, en dat
+  // hoeft ook niet".
+  return { level: "GELIJKWAARDIG", reason: "zelfde soort product, ander merk" };
 }
 
 /**

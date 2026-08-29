@@ -165,13 +165,23 @@ test("verversingen: de tekst onderscheidt gelukt, deels gelukt, niets gevonden e
   // Het onderscheid dat op het scherm ontbrak: de winkel gaf wél producten,
   // maar geen daarvan paste — dat vraagt iets heel anders dan een kapotte
   // koppeling die niets teruggeeft.
+  // Het onderscheid dat op het scherm ontbrak: de winkel gaf wél aanbod, maar
+  // niets paste — dat vraagt iets heel anders dan een kapotte koppeling die
+  // niets teruggeeft. Het áántal noemen we bewust niet: bij AH is dat de som
+  // van de zoekresultaten, bij Dirk de omvang van de catalogus.
   assert.match(
     describeRefreshRun({ ...basis, productsStored: 0, error: null }, "Albert Heijn"),
-    /30 producten van de winkel gelezen, maar geen daarvan paste/
+    /wel aanbod teruggekregen, maar niets dat bij die ingrediënten paste/
   );
   assert.match(
     describeRefreshRun({ ...basis, productsStored: 0, itemsSeen: 0, error: null }, "Albert Heijn"),
-    /niets van de winkel teruggekregen/
+    /helemaal niets teruggekregen/
+  );
+  // En een rij van vóór deze meting weet het simpelweg niet — dan mag er geen
+  // conclusie over de koppeling uit gelezen worden.
+  assert.match(
+    describeRefreshRun({ ...basis, productsStored: 0, itemsSeen: null, error: null }, "Albert Heijn"),
+    /geen enkel passend product gevonden/
   );
   assert.match(
     describeRefreshRun({ ...basis, productsStored: 0, error: "403 van de winkel" }, "Albert Heijn"),

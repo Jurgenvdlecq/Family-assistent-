@@ -9,7 +9,11 @@ import { PROVIDER_LABELS } from "@/domain/pricing/types";
 import { describeProviderSource } from "@/domain/pricing/providers/capabilities";
 import { describeSplitAdvice } from "@/domain/pricing/splitAdvice";
 import { getLastRefreshRuns, describeRefreshRun } from "@/lib/pricing/refreshRuns";
-import { compareLineAcrossStores, comparisonColumns } from "@/domain/pricing/lineComparison";
+import {
+  compareLineAcrossStores,
+  comparisonColumns,
+  describeUncomparableStore,
+} from "@/domain/pricing/lineComparison";
 import type { ProductProvider } from "@/generated/prisma/enums";
 import type { StorePriceForIngredient } from "@/lib/pricing/storePrices";
 import NavBar from "@/components/NavBar";
@@ -272,21 +276,16 @@ export default async function PrijzenPage({
                   const label = PROVIDER_LABELS[provider];
                   // Of we van deze winkel überhaupt een prijs hebben, los van de
                   // vraag of er iets vergelijkbaars bij zat.
-                  const hasAnyPrice = comparison.lines.some((line) => line.stores.get(provider)?.cost != null);
+                  // De reden wordt uit de regels zelf afgeleid, niet
+                  // aangenomen: het scherm mag nooit iets beweren dat de
+                  // regels eronder tegenspreken.
+                  const uncomparable = describeUncomparableStore(comparison.lines, provider, label);
                   return (
                     <div key={provider} className="text-xs text-ink-faint">
-                      {total.linesCompared === 0 ? (
+                      {uncomparable ? (
                         <p className="flex items-start gap-1.5 text-ink-muted">
                           <AlertTriangle size={13} className="mt-0.5 shrink-0 text-tag-amber-ink" />
-                          {/* Bewust één zin en geen los aan elkaar geplakte
-                              stukken: "geen prijzen" terwijl er verderop wél
-                              bedragen van die winkel staan, is precies de
-                              tegenstrijdigheid die dit scherm moet vermijden. */}
-                          <span>
-                            {hasAnyPrice
-                              ? `Van ${label} hebben we wel prijzen, maar geen enkel product dat hetzelfde of gelijkwaardig is. Wat je hieronder ziet staat er als "ander soort" bij en telt niet mee in het totaal.`
-                              : `Van ${label} hebben we nog geen prijzen. Dat is geen € 0 — die winkel is hier gewoon nog niet te vergelijken.`}
-                          </span>
+                          <span>{uncomparable}</span>
                         </p>
                       ) : (
                         total.linesMissing > 0 && (

@@ -952,7 +952,8 @@ model PriceRefreshRun {
   productsStored     Int                 @default(0) @map("products_stored")
   /// Hoeveel producten de winkel opleverde vóór het matchen. Onderscheidt
   /// "de koppeling werkt niet" van "er past niets bij onze ingrediënten".
-  itemsSeen          Int                 @default(0) @map("items_seen")
+  /// `null` betekent onbekend: rijen van vóór deze kolom hebben nooit gemeten.
+  itemsSeen          Int?                @map("items_seen")
   /// De eerste foutmelding, in gewone taal; `null` als alles goed ging.
   error              String?
   trigger            PriceRefreshTrigger

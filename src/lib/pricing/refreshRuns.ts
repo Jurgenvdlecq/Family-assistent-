@@ -25,7 +25,7 @@ export interface RefreshRunSummary {
   finishedAt: Date | null;
   ingredientsChecked: number;
   productsStored: number;
-  itemsSeen: number;
+  itemsSeen: number | null;
   error: string | null;
   trigger: PriceRefreshTrigger;
 }
@@ -174,13 +174,22 @@ export function describeRefreshRun(run: RefreshRunSummary | undefined, label: st
     // (dan is het een kwestie van matchen) of helemaal niets (dan is de
     // koppeling zelf stuk)? Dat zag je op het scherm niet, en het bepaalt
     // volledig wat er moet gebeuren.
-    const seen =
-      run.itemsSeen > 0
-        ? `${run.itemsSeen} ${run.itemsSeen === 1 ? "product" : "producten"} van de winkel gelezen, maar geen daarvan paste bij `
-        : "niets van de winkel teruggekregen bij ";
-    return `${label}: op ${when} ${seen}${run.ingredientsChecked} ${
+    //
+    // Het áántal noemen we bewust niet: bij Albert Heijn is dat de som van de
+    // zoekresultaten over alle ingrediënten (met dubbelingen), bij Dirk de
+    // omvang van de gecrawlde catalogus. Twee verschillende grootheden onder
+    // één noemer zou een preciezer getal suggereren dan het is. Het
+    // ondérscheid is wat telt.
+    const cause =
+      run.itemsSeen === null
+        ? "geen enkel passend product gevonden"
+        : run.itemsSeen > 0
+          ? "wel aanbod teruggekregen, maar niets dat bij die ingrediënten paste"
+          : "helemaal niets teruggekregen van de winkel";
+    const scope = run.trigger === "CRON" ? "" : " van je lijst";
+    return `${label}: op ${when} ${run.ingredientsChecked} ${
       run.ingredientsChecked === 1 ? "ingrediënt" : "ingrediënten"
-    } van je lijst.`;
+    }${scope} bekeken en ${cause}.`;
   }
   return `${label}: ${stored} bijgewerkt op ${when}, van ${run.ingredientsChecked} ${
     run.ingredientsChecked === 1 ? "ingrediënt" : "ingrediënten"

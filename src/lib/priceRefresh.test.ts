@@ -12,9 +12,11 @@ import "dotenv/config";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { prisma } from "./prisma";
-import { refreshStorePrices } from "./pricing/refresh";
+import { getPricedIngredients, refreshStorePrices } from "./pricing/refresh";
 import { getStorePricesForIngredients } from "./pricing/storePrices";
 import type { ProviderProduct, StorePriceProvider } from "@/domain/pricing/types";
+import { storeSearchTerm } from "@/domain/pricing/storeMatch";
+import { getCurrentWeekStart } from "./week";
 
 function fakeProduct(name: string, price: number, packageSize = "1 l"): ProviderProduct {
   return {
@@ -67,10 +69,18 @@ test("verversing: bevraagt alleen ingrediënten die we ook echt gebruiken", asyn
     );
 
     assert.equal(asked.length, 5);
-    const used = await prisma.ingredient.count({
-      where: { name: { in: asked }, OR: [{ recipeIngredients: { some: {} } }, { fixedGroceries: { some: {} } }] },
+    // Er wordt gezocht met de opgeschoonde naam, niet met de ingrediëntnaam
+    // zelf: die kan de naam van een andere winkel bevatten ("Picnic
+    // Appelmoes"), en daar vindt Albert Heijn niets nuttigs op.
+    const used = await prisma.ingredient.findMany({
+      where: { OR: [{ recipeIngredients: { some: {} } }, { fixedGroceries: { some: {} } }] },
+      select: { name: true },
     });
-    assert.equal(used, asked.length, "elk bevraagd ingrediënt komt in een recept of vaste boodschap voor");
+    const usedTerms = new Set(used.map((ingredient) => storeSearchTerm(ingredient.name)));
+    assert.ok(
+      asked.every((term) => usedTerms.has(term)),
+      "elke zoekterm hoort bij een ingrediënt uit een recept of vaste boodschap"
+    );
   } finally {
     await cleanupAhProducts();
   }
@@ -162,7 +172,9 @@ test("winkelprijzen: de lijst leest alleen wat er is opgeslagen, en verzint geen
   });
   try {
     await refreshStorePrices(
-      fakeProvider(async (term) => (term === ingredients[0].name ? [fakeProduct(`AH ${term}`, 2.5)] : [])),
+      fakeProvider(async (term) =>
+        term === storeSearchTerm(ingredients[0].name) ? [fakeProduct(`AH ${ingredients[0].name}`, 2.5)] : []
+      ),
       { limitIngredients: 3 }
     );
 
@@ -178,5 +190,75 @@ test("winkelprijzen: de lijst leest alleen wat er is opgeslagen, en verzint geen
     );
   } finally {
     await cleanupAhProducts();
+  }
+});
+
+test("verversing: de ingrediënten van de lijst van déze week staan vooraan", async () => {
+  // De knop pakt maar een deel van de lijst, dus dát deel moet wél gaan over
+  // wat de gebruiker op dit moment voor zich heeft. Zonder afbakening op de
+  // week verdringt de geschiedenis de lijst van nu — met vier oude weeklijsten
+  // erbij zat er geen enkel ingrediënt van deze week in de eerste vijftien.
+  const household = await prisma.household.create({
+    data: { name: `Prioriteitstest ${Date.now()}` },
+  });
+  const weekStart = getCurrentWeekStart();
+  const vorigeWeek = new Date(weekStart);
+  vorigeWeek.setDate(vorigeWeek.getDate() - 7);
+
+  // Alfabetisch achteraan, zodat alleen prioriteren ze naar voren kan halen.
+  const nu = await prisma.ingredient.findMany({
+    select: { id: true, name: true },
+    orderBy: { name: "desc" },
+    take: 3,
+  });
+  const oud = await prisma.ingredient.findMany({
+    where: { id: { notIn: nu.map((ingredient) => ingredient.id) } },
+    select: { id: true },
+    orderBy: { name: "asc" },
+    take: 20,
+  });
+
+  try {
+    for (const [plan, ingredients] of [
+      [weekStart, nu.map((ingredient) => ingredient.id)],
+      [vorigeWeek, oud.map((ingredient) => ingredient.id)],
+    ] as const) {
+      const mealPlan = await prisma.mealPlan.create({
+        data: { householdId: household.id, weekStart: plan },
+      });
+      await prisma.shoppingList.create({
+        data: {
+          mealPlanId: mealPlan.id,
+          lines: {
+            create: ingredients.map((ingredientId) => ({
+              ingredientId,
+              quantity: 1,
+              unit: "PIECE" as const,
+              source: "MANUAL" as const,
+            })),
+          },
+        },
+      });
+    }
+
+    const prioritised = await getPricedIngredients({
+      prioritiseHouseholdId: household.id,
+      weekStart,
+    });
+    const eersteVijftien = prioritised.slice(0, 15).map((ingredient) => ingredient.id);
+    for (const ingredient of nu) {
+      assert.ok(
+        eersteVijftien.includes(ingredient.id),
+        `${ingredient.name} van deze week hoort binnen de eerste vijftien te vallen`
+      );
+    }
+  } finally {
+    const plans = await prisma.mealPlan.findMany({ where: { householdId: household.id }, select: { id: true } });
+    await prisma.shoppingListLine.deleteMany({
+      where: { shoppingList: { mealPlanId: { in: plans.map((plan) => plan.id) } } },
+    });
+    await prisma.shoppingList.deleteMany({ where: { mealPlanId: { in: plans.map((plan) => plan.id) } } });
+    await prisma.mealPlan.deleteMany({ where: { householdId: household.id } });
+    await prisma.household.delete({ where: { id: household.id } });
   }
 });

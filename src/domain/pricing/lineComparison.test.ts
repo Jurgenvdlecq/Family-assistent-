@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compareLineAcrossStores } from "./lineComparison";
+import { compareLineAcrossStores, describeUncomparableStore } from "./lineComparison";
 import type { BasketLineResult, BasketLineStoreResult } from "./basketComparison";
 
 function store(overrides: Partial<BasketLineStoreResult> = {}): BasketLineStoreResult {
@@ -151,4 +151,41 @@ test("naast elkaar: twee even goedkope winkels worden allebei gemarkeerd", () =>
     cells.filter((cell) => cell.cheapest).map((cell) => cell.provider),
     ["AH", "DIRK"]
   );
+});
+
+test("toelichting: een winkel die gewoon meetelt krijgt geen melding", () => {
+  const uitleg = describeUncomparableStore([line({ stores: new Map([["AH", store()]]) })], "AH", "Albert Heijn");
+  assert.equal(uitleg, null);
+});
+
+test("toelichting: zonder enige prijs is het 'nog geen prijzen', niet € 0", () => {
+  const uitleg = describeUncomparableStore([line({ stores: new Map() })], "AH", "Albert Heijn");
+  assert.match(uitleg!, /nog geen prijzen/);
+  assert.match(uitleg!, /geen € 0/);
+});
+
+test("toelichting: met alleen alternatieven zegt hij dat, en niet 'geen prijzen'", () => {
+  // De oude tekst beweerde "geen prijzen" terwijl er drie regels lager een
+  // bedrag stond. Dat is precies de tegenstrijdigheid die dit moet vermijden.
+  const uitleg = describeUncomparableStore(
+    [line({ stores: new Map([["AH", store({ level: "ALTERNATIEF" })]]) })],
+    "AH",
+    "Albert Heijn"
+  );
+  assert.match(uitleg!, /wel prijzen/);
+  assert.match(uitleg!, /ander soort product/);
+});
+
+test("toelichting: een harde match zonder eigen prijs wordt niet 'geen gelijkwaardig product' genoemd", () => {
+  // Hier stond "geen enkel product dat hetzelfde of gelijkwaardig is" terwijl
+  // de regel eronder de badge "gelijkwaardig" droeg — letterlijk het
+  // omgekeerde van wat er stond.
+  const uitleg = describeUncomparableStore(
+    [line({ stores: new Map([["AH", store({ missingReason: "onze eigen prijs is onbekend" })]]) })],
+    "AH",
+    "Albert Heijn"
+  );
+  assert.match(uitleg!, /wel prijzen/);
+  assert.match(uitleg!, /[Oo]nze eigen prijs/);
+  assert.doesNotMatch(uitleg!, /ander soort/);
 });
