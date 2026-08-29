@@ -264,7 +264,16 @@ async function buildShoppingListLines(mealPlanId: string, householdId: string) {
   const ingredientIdList = Array.from(ingredientIds);
 
   const [allCandidates, trustedByIngredient, rejectedByIngredient] = await Promise.all([
-    prisma.product.findMany({ where: { ingredientId: { in: ingredientIdList } } }),
+    // Alleen Picnic-producten. Sinds de prijslaag staan er ook producten van
+    // Albert Heijn en Dirk in dezelfde tabel, en die zijn alleen bedoeld om
+    // mee te vergelijken — bestellen gaat en blijft via Picnic. Zonder deze
+    // afbakening kan de matcher een AH-product op een boodschappenregel
+    // zetten: die regel heeft dan geen Picnic-id, gaat stilzwijgend niet mee
+    // naar het mandje, en heeft bovendien het juiste Picnic-product
+    // verdrongen.
+    prisma.product.findMany({
+      where: { ingredientId: { in: ingredientIdList }, provider: "PICNIC" },
+    }),
     getTrustedPreferences(householdId, ingredientIdList),
     getRejectedProductIds(householdId, ingredientIdList),
   ]);
@@ -655,7 +664,12 @@ export async function getShoppingListCandidatesByIngredient(
   if (uniqueIngredientIds.length === 0) return new Map<string, Awaited<ReturnType<typeof getShoppingListCandidates>>>();
 
   const [products, rejectedMap] = await Promise.all([
-    prisma.product.findMany({ where: { ingredientId: { in: uniqueIngredientIds } } }),
+    // Zelfde afbakening als in `buildShoppingListLines`: dit zijn de
+    // alternatieven die de gebruiker op /controle kan kiezen, en die moeten
+    // besteld kunnen worden.
+    prisma.product.findMany({
+      where: { ingredientId: { in: uniqueIngredientIds }, provider: "PICNIC" },
+    }),
     getRejectedProductIds(householdId, uniqueIngredientIds),
   ]);
 

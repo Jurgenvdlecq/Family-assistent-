@@ -49,8 +49,20 @@ function fakeProvider(behaviour: (term: string) => Promise<ProviderProduct[]>): 
   };
 }
 
+/**
+ * Alleen opruimen wat déze test heeft aangemaakt.
+ *
+ * Stond hier eerder als "alle AH-producten". Dat is te breed: de tests draaien
+ * parallel tegen dezelfde database, dus dat wist ook de producten weg die een
+ * ander testbestand op datzelfde moment aan het gebruiken was. De nepprovider
+ * hierboven geeft elk product een `nep-`-voorvoegsel, en dat is precies de
+ * afbakening die hier hoort.
+ */
 async function cleanupAhProducts() {
-  const products = await prisma.product.findMany({ where: { provider: "AH" }, select: { id: true } });
+  const products = await prisma.product.findMany({
+    where: { provider: "AH", externalRef: { startsWith: "nep-" } },
+    select: { id: true },
+  });
   const ids = products.map((product) => product.id);
   await prisma.priceObservation.deleteMany({ where: { productId: { in: ids } } });
   await prisma.product.deleteMany({ where: { id: { in: ids } } });

@@ -83,6 +83,19 @@ migratie; los oppakken als het ooit hindert.
   `db:seed` doorlopen vóórdat `npm test` draait, anders falen die tests met
   een `findUniqueOrThrow`-fout. Dit kostte een mislukte eerste CI-proefdraai
   (WP80) om te ontdekken.
+- **Andersom is net zo gevaarlijk: een ontwikkeldatabase die nooit wordt
+  leeggemaakt.** Elke testrun die zijn eigen records niet opruimt laat
+  restanten achter, en die kunnen een test laten slagen die op de verse
+  database van de CI omvalt. Zo stond de CI 26 merges lang rood terwijl
+  `npm run verify` hier groen was — met een echte fout in de
+  productmatching eronder. Twee regels die daaruit volgen: (1) elke fixture
+  ruimt **alles** op wat ze aanmaakt, inclusief producten, ingrediënten en
+  recepten, en een cleanup is nooit breder dan wat die test zelf heeft
+  gemaakt (de tests draaien parallel tegen dezelfde database); (2) gooi de
+  ontwikkeldatabase periodiek leeg en seed opnieuw
+  (`npx prisma migrate reset --force` — dit vraagt expliciete toestemming
+  van de gebruiker, gevolgd door `npm run db:seed`) zodat je hier onder
+  dezelfde omstandigheden test als de CI.
 - Voor UI-verificatie: Playwright met het voorgeïnstalleerde systeem-Chromium
   (`executablePath: "/opt/pw-browsers/chromium"`), altijd gecombineerd met
   een directe Prisma-query als bron van waarheid — niet blind op

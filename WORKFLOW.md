@@ -105,6 +105,13 @@ een nieuwe sessie 'm niet zelf hoeft te reconstrueren.
    gebruiker dat zelf wel vindt.
 8. **`PROGRESS.md` bijgewerkt** met een nieuwe rij die kort beschrijft wat
    er gebouwd is, wat er getest is, en of er een migratie nodig was.
+9. **Na het mergen: de CI-uitslag op GitHub gecontroleerd** (workflow `CI`
+   op `main`, via de GitHub-tools). Een groene `npm run verify` in de
+   sandbox is geen bewijs: de CI draait tegen een **verse** database, de
+   sandbox tegen een database die volloopt met restanten van eerdere
+   testruns. Zo stond de CI 26 merges lang rood terwijl hier alles groen
+   was — met een echte fout eronder. Blijkt de CI rood, meld dat en los het
+   op in plaats van door te gaan.
 
 Wanneer een van deze punten niet haalbaar is binnen de huidige sandbox
 (bijvoorbeeld: een productiemigratie kan hier nooit zelf gedraaid worden),
