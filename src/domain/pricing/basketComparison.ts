@@ -191,6 +191,9 @@ export interface BasketComparison {
   totals: Map<ProductProvider, BasketStoreTotal>;
 }
 
+/** De eenheid zoals een mens hem leest, voor de uitleg op het scherm. */
+const UNIT_WORDS: Record<Unit, string> = { GRAM: "gram", ML: "ml", PIECE: "stuks" };
+
 /**
  * Hoeveel verpakkingen zijn er nodig, en houden we iets over?
  *
@@ -225,11 +228,19 @@ function packagesForLine(
     // naar een echte hoeveelheid, en pas daarna door die van de winkel.
     const ownContent = line.reference?.packageQuantity ?? null;
     const ownUnit = line.reference?.packageUnit ?? null;
-    if (
-      ownContent == null ||
-      packageQuantity == null ||
-      (ownUnit !== null && packageUnit !== null && ownUnit !== packageUnit)
-    ) {
+    if (ownUnit !== null && packageUnit !== null && ownUnit !== packageUnit) {
+      // Twee verpakkingen die niet in dezelfde eenheid staan: "4 stuks"
+      // tegenover "750 gram". Doorrekenen levert dan een bedrag op dat nergens
+      // op slaat — in productie werden drie pakken Alpro zo 563 verpakkingen
+      // van € 10,98. Wat de winkel wél verkoopt staat gewoon op het scherm,
+      // met deze reden erbij.
+      return {
+        packagesToBuy: null,
+        surplus: null,
+        reason: `verpakking in ${UNIT_WORDS[packageUnit]}, die van ons in ${UNIT_WORDS[ownUnit]}`,
+      };
+    }
+    if (ownContent == null || packageQuantity == null) {
       // Zonder onze eigen verpakkingsinhoud valt "drie keer die van ons" niet
       // om te rekenen naar die van de winkel. Dan liever niets zeggen dan een
       // bedrag dat er twaalf koopt.
@@ -253,7 +264,11 @@ function packagesForLine(
   // een andere eenheid hebben. Doorrekenen zou dan "2 stuks" tegen "1000 ml
   // per verpakking" afzetten en een bedrag opleveren dat nergens op slaat.
   if (packageUnit !== null && packageUnit !== line.unit) {
-    return { packagesToBuy: null, surplus: null, reason: "verpakking in een andere eenheid" };
+    return {
+      packagesToBuy: null,
+      surplus: null,
+      reason: `verpakking in ${UNIT_WORDS[packageUnit]}, nodig in ${UNIT_WORDS[line.unit]}`,
+    };
   }
 
   const requirement = calculatePackageRequirement({

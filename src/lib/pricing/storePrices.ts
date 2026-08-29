@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { ProductProvider, QualityTier, Unit } from "@/generated/prisma/enums";
 import { rankStoreProducts } from "@/domain/pricing/storeMatch";
+import { parsePackContent } from "@/domain/pricing/unitPrice";
 import type { ProviderProduct } from "@/domain/pricing/types";
 import { displayableProductUrl } from "@/domain/pricing/productUrl";
 import { getLatestPrices, isPriceStale } from "./observations";
@@ -22,6 +23,17 @@ export interface StorePriceForIngredient {
   packageSize: string | null;
   /** Inhoud in basiseenheden; `null` als de verpakking niet te lezen was. */
   packageQuantity: number | null;
+  /**
+   * De eenheid waarin `packageQuantity` staat — die van de verpakkingstekst
+   * zelf, niet die van het ingrediënt.
+   *
+   * Dat onderscheid is de kern. `packageQuantity` wordt gelezen uit wat er op
+   * de verpakking staat ("4 stuks", "1 l"), en dat hoeft niets te maken te
+   * hebben met de eenheid waarin wij het ingrediënt bijhouden. Stond hier de
+   * eenheid van het ingrediënt, dan lijken twee verpakkingen altijd in
+   * dezelfde eenheid te staan en rekent de vergelijking vrolijk "4 stuks" af
+   * tegen "750 gram" — dat leverde € 6.181,74 voor drie pakken Alpro op.
+   */
   unit: Unit | null;
   qualityTier: QualityTier | null;
   gtin: string | null;
@@ -39,6 +51,19 @@ export interface StorePriceForIngredient {
   observedAt: Date;
   /** Ouder dan de versheidsgrens — de UI moet dat erbij zeggen. */
   stale: boolean;
+}
+
+/**
+ * In welke eenheid staat de verpakkingsinhoud van dit winkelproduct?
+ *
+ * Uit de verpakkingstekst zelf, met dezelfde lezer die de inhoud ook heeft
+ * bepaald (`parsePackContent` in de prijsverversing) — zo horen getal en
+ * eenheid bij elkaar. Is de tekst niet te lezen, dan valt hij terug op de
+ * eenheid van het ingrediënt; `packageQuantity` is dan toch meestal `null`,
+ * en dan valt er verderop sowieso niets te rekenen.
+ */
+function packageContentUnit(packageSize: string | null, ingredientUnit: Unit | null): Unit | null {
+  return parsePackContent(packageSize)?.unit ?? ingredientUnit;
 }
 
 /** Per ingrediënt, per winkel: het best passende product met zijn laatste prijs. */
@@ -105,7 +130,7 @@ export async function getStoreProductsByIds(
         brand: product.brand,
         packageSize: product.packageSize,
         packageQuantity: product.packageQuantity,
-        unit: product.ingredient?.unit ?? null,
+        unit: packageContentUnit(product.packageSize, product.ingredient?.unit ?? null),
         qualityTier: product.qualityTier,
         gtin: product.gtin,
         freeFromAllergens: product.freeFromAllergens,
@@ -210,7 +235,7 @@ export async function getStoreCandidatesForIngredients(
         brand: chosen.brand,
         packageSize: chosen.packageSize,
         packageQuantity: chosen.packageQuantity,
-        unit: chosen.ingredient?.unit ?? null,
+        unit: packageContentUnit(chosen.packageSize, chosen.ingredient?.unit ?? null),
         qualityTier: chosen.qualityTier,
         gtin: chosen.gtin,
         freeFromAllergens: chosen.freeFromAllergens,

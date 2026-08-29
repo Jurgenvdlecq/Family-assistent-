@@ -260,7 +260,7 @@ test("het mandje: een verpakking in een andere eenheid levert geen bedrag op", (
   );
   const result = comparison.lines[0].stores.get("AH")!;
   assert.equal(result.cost, null);
-  assert.equal(result.missingReason, "verpakking in een andere eenheid");
+  assert.equal(result.missingReason, "verpakking in ml, nodig in stuks");
   assert.equal(comparison.totals.get("AH")!.hardTotal, 0);
 });
 
