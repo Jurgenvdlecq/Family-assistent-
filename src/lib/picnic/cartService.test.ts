@@ -665,3 +665,52 @@ test("producten die ná een bevestigde bestelling worden overgedragen maken die 
     await cleanup(household.id);
   }
 });
+
+test("mandje vullen: een product van een andere winkel gaat nooit naar Picnic", async () => {
+  // De laatste horde. Een AH-product heeft wél een `externalRef` (het
+  // webshop-id van die winkel), dus de "geen bevestigd Picnic-product"-
+  // controle slaat er niet op aan. Zo'n id naar Picnic sturen levert meestal
+  // een foutmelding op — maar in het ergste geval bestaat datzelfde id daar
+  // toevallig ook, en dan ligt er stilzwijgend een verkeerd product in het
+  // mandje. Handmatige en al overgedragen regels overleven elke herbouw, dus
+  // het filter bij de matcher alleen is niet genoeg.
+  const originalFetch = global.fetch;
+  let household: Awaited<ReturnType<typeof makeHouseholdWithShoppingListLine>>["household"] | undefined;
+
+  try {
+    const fixture = await makeHouseholdWithShoppingListLine("Winkelproduct in het mandje");
+    household = fixture.household;
+    const line = await prisma.shoppingListLine.findFirstOrThrow({
+      where: { shoppingListId: fixture.shoppingList.id },
+    });
+    const ahProduct = await prisma.product.create({
+      data: {
+        name: "AH Testproduct",
+        provider: "AH",
+        externalRef: `ah-test-${household.id}`,
+        ingredientId: line.ingredientId,
+        lastSeenAvailable: new Date(),
+      },
+    });
+    await prisma.shoppingListLine.update({ where: { id: line.id }, data: { productId: ahProduct.id } });
+
+    const callLog: string[] = [];
+    global.fetch = fakeAddProductFetch(callLog);
+
+    const result = await addShoppingListToPicnicCart(fixture.shoppingList.id);
+    assert.equal(result.added.length, 0);
+    assert.equal(
+      callLog.filter((url) => url.includes("/cart/add_product")).length,
+      0,
+      "er mag geen enkele aanroep naar Picnic zijn gedaan"
+    );
+    assert.equal(result.errors.length, 1);
+    assert.match(result.errors[0].message, /andere winkel/);
+
+    const after = await prisma.shoppingListLine.findUniqueOrThrow({ where: { id: line.id } });
+    assert.equal(after.transferredToPicnicAt, null, "en de regel geldt niet als overgedragen");
+  } finally {
+    global.fetch = originalFetch;
+    if (household) await cleanup(household.id);
+  }
+});

@@ -97,15 +97,18 @@ test("boodschappenlijst: naast een AH-product wint het Picnic-product", async ()
         lastSeenAvailable: new Date(),
       },
     });
-    // Goedkoper, en toch niet de winnaar: bij Albert Heijn bestellen kan de
-    // app niet, dus "goedkoper" is hier geen argument maar een valstrik.
+    // Bewust met een bekende verpakkingsgrootte, en het Picnic-product zonder:
+    // dan wint dit AH-product de afweging bij élke productvoorkeur. Een
+    // AH-product ís meestal zo'n geval, want Albert Heijn levert de inhoud
+    // gewoon mee. Zonder het providerfilter komt dit product dus op de regel —
+    // dat is wat deze test moet aantonen.
     await prisma.product.create({
       data: {
         name: "AH Testproduct",
         provider: "AH",
         externalRef: `ah-test-${household.id}`,
         ingredientId: ingredient.id,
-        price: 0.01,
+        packageQuantity: 500,
         lastSeenAvailable: new Date(),
       },
     });
@@ -113,6 +116,10 @@ test("boodschappenlijst: naast een AH-product wint het Picnic-product", async ()
     const list = await ensureShoppingList(mealPlan.id, household.id);
     const line = list.lines.find((candidate) => candidate.ingredientId === ingredient.id);
     assert.equal(line?.productId, picnicProduct.id);
+    // En het AH-product duwt de regel ook niet naar de twijfelstapel: het
+    // hoort geen kandidaat te zijn, niet een afgewezen kandidaat.
+    assert.equal(line?.matchStatus, "MATCHED_TRUSTED");
+    assert.equal(line?.needsReview, false);
   } finally {
     await cleanup(household.id);
   }

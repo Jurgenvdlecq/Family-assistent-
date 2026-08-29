@@ -16,7 +16,13 @@ export async function matchProductForIngredient(
   ingredientId: string
 ): Promise<ProductMatchResult> {
   const [products, trustedMap, rejectedMap, productChoicePreference] = await Promise.all([
-    prisma.product.findMany({ where: { ingredientId } }),
+    // Alleen Picnic-producten, net als in `buildShoppingListLines`. Dit is
+    // het pad voor álles wat níét de weekmenu-lijstopbouw is: een nieuwe
+    // vaste boodschap, een voorraadwijziging, en het opnieuw matchen nadat de
+    // gebruiker op /controle een product heeft afgewezen. Juist daar mag er
+    // geen product van Albert Heijn of Dirk uit komen — dat is een
+    // vergelijkingsproduct, geen bestelbaar artikel.
+    prisma.product.findMany({ where: { ingredientId, provider: "PICNIC" } }),
     getTrustedPreferences(householdId, [ingredientId]),
     getRejectedProductIds(householdId, [ingredientId]),
     getHouseholdProductChoicePreference(householdId),

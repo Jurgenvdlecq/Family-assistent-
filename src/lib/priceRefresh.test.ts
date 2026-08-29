@@ -110,10 +110,16 @@ test("verversing: slaat de gevonden producten op met een prijswaarneming", async
     assert.ok(result.productsStored > 0);
     assert.equal(result.errors.length, 0);
 
-    const stored = await prisma.product.count({ where: { provider: "AH" } });
+    // Even hard afgebakend als de opruiming hierboven: de testbestanden draaien
+    // parallel tegen dezelfde database, en andere bestanden houden op datzelfde
+    // moment ook AH-producten in leven. Een telling over álle AH-producten zou
+    // daardoor wisselend uitvallen.
+    const stored = await prisma.product.count({
+      where: { provider: "AH", externalRef: { startsWith: "nep-" } },
+    });
     assert.equal(stored, result.productsStored);
     const observations = await prisma.priceObservation.count({
-      where: { product: { provider: "AH" } },
+      where: { product: { provider: "AH", externalRef: { startsWith: "nep-" } } },
     });
     assert.equal(observations, result.productsStored, "elk opgeslagen product heeft een waarneming");
   } finally {
