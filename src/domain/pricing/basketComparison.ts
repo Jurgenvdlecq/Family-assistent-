@@ -73,6 +73,8 @@ export interface BasketLineStoreResult {
   productId: string;
   name: string;
   packageSize: string | null;
+  /** Wat er in één verpakking zit, in de eenheid van het ingrediënt. */
+  packageQuantity: number | null;
   /** Aantal verpakkingen dat je moet kopen om aan de behoefte te komen. */
   packagesToBuy: number | null;
   /** Wat dat kost. `null` als de verpakking onbekend is: dan valt er niets te rekenen. */
@@ -234,6 +236,7 @@ function priceLineAtStore(
     productId: candidate.productId,
     name: candidate.name,
     packageSize: candidate.packageSize,
+    packageQuantity: candidate.packageQuantity,
     packagesToBuy,
     cost,
     surplus: packaging.surplus,
