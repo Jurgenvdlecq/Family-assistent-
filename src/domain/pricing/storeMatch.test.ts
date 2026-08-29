@@ -142,7 +142,7 @@ test("rangschikken: het product dat op ons eigen product lijkt komt vooraan", ()
   const zonder = rankStoreProducts("Alpro", alpro, 8).map((match) => match.product.name);
   assert.equal(zonder[0], "Alpro Barista koffiemelk", "zo ging het mis");
 
-  const met = rankStoreProducts("Alpro", alpro, 8, "Alpro Mild & Creamy 750g").map(
+  const met = rankStoreProducts("Alpro", alpro, 8, { name: "Alpro Mild & Creamy 750g" }).map(
     (match) => match.product.name
   );
   assert.equal(met[0], "Alpro Mild & Creamy naturel");
@@ -152,4 +152,38 @@ test("zoekterm: getallen en verpakkingsmaten horen niet in de zoekopdracht", () 
   // Zoeken op "alpro mild creamy 750g" levert bij een winkel niets op.
   assert.equal(storeSearchTerm("Alpro Mild & Creamy 750g"), "alpro mild creamy");
   assert.equal(storeSearchTerm("Halfvolle melk 1 l"), "halfvolle melk");
+});
+
+test("rangschikken: bij gelijke namen beslist de verpakkingsvorm", () => {
+  // Gebruikersmelding: "Appelmoes nog steeds een pot in plaats van losse
+  // cups." Hier helpt de productnaam niets — ons eigen product heet "Picnic
+  // appelmoes", en na het weglaten van de winkelnaam blijft daar precies
+  // hetzelfde woord van over als de ingrediëntnaam. De vorm van de verpakking
+  // is dan het enige onderscheid dat er nog is.
+  const kandidaten = [
+    product("Hak Appelmoes", { packageSize: "350 g" }),
+    product("AH Appelmoes", { packageSize: "720 g" }),
+    product("AH Appelmoes cups", { packageSize: "4 x 100 g" }),
+  ];
+
+  const zonder = rankStoreProducts("Picnic Appelmoes", kandidaten, 8).map((m) => m.product.name);
+  assert.notEqual(zonder[0], "AH Appelmoes cups", "zo ging het mis: een pot bovenaan");
+
+  const met = rankStoreProducts("Picnic Appelmoes", kandidaten, 8, {
+    name: "Picnic appelmoes",
+    packageSize: "8 x 100 gram",
+  }).map((m) => m.product.name);
+  assert.equal(met[0], "AH Appelmoes cups");
+});
+
+test("rangschikken: een onbekende verpakkingsvorm telt nooit als verschil", () => {
+  // Onbekend is geen bewijs van het tegendeel; dan moet de volgorde puur op de
+  // naam blijven leunen.
+  const kandidaten = [product("AH Appelmoes", { packageSize: null })];
+  const ranked = rankStoreProducts("Appelmoes", kandidaten, 8, {
+    name: "Appelmoes",
+    packageSize: "8 x 100 gram",
+  });
+  assert.equal(ranked.length, 1);
+  assert.equal(ranked[0].sameForm, false);
 });

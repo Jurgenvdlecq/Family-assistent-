@@ -32,6 +32,11 @@ const REQUEST_SPACING_MS = 350;
 // er ligt.
 const CANDIDATES_PER_INGREDIENT = 8;
 
+// Hoeveel zoekresultaten we van een winkel bekijken. Tien was krap: bij een
+// breed begrip als "appelmoes" staan de cupjes makkelijk op plek twaalf, en
+// wat we niet zien kunnen we ook niet kiezen.
+const SEARCH_RESULT_LIMIT = 20;
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -83,7 +88,7 @@ export async function getPricedIngredients(options?: PricedIngredientOptions) {
       // benadering van "wat kopen we nu".
       products: {
         where: { provider: "PICNIC" },
-        select: { name: true },
+        select: { name: true, packageSize: true },
         orderBy: { lastSeenAvailable: { sort: "desc", nulls: "last" } },
         take: 1,
       },
@@ -95,6 +100,7 @@ export async function getPricedIngredients(options?: PricedIngredientOptions) {
     id: ingredient.id,
     name: ingredient.name,
     referenceProductName: ingredient.products[0]?.name ?? null,
+    referencePackageSize: ingredient.products[0]?.packageSize ?? null,
   }));
 
   if (!householdId || !weekStart) return ingredients;
@@ -184,20 +190,18 @@ export async function refreshStorePrices(
         ? storeSearchTerm(ingredient.referenceProductName)
         : null;
       const fallbackTerm = storeSearchTerm(ingredient.name);
-      let found = await provider.search(ownTerm ?? fallbackTerm, { limit: 10 });
+      let found = await provider.search(ownTerm ?? fallbackTerm, { limit: SEARCH_RESULT_LIMIT });
       if (found.length === 0 && ownTerm !== null && ownTerm !== fallbackTerm) {
         await sleep(REQUEST_SPACING_MS);
-        found = await provider.search(fallbackTerm, { limit: 10 });
+        found = await provider.search(fallbackTerm, { limit: SEARCH_RESULT_LIMIT });
       }
       consecutiveFailures = 0;
       result.itemsSeen = (result.itemsSeen ?? 0) + found.length;
 
-      const matches = rankStoreProducts(
-        ingredient.name,
-        found,
-        CANDIDATES_PER_INGREDIENT,
-        ingredient.referenceProductName
-      );
+      const matches = rankStoreProducts(ingredient.name, found, CANDIDATES_PER_INGREDIENT, {
+        name: ingredient.referenceProductName,
+        packageSize: ingredient.referencePackageSize,
+      });
       if (matches.length === 0) {
         result.ingredientsWithoutMatch += 1;
         continue;
@@ -335,12 +339,10 @@ export async function refreshDirkPrices(
 
   for (const ingredient of ingredients) {
     result.ingredientsChecked += 1;
-    const matches = rankStoreProducts(
-      ingredient.name,
-      catalogue.products,
-      CANDIDATES_PER_INGREDIENT,
-      ingredient.referenceProductName
-    );
+    const matches = rankStoreProducts(ingredient.name, catalogue.products, CANDIDATES_PER_INGREDIENT, {
+      name: ingredient.referenceProductName,
+      packageSize: ingredient.referencePackageSize,
+    });
     if (matches.length === 0) {
       result.ingredientsWithoutMatch += 1;
       continue;
