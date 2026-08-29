@@ -119,8 +119,14 @@ export async function getBasketOverview(
 
   const ingredientIds = [...new Set(lines.map((line) => line.ingredientId))];
 
+  // Waarmee de rangschikking moet vergelijken: het product dat op de regel
+  // staat, dus wat er werkelijk besteld zou worden.
+  const referenceNameByIngredient = new Map<string, string | null>(
+    lines.map((line) => [line.ingredientId, line.product?.name ?? null])
+  );
+
   const [rankedByIngredient, choices] = await Promise.all([
-    getStoreCandidatesForIngredients(ingredientIds, providers, 6, now),
+    getStoreCandidatesForIngredients(ingredientIds, providers, 8, now, referenceNameByIngredient),
     prisma.householdStoreProductChoice.findMany({
       where: { householdId, ingredientId: { in: ingredientIds }, provider: { in: providers } },
     }),

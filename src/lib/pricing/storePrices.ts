@@ -160,8 +160,16 @@ export async function getStoreProductsByIds(
 export async function getStoreCandidatesForIngredients(
   ingredientIds: string[],
   providers: ProductProvider[],
-  perProviderLimit = 6,
-  now: Date = new Date()
+  perProviderLimit = 8,
+  now: Date = new Date(),
+  /**
+   * Per ingrediënt de naam van het product dat wij zelf kopen.
+   *
+   * Zonder dit rangschikt deze functie alleen op de ingrediëntnaam, en die is
+   * soms alleen een merk — dan scoren alle varianten gelijk en beslist een
+   * willekeurige tiebreak welke er overblijven bij het afkappen.
+   */
+  referenceNameByIngredient?: Map<string, string | null>
 ): Promise<StoreCandidatesByIngredient> {
   const result: StoreCandidatesByIngredient = new Map();
   if (ingredientIds.length === 0 || providers.length === 0) return result;
@@ -219,7 +227,8 @@ export async function getStoreCandidatesForIngredients(
           url: candidate.productUrl,
         })
       ),
-      perProviderLimit
+      perProviderLimit,
+      referenceNameByIngredient?.get(ingredientId) ?? null
     );
     if (ranked.length === 0) continue;
 
