@@ -53,13 +53,65 @@ const NOISE_WORDS = new Set([
   "verpakking",
 ]);
 
-function contentWords(value: string): string[] {
+export function contentWords(value: string): string[] {
   return normalize(value)
     .split(" ")
     .filter((word) => word.length > 2 && !NOISE_WORDS.has(word));
 }
 
 export const STORE_MATCH_THRESHOLD = 0.6;
+
+/**
+ * Hoeveel van de gevraagde woorden komen echt terug in deze productnaam?
+ *
+ * Alleen **hele woorden** tellen. Dat is de kern van deze functie, en het is
+ * met schade en schande geleerd: eerder werd er op letterniveau gezocht, en
+ * dan zit "papier" in "printpapier". Zo kreeg "wc papier" een perfecte score
+ * op AH-printpapier — precies het soort match dat er overtuigend uitziet en
+ * het verkeerde product is.
+ *
+ * Eén uitzondering, en die is symmetrisch: winkels schrijven samenstellingen
+ * los of aaneen. "Allesreinigerdoekjes" bij ons, "Allesreiniger doekjes" bij
+ * Albert Heijn. Een reeks opeenvolgende woorden aan de ene kant mag daarom
+ * samen precies één woord aan de andere kant vormen. "Precies" is het hele
+ * punt: "papier" vormt niet "printpapier", want "print" blijft over — en
+ * juist dat overgebleven stuk is wat de twee producten verschillend maakt.
+ * In een Nederlandse samenstelling zit de soort vooraan, niet achteraan.
+ */
+export function wordCoverage(wanted: string[], productWords: string[]): number {
+  if (wanted.length === 0) return 0;
+
+  const covered = new Array<boolean>(wanted.length).fill(false);
+  const productSet = new Set(productWords);
+
+  for (const [index, word] of wanted.entries()) {
+    if (productSet.has(word)) covered[index] = true;
+  }
+
+  // Losse productwoorden die samen één gevraagd woord vormen.
+  for (let start = 0; start < productWords.length; start++) {
+    let joined = "";
+    for (let end = start; end < productWords.length; end++) {
+      joined += productWords[end];
+      for (const [index, word] of wanted.entries()) {
+        if (!covered[index] && word === joined) covered[index] = true;
+      }
+    }
+  }
+
+  // En andersom: losse gevraagde woorden die samen één productwoord vormen.
+  for (let start = 0; start < wanted.length; start++) {
+    let joined = "";
+    for (let end = start; end < wanted.length; end++) {
+      joined += wanted[end];
+      if (productSet.has(joined)) {
+        for (let index = start; index <= end; index++) covered[index] = true;
+      }
+    }
+  }
+
+  return covered.filter(Boolean).length / wanted.length;
+}
 
 /**
  * Waarmee we bij een winkel zoeken.
@@ -81,19 +133,7 @@ export function storeSearchTerm(ingredientName: string): string {
  * de productnaam. Onder de drempel geldt het als niet gevonden.
  */
 export function scoreStoreProductForIngredient(ingredientName: string, productName: string): number {
-  const wanted = contentWords(ingredientName);
-  if (wanted.length === 0) return 0;
-
-  const haystack = normalize(productName);
-  // Ook zonder spaties vergelijken. Winkels schrijven samenstellingen
-  // verschillend: "Allesreinigerdoekjes" bij ons, "Allesreiniger doekjes" bij
-  // Albert Heijn. Dat is hetzelfde product, maar op letterniveau vond de ene
-  // vorm de andere niet — en dan meldde het scherm "niet gevonden" terwijl het
-  // product er ligt. Dit voegt geen enkele nieuwe overeenkomst toe die niet
-  // letterlijk uit dezelfde letters bestaat.
-  const joined = haystack.replace(/ /g, "");
-  const hits = wanted.filter((word) => haystack.includes(word) || joined.includes(word)).length;
-  return hits / wanted.length;
+  return wordCoverage(contentWords(ingredientName), contentWords(productName));
 }
 
 export interface StoreMatchResult {

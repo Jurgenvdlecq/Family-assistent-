@@ -110,3 +110,20 @@ test("zoeken: losse letters blijven geen match", () => {
   // uit dezelfde letters bestaan.
   assert.ok(scoreStoreProductForIngredient("Appelmoes", "AH Bananen") < 0.6);
 });
+
+test("matching: 'wc papier' matcht geen printpapier — een woord telt alleen als heel woord", () => {
+  // Gebruikersmelding: bij toiletpapier stond printpapier van Albert Heijn.
+  // Oorzaak: er werd op letterniveau gezocht, en "papier" zit in "printpapier".
+  assert.equal(scoreStoreProductForIngredient("Wc papier", "AH Printpapier A4 wit"), 0);
+  assert.equal(scoreStoreProductForIngredient("Keukenpapier", "AH Printpapier"), 0);
+  // Karnemelk is geen melk, om precies dezelfde reden.
+  assert.equal(scoreStoreProductForIngredient("Melk", "AH Karnemelk"), 0);
+});
+
+test("matching: los of aaneen geschreven blijft wél matchen, in beide richtingen", () => {
+  // De uitzondering op de regel hierboven: een reeks woorden mag samen precies
+  // één woord aan de andere kant vormen. "Precies" is het hele punt.
+  assert.equal(scoreStoreProductForIngredient("Allesreinigerdoekjes", "AH Allesreiniger doekjes citroen"), 1);
+  assert.equal(scoreStoreProductForIngredient("Allesreiniger doekjes", "AH Allesreinigerdoekjes"), 1);
+  assert.equal(scoreStoreProductForIngredient("Toiletpapier", "AH Toiletpapier 8 rollen"), 1);
+});
