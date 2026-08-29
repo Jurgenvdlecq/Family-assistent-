@@ -113,9 +113,19 @@ export async function refreshPricesNow() {
   const runIds = await startRefreshRuns(REFRESH_PROVIDERS, "MANUAL");
   const results: RefreshResult[] = [];
 
+  // Elke winkel krijgt een eigen deel van de tijd, en samen blijven ze ruim
+  // onder wat de hostingpartij toestaat. Zonder deze begrenzing kapt Vercel
+  // de aanroep af, krijgt de browser nooit antwoord en blijft de knop op
+  // "bezig met ophalen" staan — precies wat er in productie gebeurde.
+  const budgetPerProvider = Math.floor(MANUAL_TIME_BUDGET_MS / REFRESH_PROVIDERS.length);
+
   // Elke winkel apart afhandelen: een storing bij de één mag de ander niet
   // meeslepen — dan zie je van geen van beide wat er aan de hand is.
   for (const provider of REFRESH_PROVIDERS) {
+    // De winkels gaan één voor één, dus elke winkel telt haar deel vanaf nu.
+    // Is de vorige sneller klaar dan haar deel, dan schuift die winst niet
+    // door — dat zou de laatste winkel over het totaal heen kunnen tillen.
+    const deadline = Date.now() + budgetPerProvider;
     let result: RefreshResult;
     try {
       result =
@@ -125,12 +135,14 @@ export async function refreshPricesNow() {
               withExtras: false,
               prioritiseHouseholdId: household.id,
               weekStart,
+              deadline,
             })
           : await refreshDirkPrices({
               limitIngredients: MANUAL_INGREDIENT_LIMIT,
               maxCategories: MANUAL_DIRK_CATEGORY_LIMIT,
               prioritiseHouseholdId: household.id,
               weekStart,
+              deadline,
             });
     } catch (error) {
       result = failedRun(provider, error);
@@ -160,6 +172,16 @@ const MANUAL_INGREDIENT_LIMIT = 15;
 
 /** En zoveel categoriepagina's bij Dirk. */
 const MANUAL_DIRK_CATEGORY_LIMIT = 6;
+
+/**
+ * Hoeveel tijd de hele knop mag kosten, verdeeld over de winkels.
+ *
+ * Ruim onder de 60 seconden die de pagina zichzelf toestaat: de laatste
+ * seconden zijn nodig om de uitslag weg te schrijven en door te sturen. Wordt
+ * dit aan de hostingpartij overgelaten, dan wordt de aanroep midden in het
+ * werk afgekapt en blijft de knop eindeloos op "bezig met ophalen" staan.
+ */
+const MANUAL_TIME_BUDGET_MS = 40_000;
 
 /** Een winkel die helemaal niet bereikbaar was, in dezelfde vorm als een gewone uitslag. */
 function failedRun(provider: ProductProvider, error: unknown): RefreshResult {

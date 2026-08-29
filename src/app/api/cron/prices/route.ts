@@ -8,6 +8,23 @@ import type { ProductProvider } from "@/generated/prisma/enums";
 const REFRESH_PROVIDERS: ProductProvider[] = ["AH", "DIRK"];
 
 /**
+ * Deze taak mag lang duren; hij haalt honderden prijzen op.
+ *
+ * Zonder deze regel gold de standaardlimiet van de hostingpartij (tien à
+ * vijftien seconden), en dan werd de verversing elke nacht midden in het werk
+ * afgekapt — terwijl het scherm de gebruiker beloofde dat "de volledige lijst
+ * elke nacht vanzelf gaat". Zestig seconden werkt op elk Vercel-abonnement.
+ */
+export const maxDuration = 60;
+
+/**
+ * Waar de taak zichzelf stopt: ruim vóór de limiet hierboven, zodat er tijd
+ * overblijft om de uitslag per winkel weg te schrijven. Wat niet af komt,
+ * gaat de volgende nacht mee — en dat staat ook zo in de melding.
+ */
+const CRON_TIME_BUDGET_MS = 50_000;
+
+/**
  * Dagelijkse prijsverversing, aangeroepen door een cron (Vercel Cron).
  *
  * Bewust een geplande taak en nooit tijdens het laden van een pagina: een
@@ -41,7 +58,7 @@ export async function GET(request: Request) {
     // halverwege afgekapt, dan is dat straks zichtbaar op het scherm in
     // plaats van dat er niets van te zien is.
     const runIds = await startRefreshRuns(REFRESH_PROVIDERS, "CRON");
-    const results = await refreshAllStorePrices();
+    const results = await refreshAllStorePrices({ deadline: Date.now() + CRON_TIME_BUDGET_MS });
     for (const result of results) {
       const runId = runIds.get(result.provider);
       if (runId) await finishRefreshRun(runId, result);
