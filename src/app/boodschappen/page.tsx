@@ -444,9 +444,24 @@ function StoreBasketHint({ overview }: { overview: Awaited<ReturnType<typeof get
   const usable = COMPARISON_PROVIDERS.map((provider) => overview.comparison.totals.get(provider)).filter(
     (total) => total !== undefined && total.linesCompared > 0
   ) as NonNullable<ReturnType<typeof overview.comparison.totals.get>>[];
-  if (lineCount === 0 || usable.length === 0) return null;
+  // Alleen de paar acties die echt geld schelen, en vaste boodschappen eerst —
+  // die koop je elke week.
+  const highlights = overview.promoHighlights.slice(0, 3);
+  if (lineCount === 0 || (usable.length === 0 && highlights.length === 0)) return null;
 
   return (
+    <>
+    {highlights.length > 0 && (
+      <p className="mb-3 text-xs text-tag-green-ink">
+        Deze week in de actie:{" "}
+        {highlights
+          .map(
+            (highlight) =>
+              `${highlight.ingredientName} bij ${PROVIDER_LABELS[highlight.provider]} (${highlight.promoLabel}, scheelt € ${highlight.saving.toFixed(2)})`
+          )
+          .join(" · ")}
+      </p>
+    )}
     <p className="mb-3 text-xs text-ink-faint">
       {usable.map((total) => (
         <span key={total.provider}>
@@ -458,6 +473,7 @@ function StoreBasketHint({ overview }: { overview: Awaited<ReturnType<typeof get
         Bekijk regel voor regel
       </Link>
     </p>
+    </>
   );
 }
 

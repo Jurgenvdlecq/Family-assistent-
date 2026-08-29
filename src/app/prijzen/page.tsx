@@ -257,7 +257,24 @@ export default async function PrijzenPage({
                                 </p>
                               )}
                               {store.promoLabel && (
-                                <p className="mt-0.5 text-xs text-tag-green-ink">{store.promoLabel}</p>
+                                <p className="mt-0.5 text-xs text-tag-green-ink">
+                                  {store.promoLabel}
+                                  {/* Wat de actie hier concreet doet. "1+1 gratis"
+                                      is bij drie stuks 33% korting, niet 50% — en
+                                      bij één stuk helemaal geen. */}
+                                  {store.promoExplanation ? ` · ${store.promoExplanation}` : ""}
+                                  {store.costWithoutPromo !== null &&
+                                  store.cost !== null &&
+                                  store.costWithoutPromo > store.cost
+                                    ? ` · zonder actie ${euro(store.costWithoutPromo)}`
+                                    : ""}
+                                </p>
+                              )}
+                              {store.fakeDiscount && (
+                                <p className="mt-0.5 text-xs text-tag-amber-ink">
+                                  Let op: die van-prijs is hier de afgelopen weken niet gerekend. Dit is
+                                  gewoon de normale prijs.
+                                </p>
                               )}
                               {store.missingReason && (
                                 <p className="mt-0.5 text-xs text-tag-amber-ink">

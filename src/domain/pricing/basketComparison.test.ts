@@ -38,6 +38,8 @@ function candidate(overrides: Partial<StoreCandidateInput> = {}): StoreCandidate
     packageQuantity: 1000,
     packageUnit: "ML",
     promoLabel: null,
+    promoUntil: null,
+    wasPrice: null,
     observedAt: OBSERVED,
     stale: false,
     ...overrides,
@@ -260,6 +262,47 @@ test("het mandje: een verpakking in een andere eenheid levert geen bedrag op", (
   assert.equal(result.cost, null);
   assert.equal(result.missingReason, "verpakking in een andere eenheid");
   assert.equal(comparison.totals.get("AH")!.hardTotal, 0);
+});
+
+test("het mandje: een actie telt mee in het bedrag, met het echte mechanisme", () => {
+  // 3 liter melk is 3 pakken; met 1+1 gratis betaal je er twee. Het bedrag op
+  // het scherm hoort te kloppen met de kassabon, niet met het bordje.
+  const comparison = compareBasket(
+    [line()],
+    new Map([["regel-melk", [candidate({ promoLabel: "1+1 gratis" })]]]),
+    ["AH"]
+  );
+  const result = comparison.lines[0].stores.get("AH")!;
+  assert.equal(result.cost, 2.58, "2 pakken van € 1,29");
+  assert.equal(result.costWithoutPromo, 3.87);
+  assert.match(result.promoExplanation!, /3 halen, 2 betalen/);
+  assert.equal(comparison.totals.get("AH")!.hardTotal, 2.58);
+});
+
+test("het mandje: een verlopen actie wordt niet toegepast", () => {
+  const comparison = compareBasket(
+    [line()],
+    new Map([
+      [
+        "regel-melk",
+        [candidate({ promoLabel: "1+1 gratis", promoUntil: new Date("2026-08-01T00:00:00Z") })],
+      ],
+    ]),
+    ["AH"],
+    new Date("2026-08-28T05:00:00Z")
+  );
+  assert.equal(comparison.lines[0].stores.get("AH")!.cost, 3.87, "gewoon drie pakken");
+});
+
+test("het mandje: een nepkorting wordt gemarkeerd, niet verzwegen", () => {
+  const comparison = compareBasket(
+    [line()],
+    new Map([["regel-melk", [candidate({ wasPrice: 1.99, fakeDiscount: true })]]]),
+    ["AH"]
+  );
+  const result = comparison.lines[0].stores.get("AH")!;
+  assert.equal(result.fakeDiscount, true);
+  assert.equal(result.cost, 3.87, "de prijs blijft wat hij is");
 });
 
 test("het mandje: de oudste prijs in het totaal wordt onthouden", () => {

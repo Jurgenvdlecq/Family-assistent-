@@ -11,7 +11,8 @@ import "dotenv/config";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { prisma } from "./prisma";
-import { getLatestPrices, isPriceStale, recordObservedProduct } from "./pricing/observations";
+import { getLatestPrices, getPriceHistories, isPriceStale, recordObservedProduct } from "./pricing/observations";
+import { judgeDiscount } from "@/domain/pricing/priceHistory";
 import type { ProviderProduct } from "@/domain/pricing/types";
 
 function ahProduct(overrides: Partial<ProviderProduct> = {}): ProviderProduct {
@@ -165,4 +166,43 @@ test("prijsversheid: een waarneming van gisteren is vers, van vorige week niet",
   const now = new Date("2026-08-28T12:00:00Z");
   assert.equal(isPriceStale(new Date("2026-08-28T06:00:00Z"), now), false);
   assert.equal(isPriceStale(new Date("2026-08-21T12:00:00Z"), now), true);
+});
+
+test("prijsverloop: de geschiedenis komt terug als reeks, en oude waarnemingen vallen buiten het venster", async () => {
+  // Dit is waarvoor de prijs een waarneming in de tijd is: pas met een reeks
+  // kun je een nepkorting herkennen.
+  const ingredient = await prisma.ingredient.findUniqueOrThrow({ where: { name: "Melk" } });
+  const product = await recordObservedProduct({
+    product: ahProduct({ externalRef: `ah-historie-${Date.now()}`, price: 1.29 }),
+    ingredientId: ingredient.id,
+    source: "API",
+  });
+
+  try {
+    const dagen = (aantal: number) => new Date(Date.now() - aantal * 24 * 60 * 60 * 1000);
+    await prisma.priceObservation.createMany({
+      data: [
+        { productId: product.id, price: 1.29, observedAt: dagen(7), source: "API" },
+        { productId: product.id, price: 1.29, observedAt: dagen(14), source: "API" },
+        { productId: product.id, price: 1.29, observedAt: dagen(21), source: "API" },
+        // Ruim buiten het venster: mag niet meetellen.
+        { productId: product.id, price: 1.99, observedAt: dagen(400), source: "API" },
+      ],
+    });
+
+    const histories = await getPriceHistories([product.id], 60);
+    const samples = histories.get(product.id) ?? [];
+    assert.ok(samples.length >= 4, "de waarnemingen binnen het venster horen terug te komen");
+    assert.ok(
+      !samples.some((sample) => sample.price === 1.99),
+      "een waarneming van meer dan een jaar geleden valt buiten het venster"
+    );
+
+    // En het oordeel dat erop leunt: een van-prijs van € 1,99 die hier in de
+    // afgelopen twee maanden nooit gerekend is, is geen korting.
+    const verdict = judgeDiscount({ price: 1.29, wasPrice: 1.99, observedAt: new Date() }, samples);
+    assert.equal(verdict.kind, "NEPKORTING");
+  } finally {
+    await cleanup([product.id]);
+  }
 });
