@@ -33,6 +33,8 @@ import { mealEntryNeeds, mealEntryTitle } from "@/domain/meal-planning/mealEntry
 import { setIngredientFulfillment } from "./fulfillmentActions";
 import { getStorePricesForIngredients, type StorePriceForIngredient } from "@/lib/pricing/storePrices";
 import { getBasketOverview, COMPARISON_PROVIDERS } from "@/lib/pricing/basket";
+import { compareLineAcrossStores } from "@/domain/pricing/lineComparison";
+import type { BasketLineResult } from "@/domain/pricing/basketComparison";
 import { PROVIDER_LABELS } from "@/domain/pricing/types";
 import type { ProductProvider } from "@/generated/prisma/enums";
 import { getFixedGroceries } from "@/lib/fixedGroceries";
@@ -382,45 +384,52 @@ function preparePicnicTransferText(lines: Array<{
 }
 
 /**
- * Wat dit product bij een andere winkel kost, als we dat weten.
+ * Wat déze regel bij elke winkel kost, op één regel.
  *
- * Bewust terughoudend: één regel, met de verpakkingsgrootte erbij (anders zegt
- * een bedrag niets — AH verkoopt liters waar een andere winkel halve liters
- * verkoopt) en met een waarschuwing als de prijs oud is. Weten we het niet,
- * dan staat er niets: een ontbrekende prijs mag nooit als nul of als
- * "goedkoper" overkomen. Het doorrekenen van de hele lijst komt apart.
+ * Bewust de kosten van wat je deze week nodig hebt en niet de prijs per
+ * verpakking: AH verkoopt liters waar een andere winkel halve liters verkoopt,
+ * en dan zegt een los bedrag niets. Drie bedragen naast elkaar zijn alleen
+ * eerlijk als ze alle drie op dezelfde manier zijn uitgerekend.
+ *
+ * Een winkel zonder prijs staat er niet tussen — nooit als € 0. Een product
+ * dat een ander soort is krijgt dat er in gewone taal bij, want anders zou een
+ * lager bedrag als besparing lezen terwijl je iets anders in huis haalt. De
+ * hele uitleg staat op /prijzen.
  */
-function StorePriceHint({
-  prices,
+function LinePriceComparison({
+  line,
   hardRestrictions,
+  allergenPrices,
 }: {
-  prices: Map<ProductProvider, StorePriceForIngredient> | undefined;
+  line: BasketLineResult | undefined;
   hardRestrictions: string[];
+  allergenPrices: Map<ProductProvider, StorePriceForIngredient> | undefined;
 }) {
-  const known = prices ? [...prices.values()] : [];
-  if (known.length === 0) return null;
-
   // Alleen een bevestiging tonen, nooit een waarschuwing: het ontbreken van
   // "vrij van vis" betekent niet dat er vis in zit. Bij een allergie mag de
   // app alleen iets zeggen als de winkel het expliciet garandeert.
   const confirmed = [
     ...new Set(
-      known.flatMap((store) => store.freeFromAllergens.filter((tag) => hardRestrictions.includes(tag)))
+      [...(allergenPrices?.values() ?? [])].flatMap((store) =>
+        store.freeFromAllergens.filter((tag) => hardRestrictions.includes(tag))
+      )
     ),
   ];
 
+  const cells = line ? compareLineAcrossStores(line, COMPARISON_PROVIDERS).filter((cell) => cell.cost !== null) : [];
+
   return (
     <>
-      <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-ink-faint">
-        {known.map((store) => (
-          <span key={store.provider}>
-            {PROVIDER_LABELS[store.provider]} € {store.price.toFixed(2).replace(".", ",")}
-            {store.packageSize ? ` · ${store.packageSize}` : ""}
-            {store.promoLabel ? ` · ${store.promoLabel}` : ""}
-            {store.stale ? " · prijs is ouder dan een dag" : ""}
-          </span>
-        ))}
-      </p>
+      {cells.length > 0 && (
+        <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-ink-faint">
+          {cells.map((cell) => (
+            <span key={cell.provider} className={cell.cheapest ? "font-medium text-tag-green-ink" : undefined}>
+              {PROVIDER_LABELS[cell.provider]} € {cell.cost!.toFixed(2).replace(".", ",")}
+              {cell.note ? ` (${cell.note})` : ""}
+            </span>
+          ))}
+        </p>
+      )}
       {confirmed.length > 0 && (
         <p className="mt-0.5 text-xs text-tag-green-ink">
           Albert Heijn bevestigt: vrij van {confirmed.join(" en ")}
@@ -995,6 +1004,12 @@ export default async function BoodschappenPage({
   // vaak leeg terwijl er wel vaste boodschappen klaarstaan — dan stond er
   // "Prijs onbekend" bij een lijst met vijftien producten.
   const listTotalCost = sortedLines.reduce((total, line) => total + estimatedLineCost(line), 0);
+  // De doorgerekende regels, opzoekbaar per boodschappenregel — zo staat op
+  // elke regel wat hij bij elke winkel kost, zonder er nog een query voor te
+  // doen.
+  const basketLineById = new Map(
+    (basketOverview?.comparison.lines ?? []).map((line) => [line.lineId, line])
+  );
   // Wat er daadwerkelijk naar het Picnic-mandje is gegaan — de basis voor het
   // bonnetje hieronder.
   const orderedLines = sortedLines.filter((line) => line.transferredToPicnicAt !== null);
@@ -1052,8 +1067,9 @@ export default async function BoodschappenPage({
               {line.transferredToPicnicAt && (
                 <p className="mt-0.5 text-xs font-medium text-tag-green-ink">Staat al in je Picnic-mandje</p>
               )}
-              <StorePriceHint
-                prices={storePricesByIngredient.get(line.ingredientId)}
+              <LinePriceComparison
+                line={basketLineById.get(line.id)}
+                allergenPrices={storePricesByIngredient.get(line.ingredientId)}
                 hardRestrictions={householdHardRestrictions}
               />
             </div>

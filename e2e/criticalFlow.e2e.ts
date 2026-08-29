@@ -1162,19 +1162,39 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         });
         const row = page.locator(`#regel-${line.id}`);
         await row.waitFor({ state: "visible", timeout: 10_000 });
-        // Een bedrag mag alleen naast het onze staan als het over dezelfde
-        // regels gaat; die tekst hoort er dus letterlijk bij te staan.
-        await page.locator("text=voor diezelfde regels").first().waitFor({ state: "visible", timeout: 10_000 });
+        // Een winkelbedrag mag alleen naast het onze staan als het over
+        // dezelfde regels gaat. In de totalentabel is dat een eigen rij, en
+        // die hoort er te staan zodra er iets te vergelijken valt.
+        await page
+          .locator("text=Bij Picnic, dezelfde regels")
+          .first()
+          .waitFor({ state: "visible", timeout: 10_000 });
 
-        // En de correctie: zelf een ander product aanwijzen.
+        // De drie winkels staan naast elkaar boven aan de regel; het bedrag
+        // van Albert Heijn hoort er gewoon te staan.
+        await row.locator("text=Albert Heijn").first().waitFor({ state: "visible", timeout: 10_000 });
+
+        // En de correctie: zelf een ander product aanwijzen. Eén uitklapblok
+        // openzetten is genoeg; de alternatieven staan daarbinnen meteen.
         await row.locator("details").first().evaluate((el) => {
           (el as HTMLDetailsElement).open = true;
         });
         const otherForm = row.locator(`form:has(input[value="${createdProductIds[1]}"])`);
-        await otherForm.getByRole("button", { name: "Kies" }).click();
-        await page.waitForURL((url) => url.searchParams.get("status") === "keuze-opgeslagen", {
-          timeout: 15_000,
-        });
+        const chooseButton = otherForm.getByRole("button", { name: "Kies" });
+        // Wachten tot de knop echt in beeld staat: het uitklappen verschuift de
+        // pagina, en een klik die daar tussendoor valt komt nergens aan.
+        await chooseButton.waitFor({ state: "visible", timeout: 10_000 });
+        await chooseButton.scrollIntoViewIfNeeded();
+        await chooseButton.click();
+
+        // Op het gedrag wachten, niet op de URL: de doorrekening hoort vanaf nu
+        // met het gekozen product te rekenen. Dat is wat dit werkpakket belooft
+        // — een rij in de database bewijst dat niet.
+        // Nadrukkelijk de vergelijkingscel van Albert Heijn, niet zomaar ergens
+        // op de regel: het bedrag staat ook in de keuzelijst, en daar zou de
+        // test op aanslaan zonder dat de doorrekening iets doet.
+        const ahCell = row.locator('[data-store-cell="AH"]');
+        await ahCell.getByText("2,19").waitFor({ state: "visible", timeout: 15_000 });
 
         const choice = await prisma.householdStoreProductChoice.findFirst({
           where: { householdId, ingredientId: line.ingredientId, provider: "AH" },
@@ -1182,14 +1202,6 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
         assert.ok(choice, "De keuze hoort onthouden te zijn");
         assert.equal(choice!.productId, createdProductIds[1]);
 
-        // En het gedrag dat dit werkpakket belooft: de doorrekening rekent
-        // voortaan met het gekozen product. Een rij in de database is daar
-        // geen bewijs van — de duurdere variant hoort nu op de regel te staan.
-        const chosenRow = page.locator(`#regel-${line.id}`);
-        await chosenRow
-          .locator(`text=${`AH ${line.ingredient.name} groot`}`)
-          .first()
-          .waitFor({ state: "visible", timeout: 10_000 });
       } finally {
         await prisma.householdStoreProductChoice.deleteMany({ where: { householdId } });
         await prisma.priceObservation.deleteMany({ where: { productId: { in: createdProductIds } } });
