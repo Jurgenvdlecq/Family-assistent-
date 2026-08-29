@@ -411,3 +411,67 @@ test("Dirk-verversing: een zoekopdracht die wél aankomt maar niets passends gee
     await cleanupDirkProducts();
   }
 });
+
+/**
+ * De zelf ingetypte zoekterm, waar de gebruiker om vroeg: "Is er een
+ * mogelijkheid dat ik iets in kan typen zodat ie de juiste zoekt? Bv beschuit
+ * naturel of iets dergelijks?"
+ *
+ * Voor de gevallen waar woordvergelijking principieel niet uitkomt — wij
+ * noemen het "Snack Tomaatjes", de winkel verkoopt "snoeptomaatjes", geen
+ * enkel woord gemeen. De term moet vóór alles gaan: vóór het product dat we
+ * bij Picnic kopen, en vóór de ingrediëntnaam.
+ */
+test("Dirk-verversing: een ingetypte zoekterm vindt een product met een totaal andere naam", async () => {
+  const ingredients = await getPricedIngredients();
+  const target = ingredients[0];
+  const eigenTerm = storeSearchTerm(target.referenceProductName ?? target.name);
+  const bezocht: string[] = [];
+
+  await prisma.ingredient.update({
+    where: { id: target.id },
+    data: { searchTerm: "snoeptomaatjes" },
+  });
+
+  try {
+    await withFakeDirk(
+      {
+        "/zoeken/producten/melk": categoryPage([
+          { id: "820", name: "Dirk Halfvolle melk", size: "1 liter", large: "1", small: "09", hasEuros: true },
+        ]),
+        // Het product heet bewust náár de ingetypte term en deelt geen enkel
+        // woord met het ingrediënt of met ons eigen Picnic-product. Precies
+        // daarom bewijst deze test iets: matcht de app nog op de
+        // ingrediëntnaam, dan haalt ze dit product op en gooit ze het
+        // vervolgens weg.
+        "/zoeken/producten/snoeptomaatjes": categoryPage([
+          { id: "821", name: "Dirk Snoeptomaatjes", size: "250 gram", large: "2", small: "49", hasEuros: true },
+        ]),
+      },
+      async (site) => {
+        site.server.on("request", (request) => {
+          if (request.url) bezocht.push(request.url);
+        });
+        return refreshDirkPrices({ limitIngredients: 1 });
+      }
+    );
+
+    assert.ok(
+      bezocht.some((url) => url.includes("snoeptomaatjes")),
+      `er hoort op de ingetypte term gezocht te zijn, bezocht: ${bezocht.join(", ")}`
+    );
+    assert.ok(
+      await prisma.product.findFirst({ where: { provider: "DIRK", externalRef: "821" } }),
+      "en het product hoort bewaard te zijn — ophalen en dan weggooien is een knop die niets doet"
+    );
+    if (eigenTerm !== "snoeptomaatjes") {
+      assert.ok(
+        !bezocht.some((url) => url === `/zoeken/producten/${encodeURIComponent(eigenTerm)}`),
+        "de eigen term hoeft er niet meer aan te pas te komen zodra de zoekterm werkt"
+      );
+    }
+  } finally {
+    await prisma.ingredient.update({ where: { id: target.id }, data: { searchTerm: null } });
+    await cleanupDirkProducts();
+  }
+});

@@ -197,7 +197,13 @@ export async function getStoreCandidatesForIngredients(
 
   const products = await prisma.product.findMany({
     where: { ingredientId: { in: ingredientIds }, provider: { in: providers } },
-    include: { ingredient: { select: { id: true, name: true, unit: true } } },
+    // `searchTerm` hoort hier net zo goed bij als bij het ophalen. De
+    // toelating draait namelijk twee keer: één keer bij de verversing om te
+    // bepalen wát er wordt opgeslagen, en hier nog een keer om te bepalen wat
+    // er getoond wordt. Werd hier alsnog op de ingrediëntnaam gematcht, dan
+    // vloog "Snoeptomaatjes" er in deze tweede ronde gewoon weer uit en zou
+    // de hele ingetypte zoekterm niets uithalen.
+    include: { ingredient: { select: { id: true, name: true, unit: true, searchTerm: true } } },
   });
   if (products.length === 0) return result;
 
@@ -215,7 +221,10 @@ export async function getStoreCandidatesForIngredients(
 
   for (const [key, candidates] of grouped) {
     const [ingredientId, provider] = key.split(":") as [string, ProductProvider];
-    const ingredientName = candidates[0].ingredient?.name ?? "";
+    // Een zelf ingetypte zoekterm gaat voor: wie 'm invulde zei daarmee dat de
+    // eigen naam het niet redde.
+    const ingredientName =
+      candidates[0].ingredient?.searchTerm?.trim() || candidates[0].ingredient?.name || "";
 
     // Alleen kandidaten met een bekende prijs doen mee — een product zonder
     // waarneming is geen prijs van nul.

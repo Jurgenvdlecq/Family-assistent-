@@ -61,6 +61,66 @@ export async function chooseStoreProduct(formData: FormData) {
   redirect(`/prijzen?focus=${anchor}&status=keuze-opgeslagen#regel-${anchor}`);
 }
 
+/**
+ * Hoeveel tekst een zoekterm mag zijn.
+ *
+ * Een zoekterm is een paar woorden, geen verhaal. De grens staat er niet om
+ * te bevoogden maar omdat dit veld rechtstreeks in een adres bij de winkel
+ * terechtkomt: de zoekopdracht van Dirk staat in het pad van de URL.
+ */
+const MAX_SEARCH_TERM_LENGTH = 80;
+
+/**
+ * "Zoek bij de winkels hierop."
+ *
+ * Voor de gevallen waar woordvergelijking principieel niet uitkomt: wij
+ * noemen het "Snack Tomaatjes", Albert Heijn verkoopt "snoeptomaatjes". Geen
+ * enkel woord gemeen, dus geen match — en geen enkele vuistregel die daar
+ * overheen komt. Eén ingetypt woord wel.
+ *
+ * Let op het verschil met `chooseStoreProduct` hierboven, want dat is geen
+ * detail. Die schrijft naar `HouseholdStoreProductChoice`, een tabel met
+ * `householdId` in de sleutel — daar ís de schrijfactie per constructie
+ * huishoudgebonden en is de lijstcontrole een extra slot. Deze schrijft naar
+ * `Ingredient`, en die rij is gedeeld. De lijstcontrole hieronder bepaalt
+ * alleen wélke rijen bereikbaar zijn, niet vóór wie het gevolg geldt: wie de
+ * zoekterm zet, zet 'm voor iedereen die dit ingrediënt op de lijst heeft.
+ *
+ * Dat is een bewuste keuze (expliciet zo gevraagd), consistent met de rest
+ * van de prijslaag — producten en prijzen zijn hier ook niet huishoudgebonden,
+ * en de nachtelijke verversing draait niet per huishouden. Het scherm zegt het
+ * er ook bij. Maar de controle is daarmee wél het énige wat er staat, en niet
+ * een tweede slot naast een eerste.
+ */
+export async function setIngredientSearchTerm(formData: FormData) {
+  const household = await requireCurrentHousehold();
+  const ingredientId = String(formData.get("ingredientId") ?? "").trim();
+  const lineId = String(formData.get("lineId") ?? "").trim();
+  const raw = String(formData.get("searchTerm") ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, MAX_SEARCH_TERM_LENGTH);
+  if (!ingredientId) return;
+
+  const onOwnList = await prisma.shoppingListLine.findFirst({
+    where: { ingredientId, shoppingList: { mealPlan: { householdId: household.id } } },
+    select: { id: true },
+  });
+  if (!onOwnList) return;
+
+  await prisma.ingredient.update({
+    where: { id: ingredientId },
+    // Leeg ingevuld betekent "doe het zelf maar weer", niet een lege
+    // zoekopdracht — daarom `null` en geen lege tekst.
+    data: { searchTerm: raw || null },
+  });
+
+  revalidatePath("/prijzen");
+  const anchor = encodeURIComponent(lineId);
+  const status = raw ? "zoekterm-opgeslagen" : "zoekterm-gewist";
+  redirect(`/prijzen?focus=${anchor}&status=${status}#regel-${anchor}`);
+}
+
 /** De correctie weer loslaten: vanaf nu kiest de app zelf weer. */
 export async function clearStoreProductChoice(formData: FormData) {
   const household = await requireCurrentHousehold();

@@ -406,6 +406,105 @@ test("addManualProduct weigert een shoppingListId van een ander huishouden", { t
       "een huishouden mag de category van een gedeeld ingrediënt niet kunnen wijzigen, ook niet via vervalste formuliervelden"
     );
 
+    /**
+     * De zoekterm is de eerste schrijfactie op een globaal gedeelde tabel via
+     * een id die van de client komt. `Ingredient` hoort bij geen enkel
+     * huishouden, dus de afscherming zit hier volledig in de controle "staat
+     * dit ingrediënt op een lijst van dít huishouden" — er is geen
+     * huishoud-kolom die het alsnog opvangt.
+     *
+     * Daarom expliciet: A pakt het formulier op /prijzen en zet er het id in
+     * van een ingrediënt dat alleen bij B op de lijst staat.
+     */
+    await t.test("A probeert een zoekterm te zetten op een ingrediënt dat alleen op B's lijst staat", async () => {
+      const alleenBijB = await prisma.ingredient.create({
+        data: { name: `Alleen bij B ${crypto.randomUUID()}`, unit: "PIECE", category: "OTHER" },
+      });
+      const lijstB = await prisma.shoppingList.findFirstOrThrow({
+        where: { mealPlan: { householdId: householdBId } },
+      });
+      await prisma.shoppingListLine.create({
+        data: {
+          shoppingListId: lijstB.id,
+          ingredientId: alleenBijB.id,
+          quantity: 1,
+          unit: "PIECE",
+          source: "FIXED",
+          needsReview: false,
+          matchStatus: "MANUALLY_SELECTED",
+          matchConfidence: 1,
+          matchReasons: ["e2e-test-setup"],
+        },
+      });
+
+      const contextA = await browser.newContext();
+      const pageA = await contextA.newPage();
+      try {
+        await pageA.goto(`${server.baseURL}/login`, { waitUntil: "load" });
+        await pageA.getByPlaceholder("Gebruikersnaam").fill("wp82a");
+        await pageA.getByPlaceholder("Wachtwoord").fill("wp82awachtwoord");
+        await pageA.getByRole("button", { name: "Openen" }).click();
+        await pageA.waitForURL(`${server.baseURL}/`, { timeout: 15_000 });
+
+        await pageA.goto(`${server.baseURL}/prijzen`, { waitUntil: "load", timeout: 90_000 });
+        // Het formulier zit in een ingeklapt blok; zonder dit open te klappen
+        // bestaat het wel maar is het onzichtbaar, en dan test je niets.
+        await pageA.getByText("Welke producten, en aanpassen", { exact: true }).first().click();
+        const formulier = pageA.locator('form:has(input[name="searchTerm"])').first();
+        await formulier.waitFor({ state: "visible", timeout: 15_000 });
+
+        // De aanval: het eigen ingredientId vervangen door dat van B.
+        await formulier.evaluate((formEl, vreemdId) => {
+          const veld = formEl.querySelector('input[name="ingredientId"]') as HTMLInputElement | null;
+          if (veld) veld.value = vreemdId;
+          const tekst = formEl.querySelector('input[name="searchTerm"]') as HTMLInputElement | null;
+          if (tekst) tekst.value = "gekaapte zoekterm";
+        }, alleenBijB.id);
+
+        await formulier.getByRole("button", { name: "Opslaan" }).click();
+        // Bij een geweigerde poging stuurt de actie niet door, dus er is niets
+        // om op te wachten. Daarom eerst de tegenproef hieronder afmaken: die
+        // wácht wél op een echte doorverwijzing, en daarmee staat vast dat ook
+        // deze aanvraag afgehandeld is voordat we de database lezen.
+        await pageA.waitForLoadState("load", { timeout: 15_000 }).catch(() => {});
+
+        // De tegenproef, want zonder deze helft bewijst het bovenstaande
+        // niets: een formulier dat helemáál niet werkt zou als "veilig"
+        // doorgaan. Dat gebeurde hier ook echt — de eerste versie van deze
+        // test las de database voordat de server action klaar was, en slaagde
+        // daardoor ook met de afscherming eruit gesloopt.
+        await pageA.goto(`${server.baseURL}/prijzen`, { waitUntil: "load", timeout: 90_000 });
+        await pageA.getByText("Welke producten, en aanpassen", { exact: true }).first().click();
+        const eigenFormulier = pageA.locator('form:has(input[name="searchTerm"])').first();
+        await eigenFormulier.waitFor({ state: "visible", timeout: 15_000 });
+        const eigenId = await eigenFormulier.locator('input[name="ingredientId"]').inputValue();
+        await eigenFormulier.locator('input[name="searchTerm"]').fill("eigen zoekterm");
+        await eigenFormulier.getByRole("button", { name: "Opslaan" }).click();
+        // Wachten op de dóórverwijzing, niet op "de pagina is geladen": die
+        // laatste is meteen waar en dan lees je de database te vroeg.
+        await pageA.waitForURL(/zoekterm-opgeslagen/, { timeout: 20_000 });
+
+        const eigen = await prisma.ingredient.findUniqueOrThrow({ where: { id: eigenId } });
+        assert.equal(
+          eigen.searchTerm,
+          "eigen zoekterm",
+          "op een eigen ingrediënt moet het formulier gewoon werken"
+        );
+        await prisma.ingredient.update({ where: { id: eigenId }, data: { searchTerm: null } });
+
+        const na = await prisma.ingredient.findUniqueOrThrow({ where: { id: alleenBijB.id } });
+        assert.equal(
+          na.searchTerm,
+          null,
+          "een huishouden mag geen zoekterm zetten op een ingrediënt dat niet op de eigen lijst staat"
+        );
+      } finally {
+        await contextA.close();
+        await prisma.shoppingListLine.deleteMany({ where: { ingredientId: alleenBijB.id } });
+        await prisma.ingredient.delete({ where: { id: alleenBijB.id } });
+      }
+    });
+
     await t.test("A past wel gewoon de naam van hetzelfde ingrediënt aan (toegestaan veld blijft werken)", async () => {
       const contextA = await browser.newContext();
       const pageA = await contextA.newPage();
