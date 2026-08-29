@@ -63,6 +63,9 @@ export function toPicnicProviderProduct(item: PicnicSearchItemLike): ProviderPro
     labels: [],
     freeFromAllergens: [],
     imageId: item.image_id ?? null,
+    // Picnic heeft geen publieke productpagina om naar te verwijzen; de winkel
+    // zit in de app. Een verzonnen link zou op een foutpagina uitkomen.
+    url: null,
   };
 }
 

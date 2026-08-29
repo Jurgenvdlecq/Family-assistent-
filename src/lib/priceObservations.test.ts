@@ -33,6 +33,7 @@ function ahProduct(overrides: Partial<ProviderProduct> = {}): ProviderProduct {
     labels: [],
     freeFromAllergens: [],
     imageId: null,
+    url: null,
     ...overrides,
   };
 }

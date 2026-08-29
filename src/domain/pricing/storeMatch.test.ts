@@ -21,6 +21,7 @@ function product(name: string, overrides: Partial<ProviderProduct> = {}): Provid
     labels: [],
     freeFromAllergens: [],
     imageId: null,
+    url: null,
     ...overrides,
   };
 }

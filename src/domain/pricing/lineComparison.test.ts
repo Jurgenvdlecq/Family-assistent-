@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compareLineAcrossStores, describeUncomparableStore } from "./lineComparison";
+import { compareLineAcrossStores, describeUncomparableStore, showsPromotion } from "./lineComparison";
 import type { BasketLineResult, BasketLineStoreResult } from "./basketComparison";
 
 function store(overrides: Partial<BasketLineStoreResult> = {}): BasketLineStoreResult {
@@ -8,7 +8,11 @@ function store(overrides: Partial<BasketLineStoreResult> = {}): BasketLineStoreR
     provider: "AH",
     productId: "ah-1",
     name: "AH Halfvolle melk",
+    brand: "AH",
     packageSize: "1 l",
+    productUrl: "https://www.ah.nl/producten/product/wi123",
+    unitPrice: 0.00129,
+    unitPriceUnit: "ML",
     packageQuantity: 1000,
     packagesToBuy: 3,
     cost: 3.87,
@@ -16,6 +20,9 @@ function store(overrides: Partial<BasketLineStoreResult> = {}): BasketLineStoreR
     level: "GELIJKWAARDIG",
     levelReason: "zelfde soort product",
     promoLabel: null,
+    promoUntil: null,
+    wasPrice: null,
+    promotionCounts: false,
     promoExplanation: null,
     costWithoutPromo: 3.87,
     fakeDiscount: false,
@@ -34,6 +41,10 @@ function line(overrides: Partial<BasketLineResult> = {}): BasketLineResult {
     unit: "ML",
     referencePrice: 1.45,
     referenceName: "Campina halfvolle melk",
+    referenceBrand: "Campina",
+    referencePackageSize: "1 l",
+    referenceUnitPrice: 0.00145,
+    referenceUnitPriceUnit: "ML",
     referenceCost: 4.35,
     referencePackages: 3,
     stores: new Map(),
@@ -188,4 +199,84 @@ test("toelichting: een harde match zonder eigen prijs wordt niet 'geen gelijkwaa
   assert.match(uitleg!, /wel prijzen/);
   assert.match(uitleg!, /[Oo]nze eigen prijs/);
   assert.doesNotMatch(uitleg!, /ander soort/);
+});
+
+test("de cel draagt de productinformatie mee waarmee je zelf kunt nakijken wat het is", () => {
+  const cells = compareLineAcrossStores(line({ stores: new Map([["AH", store()]]) }), ["AH"]);
+  const picnic = cells.find((cell) => cell.provider === "PICNIC")!;
+  const ah = cells.find((cell) => cell.provider === "AH")!;
+
+  assert.equal(picnic.brand, "Campina");
+  assert.equal(picnic.packageSize, "1 l");
+  assert.equal(picnic.unitPriceLabel, "€ 1,45 per liter");
+  // Picnic heeft geen publieke productpagina; een gokje zou op een 404 uitkomen.
+  assert.equal(picnic.productUrl, null);
+
+  assert.equal(ah.brand, "AH");
+  assert.equal(ah.productUrl, "https://www.ah.nl/producten/product/wi123");
+  assert.equal(ah.unitPriceLabel, "€ 1,29 per liter", "hier zie je pas dat AH goedkoper is per liter");
+});
+
+test("zonder bekende eenheidsprijs blijft het label leeg in plaats van nul", () => {
+  const cells = compareLineAcrossStores(
+    line({ stores: new Map([["AH", store({ unitPrice: null, unitPriceUnit: null })]]) }),
+    ["AH"]
+  );
+  assert.equal(cells.find((cell) => cell.provider === "AH")!.unitPriceLabel, null);
+});
+
+test("een actie is zichtbaar, maar een nep-korting krijgt geen markering", () => {
+  const echt = compareLineAcrossStores(
+    line({ stores: new Map([["AH", store({ promoLabel: "1+1 gratis", promotionCounts: true })]]) }),
+    ["AH"]
+  ).find((cell) => cell.provider === "AH")!;
+  assert.equal(showsPromotion(echt), true);
+
+  // Een actie die bij dit aantal niets oplevert is in de doorrekening al op
+  // `promotionCounts: false` gezet; de markering volgt dat, en bedenkt geen
+  // eigen tweede versie van die regel.
+  const zonderVoordeel = compareLineAcrossStores(
+    line({ stores: new Map([["AH", store({ promoLabel: "1+1 gratis", promotionCounts: false })]]) }),
+    ["AH"]
+  ).find((cell) => cell.provider === "AH")!;
+  assert.equal(showsPromotion(zonderVoordeel), false);
+
+  const nep = compareLineAcrossStores(
+    line({ stores: new Map([["AH", store({ promoLabel: "van 4,99 voor 3,87", fakeDiscount: true, promotionCounts: false })]]) }),
+    ["AH"]
+  ).find((cell) => cell.provider === "AH")!;
+  // De van-prijs is de afgelopen weken niet gerekend: dan is dit de normale
+  // prijs, en een groene "Actie" zou een reclame zijn in plaats van hulp.
+  assert.equal(showsPromotion(nep), false);
+
+  const zonder = compareLineAcrossStores(line({ stores: new Map([["AH", store()]]) }), ["AH"]).find(
+    (cell) => cell.provider === "AH"
+  )!;
+  assert.equal(showsPromotion(zonder), false);
+});
+
+test("twee eenheidsprijzen in verschillende eenheden staan niet naast elkaar in de smalle cel", () => {
+  // Bij een ingrediënt in stuks kan onze eigen kolom "per stuk" tonen terwijl
+  // Albert Heijn "per kilo" meegeeft. Twee getallen naast elkaar die je niet
+  // mag vergelijken, met één woordje verschil — dan liever geen van beide.
+  const cells = compareLineAcrossStores(
+    line({
+      referenceUnitPrice: 2.29,
+      referenceUnitPriceUnit: "PIECE",
+      stores: new Map([["AH", store({ unitPrice: 0.004, unitPriceUnit: "GRAM" })]]),
+    }),
+    ["AH"]
+  );
+  assert.deepEqual(
+    cells.map((cell) => cell.unitPriceLabel),
+    [null, null]
+  );
+
+  // Zelfde eenheid: dan blijven ze gewoon staan, want dán is het wél een
+  // vergelijking.
+  const gelijk = compareLineAcrossStores(line({ stores: new Map([["AH", store()]]) }), ["AH"]);
+  assert.deepEqual(
+    gelijk.map((cell) => cell.unitPriceLabel),
+    ["€ 1,45 per liter", "€ 1,29 per liter"]
+  );
 });

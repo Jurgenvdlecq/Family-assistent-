@@ -33,7 +33,7 @@ import { mealEntryNeeds, mealEntryTitle } from "@/domain/meal-planning/mealEntry
 import { setIngredientFulfillment } from "./fulfillmentActions";
 import { getStorePricesForIngredients, type StorePriceForIngredient } from "@/lib/pricing/storePrices";
 import { getBasketOverview, COMPARISON_PROVIDERS } from "@/lib/pricing/basket";
-import { compareLineAcrossStores } from "@/domain/pricing/lineComparison";
+import { compareLineAcrossStores, showsPromotion } from "@/domain/pricing/lineComparison";
 import type { BasketLineResult } from "@/domain/pricing/basketComparison";
 import { PROVIDER_LABELS } from "@/domain/pricing/types";
 import type { ProductProvider } from "@/generated/prisma/enums";
@@ -425,6 +425,10 @@ function LinePriceComparison({
           {cells.map((cell) => (
             <span key={cell.provider} className={cell.cheapest ? "font-medium text-tag-green-ink" : undefined}>
               {PROVIDER_LABELS[cell.provider]} € {cell.cost!.toFixed(2).replace(".", ",")}
+              {/* Dat hier een actie op zit, hoort al in het overzicht te staan
+                  en niet pas op /prijzen. Een van-prijs die de geschiedenis
+                  tegenspreekt telt niet als actie. */}
+              {showsPromotion(cell) ? <span className="text-tag-green-ink"> · actie</span> : null}
               {cell.note ? ` (${cell.note})` : ""}
             </span>
           ))}

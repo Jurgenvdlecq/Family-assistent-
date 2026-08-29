@@ -98,3 +98,8 @@ test("onbekende allergeencodes worden genegeerd, niet geraden", () => {
   });
   assert.deepEqual(allergens, []);
 });
+
+test("de link naar de AH-productpagina komt uit het webshop-id", () => {
+  const product = toAhProviderProduct(MELK);
+  assert.equal(product?.url, "https://www.ah.nl/producten/product/wi100311");
+});

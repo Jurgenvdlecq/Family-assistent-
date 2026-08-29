@@ -82,3 +82,12 @@ test("parseUnitPriceDescription: onbekende vorm geeft null", () => {
 test("formatUnitPrice: null blijft null — nooit '€ 0,00 per kilo' tonen", () => {
   assert.equal(formatUnitPrice(null), null);
 });
+
+test("een multipack wordt vermenigvuldigd, zodat €/liter over winkels heen klopt", () => {
+  // De aanleiding: onze eigen kolom rekende met de inhoud van één fles uit
+  // "6 x 1 liter" en toonde € 6,00 per liter naast een correcte € 1,00 per
+  // liter van Albert Heijn. Beide kanten lezen nu met deze functie.
+  assert.deepEqual(parsePackContent("6 x 1 liter"), { amount: 6000, unit: "ML" });
+  assert.deepEqual(parsePackContent("4 x 125 gram"), { amount: 500, unit: "GRAM" });
+  assert.equal(formatUnitPrice(unitPriceFor(6, parsePackContent("6 x 1 liter"))), "€ 1,00 per liter");
+});

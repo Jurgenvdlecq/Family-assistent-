@@ -116,7 +116,26 @@ export function toAhProviderProduct(raw: AhSearchProduct): ProviderProduct | nul
     labels: raw.propertyIcons ?? [],
     freeFromAllergens: [],
     imageId: null,
+    // De productpagina van AH is uit het webshop-id te vormen. Dat is dezelfde
+    // id die we toch al als externalRef bewaren.
+    url: ahProductUrl(externalRef),
   };
+}
+
+/**
+ * De publieke productpagina van Albert Heijn.
+ *
+ * Anders dan bij Dirk is dit geen gelezen link maar een **patroon**: AH geeft
+ * in het zoekantwoord geen URL mee, alleen het webshop-id, en `wi<id>` is de
+ * vorm die de site daarvoor gebruikt. Het id komt dus wel uit de winkeldata,
+ * de vorm eromheen is onze aanname. Laat AH het `wi`-voorvoegsel ooit vallen,
+ * dan wijzen deze links stil naar een foutpagina — daar is geen bewaking op,
+ * want een link die niet werkt is van buitenaf niet van een goede te
+ * onderscheiden. De link staat er daarom als hulpmiddel om na te kijken, niet
+ * als iets waar de app zelf op leunt.
+ */
+export function ahProductUrl(webshopId: string): string {
+  return `https://www.ah.nl/producten/product/wi${encodeURIComponent(webshopId)}`;
 }
 
 export interface AhProductDetail {

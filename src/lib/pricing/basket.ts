@@ -10,6 +10,7 @@ import { deriveQualityTier } from "@/domain/pricing/qualityTier";
 import { judgeDiscount, summarizePriceHistory, type PriceSample } from "@/domain/pricing/priceHistory";
 import { buildSplitAdvice, type SplitAdvice } from "@/domain/pricing/splitAdvice";
 import { adviseStockUp, type StockUpAdvice } from "@/domain/pricing/stockUpAdvice";
+import { parsePackContent, unitPriceFor } from "@/domain/pricing/unitPrice";
 import { getPriceHistories } from "./observations";
 import { isUserChosenPackageCount } from "@/lib/shoppingList";
 import {
@@ -164,6 +165,25 @@ export async function getBasketOverview(
   const lineMeta = new Map<string, { ingredientId: string; picnicProductName: string | null; isFixed: boolean }>();
 
   for (const line of lines) {
+    // De eenheidsprijs van ons eigen product, zodat de Picnic-kolom hetzelfde
+    // getal toont als de winkels ernaast.
+    //
+    // Bewust dezelfde lezer als AH en Dirk (`parsePackContent`), en niet de
+    // opgeslagen `packageQuantity`. Die laatste komt uit `parsePackageQuantity`,
+    // die geen multipack kent: bij "6 x 1 liter" slaat hij 1000 op. Dat is voor
+    // de verpakkingsberekening prima, maar als eenheidsprijs levert het € 6,00
+    // per liter op naast een correcte € 1,00 per liter van AH — precies het
+    // soort getal dat er overtuigend uitziet en fout is. `packageQuantity` is
+    // hier alleen nog het vangnet voor een verpakkingstekst die deze lezer niet
+    // begrijpt.
+    const referenceContent =
+      parsePackContent(line.product?.packageSize) ??
+      (line.product?.packageQuantity != null
+        ? { amount: line.product.packageQuantity, unit: line.ingredient.unit }
+        : null);
+    const referenceUnitPrice =
+      line.product?.price == null ? null : unitPriceFor(Number(line.product.price), referenceContent);
+
     basketLines.push({
       lineId: line.id,
       ingredientId: line.ingredientId,
@@ -198,6 +218,8 @@ export async function getBasketOverview(
             // De verpakkingsinhoud staat in de eenheid van het ingrediënt; de
             // regel kan er een andere hebben.
             packageUnit: line.ingredient.unit,
+            unitPrice: referenceUnitPrice?.amount ?? null,
+            unitPriceUnit: referenceUnitPrice?.unit ?? null,
           }
         : null,
     });
@@ -362,6 +384,9 @@ function toStoreCandidate(
     promoLabel: candidate.promoLabel,
     promoUntil: candidate.promoUntil,
     wasPrice: candidate.wasPrice,
+    productUrl: candidate.productUrl,
+    unitPrice: candidate.unitPrice,
+    unitPriceUnit: candidate.unitPriceUnit,
     observedAt: candidate.observedAt,
     stale: candidate.stale,
   };

@@ -72,6 +72,7 @@ export async function recordObservedProduct(input: {
       packageQuantity,
       price: product.price,
       qualityTier,
+      productUrl: product.url,
       gtin: product.gtin,
       freeFromAllergens: product.freeFromAllergens,
       picnicImageId: product.provider === "PICNIC" ? product.imageId : null,
@@ -85,6 +86,7 @@ export async function recordObservedProduct(input: {
       // Laatst bekende prijs bijwerken zodat bestaande schermen kloppen.
       price: product.price,
       qualityTier,
+      productUrl: product.url,
       // Een barcode die er al is nooit wissen: als een provider hem een keer
       // niet meestuurt, is dat geen bewijs dat hij niet bestaat.
       ...(product.gtin ? { gtin: product.gtin } : {}),

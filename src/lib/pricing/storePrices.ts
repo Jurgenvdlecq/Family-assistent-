@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import type { ProductProvider, QualityTier, Unit } from "@/generated/prisma/enums";
 import { rankStoreProducts } from "@/domain/pricing/storeMatch";
 import type { ProviderProduct } from "@/domain/pricing/types";
+import { displayableProductUrl } from "@/domain/pricing/productUrl";
 import { getLatestPrices, isPriceStale } from "./observations";
 
 /**
@@ -26,6 +27,11 @@ export interface StorePriceForIngredient {
   gtin: string | null;
   /** Waar deze winkel bevestigt dat het product vrij van is. Leeg = onbekend. */
   freeFromAllergens: string[];
+  /** De productpagina bij de winkel, om zelf na te kijken of het hetzelfde is. */
+  productUrl: string | null;
+  /** Prijs per liter/kilo/stuk, zodat verpakkingsgroottes vergelijkbaar zijn. */
+  unitPrice: number | null;
+  unitPriceUnit: Unit | null;
   price: number;
   wasPrice: number | null;
   promoLabel: string | null;
@@ -103,6 +109,9 @@ export async function getStoreProductsByIds(
         qualityTier: product.qualityTier,
         gtin: product.gtin,
         freeFromAllergens: product.freeFromAllergens,
+        productUrl: displayableProductUrl(product.productUrl),
+        unitPrice: price.unitPrice,
+        unitPriceUnit: price.unitPriceUnit,
         price: price.price,
         wasPrice: price.wasPrice,
         promoLabel: price.promoLabel,
@@ -182,6 +191,7 @@ export async function getStoreCandidatesForIngredients(
           labels: [],
           freeFromAllergens: candidate.freeFromAllergens,
           imageId: null,
+          url: candidate.productUrl,
         })
       ),
       perProviderLimit
@@ -204,6 +214,9 @@ export async function getStoreCandidatesForIngredients(
         qualityTier: chosen.qualityTier,
         gtin: chosen.gtin,
         freeFromAllergens: chosen.freeFromAllergens,
+        productUrl: displayableProductUrl(chosen.productUrl),
+        unitPrice: price.unitPrice,
+        unitPriceUnit: price.unitPriceUnit,
         price: price.price,
         wasPrice: price.wasPrice,
         promoLabel: price.promoLabel,
