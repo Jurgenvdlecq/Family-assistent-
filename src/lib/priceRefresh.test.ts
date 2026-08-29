@@ -388,3 +388,52 @@ test("verversing: zoekt op ons eigen product, en valt alleen bij nul resultaten 
     await prisma.ingredient.delete({ where: { id: ingredient.id } });
   }
 });
+
+test("verversing: valt ook terug als de specifieke zoekopdracht wél iets teruggeeft, maar niets bruikbaars", async () => {
+  // Een winkel geeft zelden helemaal niets terug; ze geeft iets terug dat er
+  // niet bij hoort. Een controle op "leeg" zou dan nooit aanslaan, en dan
+  // stonden we met lege handen terwijl het product er gewoon ligt.
+  const ingredient = await prisma.ingredient.create({
+    data: { name: `Merk ${Date.now()}`, unit: "GRAM", category: "OTHER" },
+  });
+  const recipe = await prisma.recipe.create({
+    data: {
+      title: `Terugval-testgerecht ${ingredient.id}`,
+      category: "OTHER",
+      ingredients: { create: [{ ingredientId: ingredient.id, quantity: 1, unit: "GRAM" }] },
+    },
+  });
+  await prisma.product.create({
+    data: {
+      name: `${ingredient.name} speciaal`,
+      provider: "PICNIC",
+      externalRef: `picnic-terugval-${ingredient.id}`,
+      ingredientId: ingredient.id,
+      lastSeenAvailable: new Date(),
+    },
+  });
+
+  try {
+    const asked: string[] = [];
+    const result = await refreshStorePrices(
+      fakeProvider(async (term) => {
+        asked.push(term);
+        // De specifieke zoekopdracht levert wél resultaten op, maar niets dat
+        // bij dit ingrediënt hoort. De bredere levert het juiste product.
+        return term === storeSearchTerm(ingredient.name)
+          ? [fakeProduct(`AH ${ingredient.name} gewoon`, 1.99)]
+          : [fakeProduct("AH Iets heel anders", 9.99)];
+      }),
+      { limitIngredients: 200 }
+    );
+
+    assert.ok(asked.includes(storeSearchTerm(`${ingredient.name} speciaal`)), "eerst op ons product");
+    assert.ok(asked.includes(storeSearchTerm(ingredient.name)), "en daarna alsnog breder");
+    assert.ok(result.productsStored > 0, "het juiste product is uiteindelijk wél opgeslagen");
+  } finally {
+    await cleanupAhProducts();
+    await prisma.recipe.delete({ where: { id: recipe.id } });
+    await prisma.product.deleteMany({ where: { ingredientId: ingredient.id } });
+    await prisma.ingredient.delete({ where: { id: ingredient.id } });
+  }
+});

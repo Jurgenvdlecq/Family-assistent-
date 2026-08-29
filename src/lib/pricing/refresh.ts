@@ -186,22 +186,33 @@ export async function refreshStorePrices(
       // alsnog op het ingrediënt, want een lege uitslag is erger dan een
       // ruwere. Alleen bij nul resultaten, zodat dit geen verdubbeling van
       // het verkeer wordt.
+      const reference = {
+        name: ingredient.referenceProductName,
+        packageSize: ingredient.referencePackageSize,
+      };
       const ownTerm = ingredient.referenceProductName
         ? storeSearchTerm(ingredient.referenceProductName)
         : null;
       const fallbackTerm = storeSearchTerm(ingredient.name);
+
       let found = await provider.search(ownTerm ?? fallbackTerm, { limit: SEARCH_RESULT_LIMIT });
-      if (found.length === 0 && ownTerm !== null && ownTerm !== fallbackTerm) {
+      let matches = rankStoreProducts(ingredient.name, found, CANDIDATES_PER_INGREDIENT, reference);
+
+      // Terugvallen op de bredere zoekterm zodra de specifieke niets
+      // bruikbaars oplevert — niet pas bij nul resultaten. Een winkel geeft
+      // zelden helemaal niets terug; ze geeft iets terug dat er niet bij
+      // hoort, en dan zou een controle op "leeg" nooit aanslaan en zouden we
+      // met lege handen staan terwijl het product er gewoon ligt.
+      if (matches.length === 0 && ownTerm !== null && ownTerm !== fallbackTerm) {
         await sleep(REQUEST_SPACING_MS);
-        found = await provider.search(fallbackTerm, { limit: SEARCH_RESULT_LIMIT });
+        const broader = await provider.search(fallbackTerm, { limit: SEARCH_RESULT_LIMIT });
+        found = [...found, ...broader];
+        matches = rankStoreProducts(ingredient.name, found, CANDIDATES_PER_INGREDIENT, reference);
       }
+
       consecutiveFailures = 0;
       result.itemsSeen = (result.itemsSeen ?? 0) + found.length;
 
-      const matches = rankStoreProducts(ingredient.name, found, CANDIDATES_PER_INGREDIENT, {
-        name: ingredient.referenceProductName,
-        packageSize: ingredient.referencePackageSize,
-      });
       if (matches.length === 0) {
         result.ingredientsWithoutMatch += 1;
         continue;
