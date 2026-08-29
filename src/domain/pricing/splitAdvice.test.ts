@@ -17,6 +17,7 @@ function storeResult(overrides: Partial<BasketLineStoreResult> = {}): BasketLine
     packageQuantity: 1000,
     packagesToBuy: 3,
     cost: 3,
+    packagePrice: 1.29,
     surplus: null,
     level: "GELIJKWAARDIG",
     levelReason: "zelfde soort product",

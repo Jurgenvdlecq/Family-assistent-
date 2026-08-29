@@ -16,6 +16,7 @@ function store(overrides: Partial<BasketLineStoreResult> = {}): BasketLineStoreR
     packageQuantity: 1000,
     packagesToBuy: 3,
     cost: 3.87,
+    packagePrice: 1.29,
     surplus: null,
     level: "GELIJKWAARDIG",
     levelReason: "zelfde soort product",
@@ -279,4 +280,47 @@ test("twee eenheidsprijzen in verschillende eenheden staan niet naast elkaar in 
     gelijk.map((cell) => cell.unitPriceLabel),
     ["€ 1,45 per liter", "€ 1,29 per liter"]
   );
+});
+
+/**
+ * Gebruikersvraag: "Sommige staat wel de juiste link, maar nog niet de prijs
+ * ed. Hoe zit dit?"
+ *
+ * De streep is het regeltotaal, niet de prijs van het product: kan de app niet
+ * uitrekenen hoevéél verpakkingen er nodig zijn, dan valt er geen bedrag voor
+ * die regel te noemen. Maar wat één verpakking kost weten we wél, en dat
+ * verzwijgen is alleen maar karig.
+ */
+test("naast elkaar: zonder regeltotaal komt de prijs per verpakking wél mee", () => {
+  const cells = compareLineAcrossStores(
+    line({
+      stores: new Map([
+        [
+          "AH",
+          store({
+            // Onbekende verpakkingsinhoud: geen regeltotaal, wel een prijs.
+            cost: null,
+            packagesToBuy: null,
+            packagePrice: 2.59,
+            missingReason: "verpakkingsgrootte onbekend",
+          }),
+        ],
+      ]),
+    }),
+    ["AH"]
+  );
+
+  const ah = cells.find((cell) => cell.provider === "AH")!;
+  assert.equal(ah.cost, null, "het regeltotaal blijft onbekend, en dat hoort ook");
+  assert.equal(ah.packagePrice, 2.59, "maar de prijs per verpakking komt mee");
+  assert.equal(ah.note, "verpakkingsgrootte onbekend");
+});
+
+test("naast elkaar: een winkel zonder product heeft ook geen prijs per verpakking", () => {
+  // Geen product gevonden is iets anders dan een product zonder maat — daar
+  // valt niets te melden, ook geen prijs.
+  const cells = compareLineAcrossStores(line({ stores: new Map() }), ["DIRK"]);
+  const dirk = cells.find((cell) => cell.provider === "DIRK")!;
+  assert.equal(dirk.packagePrice, null);
+  assert.equal(dirk.note, "niet gevonden");
 });
