@@ -55,6 +55,18 @@ export interface PricedIngredientOptions {
    * prioriteren moest oplossen.
    */
   weekStart?: Date;
+  /**
+   * Zet binnen elke groep de ingrediënten vooraan die voor deze winkel het
+   * langst niet ververst zijn.
+   *
+   * Zonder dit begint elke verversing weer bij hetzelfde ingrediënt, en komt
+   * de staart van de lijst er structureel nooit aan — hoe vaak je ook op de
+   * knop drukt, want een verversing die op het tijdslimiet stopt heeft altijd
+   * de eerste ingrediënten gedaan. Met deze volgorde dekken een paar rondes
+   * samen wél de hele lijst, zonder dat er ergens een teller bewaard hoeft te
+   * worden: wanneer iets voor het laatst is bijgewerkt weten we al.
+   */
+  staleFirstFor?: ProductProvider;
 }
 
 /**
@@ -115,7 +127,11 @@ export async function getPricedIngredients(options?: PricedIngredientOptions) {
     referencePackageSize: ingredient.products[0]?.packageSize ?? null,
   }));
 
-  if (!householdId || !weekStart) return ingredients;
+  const ordered = options?.staleFirstFor
+    ? await stalestFirst(ingredients, options.staleFirstFor)
+    : ingredients;
+
+  if (!householdId || !weekStart) return ordered;
 
   // Bij een verversing die maar een deel van de lijst pakt (de knop "nu
   // verversen") moet dát deel wél gaan over wat de gebruiker op dit moment
@@ -129,9 +145,35 @@ export async function getPricedIngredients(options?: PricedIngredientOptions) {
   const priority = new Set(onTheList.map((line) => line.ingredientId));
 
   return [
-    ...ingredients.filter((ingredient) => priority.has(ingredient.id)),
-    ...ingredients.filter((ingredient) => !priority.has(ingredient.id)),
+    ...ordered.filter((ingredient) => priority.has(ingredient.id)),
+    ...ordered.filter((ingredient) => !priority.has(ingredient.id)),
   ];
+}
+
+/**
+ * Het langst niet bijgewerkte ingrediënt eerst, voor deze winkel.
+ *
+ * `lastSeenAvailable` wordt bij elke waarneming bijgewerkt, dus dat veld ís al
+ * de teller die we nodig hebben — een eigen "waar was ik gebleven"-kolom zou
+ * hetzelfde nog eens opslaan en kan achterlopen zodra er iets misgaat. Wat nog
+ * nooit is opgehaald staat vooraan: dat is per definitie het langst geleden.
+ */
+async function stalestFirst(
+  ingredients: PricedIngredient[],
+  provider: ProductProvider
+): Promise<PricedIngredient[]> {
+  const seen = await prisma.product.groupBy({
+    by: ["ingredientId"],
+    where: { provider, ingredientId: { in: ingredients.map((ingredient) => ingredient.id) } },
+    _max: { lastSeenAvailable: true },
+  });
+  const lastSeen = new Map(
+    seen.map((row) => [row.ingredientId, row._max.lastSeenAvailable?.getTime() ?? 0])
+  );
+
+  return [...ingredients].sort(
+    (a, b) => (lastSeen.get(a.id) ?? 0) - (lastSeen.get(b.id) ?? 0)
+  );
 }
 
 /**
@@ -185,6 +227,7 @@ export async function refreshStorePrices(
     await getPricedIngredients({
       prioritiseHouseholdId: options?.prioritiseHouseholdId,
       weekStart: options?.weekStart,
+      staleFirstFor: provider.provider,
     })
   ).slice(0, options?.limitIngredients ?? Infinity);
   const result: RefreshResult = {
@@ -441,6 +484,7 @@ export async function refreshDirkPrices(
     await getPricedIngredients({
       prioritiseHouseholdId: options?.prioritiseHouseholdId,
       weekStart: options?.weekStart,
+      staleFirstFor: "DIRK",
     })
   ).slice(0, options?.limitIngredients ?? Infinity);
   const result: RefreshResult = {

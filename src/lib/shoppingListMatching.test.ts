@@ -220,3 +220,64 @@ test("mandje: een verpakking in stuks wordt niet afgerekend tegen een verpakking
     await prisma.household.delete({ where: { id: household.id } });
   }
 });
+
+test("eenheidsprijs: een maat die niet bij het ingrediënt past wordt niet getoond", async () => {
+  // Gebruikersmelding-achtergrond: op een pak vuilniszakken staat "60 liter".
+  // Dat is hoe groot één zak is, niet wat er in het pak zit. Daar "€ 0,03 per
+  // liter" van maken is ruis die er overtuigend uitziet.
+  const household = await prisma.household.create({
+    data: { name: "Eenheidsprijs", persons: { create: [{ name: "Test", role: "PARENT" }] } },
+  });
+  try {
+    const ingredient = await prisma.ingredient.create({
+      // We tellen vuilniszakken in stuks.
+      data: { name: `Trekbandzakken ${household.id}`, unit: "PIECE", category: "OTHER" },
+    });
+    await prisma.product.create({
+      data: {
+        name: `Trekbandzakken ${household.id} 60 liter`,
+        provider: "PICNIC",
+        externalRef: `picnic-test-${household.id}`,
+        ingredientId: ingredient.id,
+        packageSize: "60 liter",
+        price: 1.99,
+        lastSeenAvailable: new Date(),
+      },
+    });
+    const mealPlan = await prisma.mealPlan.create({
+      data: { householdId: household.id, weekStart: getCurrentWeekStart(), status: "CONFIRMED" },
+    });
+    await prisma.shoppingList.create({
+      data: {
+        mealPlanId: mealPlan.id,
+        lines: {
+          create: [
+            {
+              ingredientId: ingredient.id,
+              productId: (await prisma.product.findFirstOrThrow({
+                where: { externalRef: `picnic-test-${household.id}` },
+              })).id,
+              quantity: 1,
+              unit: "PIECE",
+              source: "FIXED",
+              matchStatus: "MATCHED_TRUSTED",
+              matchConfidence: 1,
+            },
+          ],
+        },
+      },
+    });
+
+    const overview = await getBasketOverview(household.id, mealPlan.id);
+    const line = overview.comparison.lines[0];
+    assert.equal(line.referenceUnitPrice, null, "geen prijs per liter voor iets dat we in stuks tellen");
+    assert.equal(line.referenceUnitPriceUnit, null);
+  } finally {
+    await prisma.shoppingList.deleteMany({ where: { mealPlan: { householdId: household.id } } });
+    await prisma.mealPlan.deleteMany({ where: { householdId: household.id } });
+    await prisma.product.deleteMany({ where: { externalRef: { contains: household.id } } });
+    await prisma.ingredient.deleteMany({ where: { name: { contains: household.id } } });
+    await prisma.person.deleteMany({ where: { householdId: household.id } });
+    await prisma.household.delete({ where: { id: household.id } });
+  }
+});

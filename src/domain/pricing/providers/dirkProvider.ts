@@ -154,7 +154,11 @@ function parseName(chunk: string): string | null {
  */
 function parsePackageSize(chunk: string): string | null {
   const text = textOf(chunk);
-  const match = text.match(/\b\d+(?:[.,]\d+)?\s*(?:x\s*\d+(?:[.,]\d+)?\s*)?(?:gram|kg|g|ml|cl|liter|l|stuks|stuk|st)\b/i);
+  // Dezelfde telwoorden die `parsePackContent` kent, anders vindt de lezer
+  // "9 rollen" hier niet eens en komt het nooit bij de inhoudsbepaling aan.
+  const match = text.match(
+    /\b\d+(?:[.,]\d+)?\s*(?:x\s*\d+(?:[.,]\d+)?\s*)?(?:gram|kg|g|ml|cl|liter|l|stuks|stuk|st|rollen|rol|zakjes|zakje|zakken|zak|plakken|plak|sneetjes|sneetje|bollen|bol|blikken|blik|flessen|fles|pakken|pak|tabletten|tablet|capsules|capsule|doekjes|doekje|wasbeurten|wasbeurt|repen|reep)\b/i
+  );
   return match ? match[0].trim() : null;
 }
 

@@ -20,6 +20,41 @@ export interface UnitPrice {
 }
 
 /**
+ * Woorden waarmee een verpakking een áántal aangeeft in plaats van een gewicht
+ * of een inhoud.
+ *
+ * Dit lijstje was vier woorden lang, en dat kostte precies wat je zou
+ * verwachten: "9 rollen" toiletpapier was helemaal niet te lezen. Erger dan
+ * een ontbrekende eenheidsprijs, want zonder inhoud kan de vergelijking niet
+ * zíén dat negen rollen iets anders is dan twaalf stuks — en dan telt ze het
+ * duurdere pak stilzwijgend mee als gelijkwaardig.
+ *
+ * Bewust alleen woorden die onmiskenbaar een telbaar ding aanduiden. Twijfel
+ * hoort hier niet thuis: een verkeerd gelezen verpakking is erger dan een
+ * ontbrekende, want die laatste leidt tot "niet te vergelijken" en de eerste
+ * tot een bedrag dat overtuigend en fout is.
+ */
+const COUNT_WORDS = [
+  "stuks?",
+  "st\\.?",
+  "rollen|rol",
+  "zakjes|zakje|zakken|zak",
+  "plakken|plak",
+  "sneetjes|sneetje",
+  "bollen|bol",
+  "blikken|blik",
+  "flessen|fles",
+  "pakken|pak",
+  "tabletten|tablet",
+  "capsules|capsule",
+  "doekjes|doekje",
+  "wasbeurten|wasbeurt",
+  "repen|reep",
+  "kroppen|krop",
+  "bosjes|bosje|bos",
+].join("|");
+
+/**
  * Leest een verpakkingsgrootte zoals winkels die opschrijven en geeft de
  * inhoud in basiseenheden terug.
  *
@@ -42,8 +77,8 @@ export function parsePackContent(salesUnitSize: string | null | undefined): { am
   const single = text.match(/^(?:ca\.?\s*)?(\d+(?:\.\d+)?)\s*(g|gram|kg|ml|l|liter|cl)\b/);
   if (single) return scaleToBase(Number(single[1]), single[2]);
 
-  // "6 stuks", "1 stuk", "4 st"
-  const pieces = text.match(/^(\d+(?:\.\d+)?)\s*(stuks?|st\.?|krop|bos)\b/);
+  // "6 stuks", "1 stuk", "4 st", "9 rollen", "12 zakjes"
+  const pieces = text.match(new RegExp(`^(\\d+(?:\\.\\d+)?)\\s*(?:${COUNT_WORDS})\\b`));
   if (pieces) return { amount: Number(pieces[1]), unit: "PIECE" };
 
   // "per stuk" zonder getal telt als één.
