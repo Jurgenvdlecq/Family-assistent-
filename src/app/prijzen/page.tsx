@@ -20,7 +20,13 @@ import type { ProductProvider } from "@/generated/prisma/enums";
 import type { StorePriceForIngredient } from "@/lib/pricing/storePrices";
 import NavBar from "@/components/NavBar";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
-import { chooseStoreProduct, clearStoreProductChoice, refreshPricesNow } from "./actions";
+import { prisma } from "@/lib/prisma";
+import {
+  chooseStoreProduct,
+  clearStoreProductChoice,
+  refreshPricesNow,
+  setIngredientSearchTerm,
+} from "./actions";
 
 // Leest de actuele boodschappenlijst en maakt (idempotent) het weekplan aan —
 // nooit statisch prerenderen.
@@ -29,6 +35,9 @@ export const dynamic = "force-dynamic";
 const STATUS_MESSAGES: Record<string, string> = {
   "keuze-opgeslagen": "Onthouden. Vanaf nu rekent de vergelijking met dit product.",
   "keuze-gewist": "Keuze losgelaten. De app kiest hier weer zelf.",
+  "zoekterm-opgeslagen":
+    "Zoekterm opgeslagen. Bij de eerstvolgende verversing zoeken de winkels hierop.",
+  "zoekterm-gewist": "Zoekterm gewist. De app bepaalt hier weer zelf waarop ze zoekt.",
   ververst: "Klaar. Hieronder staat per winkel wat het opleverde.",
   "verversen-mislukt": "Er is niets opgehaald. Hieronder staat per winkel waarom.",
   "verversing-loopt-al": "Er loopt al een verversing. Even geduld, en ververs daarna de pagina.",
@@ -102,6 +111,21 @@ export default async function PrijzenPage({
     getLastRefreshRuns(COMPARISON_PROVIDERS),
   ]);
   const { comparison, candidatesByIngredient, choicesByIngredient, lineMeta } = overview;
+  // De zelf ingetypte zoektermen, zodat het invulveld laat zien wat er staat in
+  // plaats van elke keer leeg te beginnen. Bewust over álle regels en niet
+  // alleen die met kandidaten: juist een regel waar niets gevonden is heeft dit
+  // veld het hardst nodig.
+  const searchTerms = new Map(
+    (
+      await prisma.ingredient.findMany({
+        where: {
+          id: { in: [...lineMeta.values()].map((meta) => meta.ingredientId) },
+          searchTerm: { not: null },
+        },
+        select: { id: true, searchTerm: true },
+      })
+    ).map((ingredient) => [ingredient.id, ingredient.searchTerm ?? ""])
+  );
   const providers = COMPARISON_PROVIDERS;
   // Picnic hoort als kolom naast de winkels te staan, niet als losse alinea
   // eronder: de vraag is "wat kost dit hier, en daar" — dan wil je de bedragen
@@ -541,6 +565,58 @@ export default async function PrijzenPage({
                               .join(" · ")
                           : "nog geen product gekozen"}
                       </p>
+
+                    {/* Waarop de winkels moeten zoeken. Sommige verschillen
+                        zijn met woordvergelijking niet te overbruggen — wij
+                        zeggen "snacktomaatjes", Albert Heijn "snoeptomaatjes"
+                        — en dan is één ingetypt woord meer waard dan welke
+                        vuistregel ook. */}
+                    {ingredientId && (
+                      <form
+                        action={setIngredientSearchTerm}
+                        className="mt-3 rounded-lg bg-surface-2 p-3"
+                      >
+                        <input type="hidden" name="ingredientId" value={ingredientId} />
+                        <input type="hidden" name="lineId" value={line.lineId} />
+                        <label
+                          htmlFor={`zoekterm-${line.lineId}`}
+                          className="block text-xs font-medium text-ink"
+                        >
+                          Zoek bij de winkels op
+                        </label>
+                        <p className="mt-0.5 text-[11px] text-ink-faint">
+                          Leeg laten mag: dan zoekt de app zelf op{" "}
+                          {line.referenceName ? "wat jullie bij Picnic kopen" : "de naam hierboven"}.
+                          Heet het bij de winkel anders, tik het hier in — bijvoorbeeld
+                          &ldquo;beschuit naturel&rdquo; of &ldquo;snoeptomaatjes&rdquo;.
+                        </p>
+                        <div className="mt-2 flex gap-2">
+                          <input
+                            id={`zoekterm-${line.lineId}`}
+                            name="searchTerm"
+                            type="text"
+                            maxLength={80}
+                            defaultValue={searchTerms.get(ingredientId) ?? ""}
+                            placeholder={line.ingredientName.toLowerCase()}
+                            className="min-w-0 flex-1 rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-ink placeholder:text-ink-faint"
+                          />
+                          <PendingSubmitButton
+                            className="shrink-0 rounded-md border border-line px-3 py-1.5 text-xs font-medium text-accent"
+                            pendingText="Bezig…"
+                          >
+                            Opslaan
+                          </PendingSubmitButton>
+                        </div>
+                        {/* Geen schijnbelofte: opslaan verandert niets aan wat
+                            er nú staat. Pas de volgende verversing gaat er
+                            werkelijk mee gezocht worden. */}
+                        <p className="mt-1.5 text-[11px] text-ink-faint">
+                          Werkt vanaf de eerstvolgende verversing — de prijzen hierboven veranderen
+                          er niet meteen door. De zoekterm hoort bij het ingrediënt zelf, dus hij
+                          geldt voor iedereen die dit op de lijst heeft staan.
+                        </p>
+                      </form>
+                    )}
 
                     {providersWithData.map((provider) => {
                       const store = line.stores.get(provider);

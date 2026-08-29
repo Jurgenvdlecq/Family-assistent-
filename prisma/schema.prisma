@@ -775,6 +775,19 @@ model Ingredient {
   // waard om ernaar te vragen — in tegenstelling tot verse producten die
   // sowieso elke keer opnieuw gekocht worden.
   likelyInStock   Boolean            @default(false) @map("likely_in_stock")
+  // Waarop de winkels gezocht moeten worden voor dit ingrediënt, als de app
+  // er zelf niet uit komt. Zelf ingetypt, en dat is precies de bedoeling:
+  // sommige verschillen zijn met woordvergelijking niet te overbruggen. Wij
+  // noemen het "Snack Tomaatjes", Albert Heijn verkoopt "snoeptomaatjes" —
+  // geen enkel woord gemeen, en dus geen match, hoe slim de matcher ook is.
+  // Eén ingetypt woord lost op waar een synoniemenlijst nooit compleet voor
+  // te krijgen is.
+  //
+  // Bewust bij het ingrediënt en niet bij het huishouden: producten en
+  // prijzen zijn in deze app al niet huishoudgebonden, en de nachtelijke
+  // verversing draait ook niet per huishouden. Wat wél per huishouden is
+  // blijft dat: welk product je uiteindelijk kiest.
+  searchTerm      String?            @map("search_term")
 
   recipeIngredients      RecipeIngredient[]
   fixedGroceries         FixedGrocery[]

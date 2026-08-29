@@ -42,6 +42,42 @@ function sleep(ms: number) {
 }
 
 /**
+ * Waarop we bij de winkels zoeken voor dit ingrediënt.
+ *
+ * Volgorde: een zelf ingetypte zoekterm wint van alles. Wie die invult heeft
+ * gezien dát de app het zelf niet redde — bij "Snack Tomaatjes" tegenover
+ * "snoeptomaatjes" is er geen woord gemeen en komt geen enkele vuistregel
+ * daar overheen. Staat er niets, dan zoeken we op het product dat we
+ * werkelijk kopen, en anders op de ingrediëntnaam.
+ *
+ * Ook een ingetypte term gaat door `storeSearchTerm`: getallen en
+ * verpakkingsmaten leveren bij een winkel niets op, of iemand ze nu zelf
+ * intikt of niet.
+ */
+function searchTermFor(ingredient: PricedIngredient): string | null {
+  const typed = ingredient.searchTerm?.trim();
+  if (typed) return storeSearchTerm(typed);
+  return ingredient.referenceProductName ? storeSearchTerm(ingredient.referenceProductName) : null;
+}
+
+/**
+ * Waarop we de gevonden producten beoordelen.
+ *
+ * Dit moet meebewegen met `searchTermFor`, en dat is niet vanzelfsprekend:
+ * eerst ging de ingetypte term alleen naar de winkel toe en werd er daarna
+ * alsnog op de ingrediëntnaam gematcht. "Snoeptomaatjes" werd dus keurig
+ * opgehaald en vervolgens weggegooid, want met "Snack Tomaatjes" heeft die
+ * naam geen woord gemeen — precies het geval waarvoor dit veld bestaat. Een
+ * knop die niets doet is erger dan geen knop.
+ *
+ * Wie de term intypt zegt daarmee: dít is hetzelfde product. Dat oordeel
+ * hoort zwaarder te wegen dan onze vuistregels.
+ */
+function matchNameFor(ingredient: PricedIngredient): string {
+  return ingredient.searchTerm?.trim() || ingredient.name;
+}
+
+/**
  * De ingrediënten die het waard zijn om prijzen van bij te houden: alles wat
  * in een recept voorkomt of een vaste boodschap is.
  */
@@ -79,6 +115,13 @@ export interface PricedIngredient {
   name: string;
   referenceProductName: string | null;
   referencePackageSize: string | null;
+  /**
+   * Een zelf ingetypte zoekterm, als die er is.
+   *
+   * Gaat vóór alles: wie 'm invult heeft gezien dat de app het zelf niet
+   * redde, en dan is dat oordeel meer waard dan onze vuistregels.
+   */
+  searchTerm: string | null;
 }
 
 export async function getPricedIngredients(options?: PricedIngredientOptions) {
@@ -105,6 +148,8 @@ export async function getPricedIngredients(options?: PricedIngredientOptions) {
     select: {
       id: true,
       name: true,
+      // Zelf ingetypt, en dan gaat het voor al het onderstaande.
+      searchTerm: true,
       // Het Picnic-product dat we hier werkelijk voor kopen. Dat is waarmee we
       // bij de andere winkels gaan zoeken: de ingrediëntnaam is soms alleen
       // een merk ("Alpro"), en daar vindt een winkel van alles bij behalve het
@@ -125,6 +170,7 @@ export async function getPricedIngredients(options?: PricedIngredientOptions) {
     name: ingredient.name,
     referenceProductName: ingredient.products[0]?.name ?? null,
     referencePackageSize: ingredient.products[0]?.packageSize ?? null,
+    searchTerm: ingredient.searchTerm?.trim() || null,
   }));
 
   const ordered = options?.staleFirstFor
@@ -282,13 +328,11 @@ export async function refreshStorePrices(
         name: ingredient.referenceProductName,
         packageSize: ingredient.referencePackageSize,
       };
-      const ownTerm = ingredient.referenceProductName
-        ? storeSearchTerm(ingredient.referenceProductName)
-        : null;
+      const ownTerm = searchTermFor(ingredient);
       const fallbackTerm = storeSearchTerm(ingredient.name);
 
       let found = await provider.search(ownTerm ?? fallbackTerm, { limit: SEARCH_RESULT_LIMIT });
-      let matches = rankStoreProducts(ingredient.name, found, CANDIDATES_PER_INGREDIENT, reference);
+      let matches = rankStoreProducts(matchNameFor(ingredient), found, CANDIDATES_PER_INGREDIENT, reference);
 
       // Terugvallen op de bredere zoekterm zodra de specifieke niets
       // bruikbaars oplevert — niet pas bij nul resultaten. Een winkel geeft
@@ -299,7 +343,7 @@ export async function refreshStorePrices(
         await sleep(REQUEST_SPACING_MS);
         const broader = await provider.search(fallbackTerm, { limit: SEARCH_RESULT_LIMIT });
         found = [...found, ...broader];
-        matches = rankStoreProducts(ingredient.name, found, CANDIDATES_PER_INGREDIENT, reference);
+        matches = rankStoreProducts(matchNameFor(ingredient), found, CANDIDATES_PER_INGREDIENT, reference);
       }
 
       consecutiveFailures = 0;
@@ -445,9 +489,7 @@ async function refreshDirkViaSearch(
       name: ingredient.referenceProductName,
       packageSize: ingredient.referencePackageSize,
     };
-    const ownTerm = ingredient.referenceProductName
-      ? storeSearchTerm(ingredient.referenceProductName)
-      : null;
+    const ownTerm = searchTermFor(ingredient);
     const fallbackTerm = storeSearchTerm(ingredient.name);
 
     // Waar de teller stond vóór dit ingrediënt, zodat we straks weten of het
@@ -465,7 +507,7 @@ async function refreshDirkViaSearch(
       // product simpelweg niet voert. Precies het verschil dat bepaalt of er
       // iemand naar de code moet kijken.
       let found = await searchWithoutFailing(ownTerm ?? fallbackTerm, ingredient.name, result);
-      let matches = rankStoreProducts(ingredient.name, found, CANDIDATES_PER_INGREDIENT, reference);
+      let matches = rankStoreProducts(matchNameFor(ingredient), found, CANDIDATES_PER_INGREDIENT, reference);
 
       // Zelfde terugval als bij Albert Heijn: pas breder zoeken als de
       // specifieke zoekopdracht niets bruikbaars oplevert.
@@ -473,7 +515,7 @@ async function refreshDirkViaSearch(
         await sleep(REQUEST_SPACING_MS);
         const broader = await searchWithoutFailing(fallbackTerm, ingredient.name, result);
         found = [...found, ...broader];
-        matches = rankStoreProducts(ingredient.name, found, CANDIDATES_PER_INGREDIENT, reference);
+        matches = rankStoreProducts(matchNameFor(ingredient), found, CANDIDATES_PER_INGREDIENT, reference);
       }
 
       result.itemsSeen += found.length;
@@ -568,8 +610,15 @@ export async function refreshDirkPrices(
       // de eerste categorieën van Dirks eigen menu, en die staan volledig los
       // van wat er op de lijst staat — vandaar "wel aanbod, maar niets dat
       // paste" terwijl sommige producten identiek zijn.
+      //
+      // Een zelf ingetypte zoekterm hoort hier net zo goed bij: die staat er
+      // juist omdát de eigen namen niet werkten, dus zonder hem kiest de
+      // crawler de categorieën op precies de woorden waarvan we al weten dat
+      // ze niets opleveren.
       relevantTo: ingredients.flatMap((ingredient) =>
-        ingredient.referenceProductName ? [ingredient.name, ingredient.referenceProductName] : [ingredient.name]
+        [ingredient.name, ingredient.referenceProductName, ingredient.searchTerm].filter(
+          (name): name is string => Boolean(name)
+        )
       ),
     });
   } catch (error) {
@@ -597,10 +646,12 @@ export async function refreshDirkPrices(
       break;
     }
     result.ingredientsChecked += 1;
-    const matches = rankStoreProducts(ingredient.name, catalogue.products, CANDIDATES_PER_INGREDIENT, {
-      name: ingredient.referenceProductName,
-      packageSize: ingredient.referencePackageSize,
-    });
+    const matches = rankStoreProducts(
+      matchNameFor(ingredient),
+      catalogue.products,
+      CANDIDATES_PER_INGREDIENT,
+      { name: ingredient.referenceProductName, packageSize: ingredient.referencePackageSize }
+    );
     if (matches.length === 0) {
       result.ingredientsWithoutMatch += 1;
       continue;

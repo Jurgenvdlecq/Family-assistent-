@@ -1118,6 +1118,11 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
       const line = await prisma.shoppingListLine.findFirstOrThrow({
         where: { shoppingList: { mealPlan: { householdId } }, product: { isNot: null }, fulfillment: "PICNIC" },
         include: { ingredient: true, product: true },
+        // Een vaste volgorde in plaats van "wat Postgres toevallig teruggeeft".
+        // Helpt maar half — het zijn willekeurige uuid's, dus welk ingrediënt
+        // je krijgt blijft per run verschillen. De echte reparatie zit in de
+        // productnaam hieronder.
+        orderBy: { id: "asc" },
       });
 
       // Zonder merk op ons eigen product is de klasse niet vast te stellen, en
@@ -1148,7 +1153,16 @@ test("Kritieke gebruikersflow (Fase 15)", { timeout: 180_000 }, async (t) => {
             ingredientId: line.ingredientId,
             provider: "AH",
             externalRef: variant.ref,
-            name: `AH ${line.ingredient.name}${variant.suffix}`,
+            // Genoemd naar óns eigen product, niet alleen naar het ingrediënt.
+            // Dat is niet cosmetisch: de toelating kijkt naar de ingrediëntnaam
+            // én naar het product dat wij kopen, en welke van die twee het doet
+            // hangt af van hoe die twee namen zich tot elkaar verhouden. Bij
+            // "Melk" tegenover "Testmelk" gaat het goed, bij "Zoete aardappel"
+            // tegenover "Zoete aardappel" gelden strengere regels — en welk
+            // ingrediënt deze stap pakt, verschilt per run. Dat maakte deze
+            // test wisselvallig zonder dat er iets aan de app veranderde. Een
+            // echt winkelequivalent lijkt sowieso op wat wij kopen.
+            name: `AH ${line.product!.name}${variant.suffix}`,
             brand: "AH",
             packageSize: line.product!.packageSize,
             packageQuantity,
