@@ -1,4 +1,5 @@
 import type { ProviderCapabilities, ProviderProduct } from "../types";
+import { contentWords } from "../storeMatch";
 import { parsePackContent, unitPriceFor } from "../unitPrice";
 
 /**
@@ -256,4 +257,34 @@ export function parseDirkCategoryPaths(html: string): string[] {
   const paths = [...html.matchAll(/href="(\/boodschappen\/[a-z0-9-]+\/[a-z0-9-]+[^"]*)"/gi)]
     .map((match) => match[1].split("?")[0].replace(/\/$/, ""));
   return [...new Set(paths)];
+}
+
+/**
+ * Welke categoriepagina's van Dirk zijn de moeite waard voor déze lijst?
+ *
+ * Dirk heeft geen zoekfunctie, dus we crawlen categorieën. Maar we kunnen er
+ * niet zestig bezoeken binnen één aanroep, en welke zes je dan pakt bepaalt
+ * alles. Dat waren tot nu toe simpelweg de eerste zes van de overzichtspagina
+ * — willekeurig ten opzichte van de boodschappenlijst. Het scherm meldde
+ * daardoor "wel aanbod, maar niets dat paste", terwijl de app in de verkeerde
+ * schappen keek.
+ *
+ * Gelukkig zegt het pad zelf waar het over gaat: `/boodschappen/zuivel/melk`.
+ * Een categorie telt hier zwaarder naarmate ze meer van de gevraagde namen
+ * kan bedienen. Categorieën die niets dekken blijven achteraan staan in
+ * plaats van te verdwijnen: is er tijd over, dan zijn ze alsnog welkom.
+ */
+export function rankDirkCategories(paths: string[], names: string[]): string[] {
+  const wanted = names.map((name) => new Set(contentWords(name)));
+
+  const scored = paths.map((path, index) => {
+    const pathWords = new Set(contentWords(path.replace(/[/-]/g, " ")));
+    // Hoeveel van de gevraagde namen heeft hier iets te zoeken?
+    const covers = wanted.filter((words) => [...words].some((word) => pathWords.has(word))).length;
+    return { path, covers, index };
+  });
+
+  return scored
+    .sort((a, b) => b.covers - a.covers || a.index - b.index)
+    .map((entry) => entry.path);
 }

@@ -204,3 +204,55 @@ test("Dirk-verversing: eerder opgeslagen prijzen blijven staan als de crawl misl
     await cleanupDirkProducts();
   }
 });
+
+test("Dirk-verversing: bezoekt eerst de categorieën waar de lijst iets te zoeken heeft", async () => {
+  // Gebruikersmelding: "Hij zegt dat ie producten heeft gevonden maar geen
+  // match." Dirk heeft geen zoekfunctie, dus er wordt gecrawld — en er werden
+  // simpelweg de eerste categorieën van Dirks eigen menu gepakt, die niets met
+  // de boodschappenlijst te maken hebben. Met een krappe limiet kwam de juiste
+  // categorie dus nooit aan de beurt.
+  const ingredients = await getPricedIngredients();
+  const target = ingredients[0];
+  // Het pad moet aan Dirks eigen vorm voldoen: twee segmenten, alleen kleine
+  // letters en koppeltekens.
+  const slug = target.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  const targetPath = `/boodschappen/schap/${slug}`;
+  const bezocht: string[] = [];
+
+  try {
+    const result = await withFakeDirk(
+      {
+        // De relevante categorie staat bewust achteraan in het menu.
+        "/boodschappen": `
+          <a href="/boodschappen/dranken/wijn-en-bier">Wijn</a>
+          <a href="/boodschappen/zoet/snoep-en-koek">Snoep</a>
+          <a href="${targetPath}">Doel</a>
+        `,
+        "/boodschappen/dranken/wijn-en-bier": categoryPage([
+          { id: "900", name: "Rode wijn", size: "750 ml", large: "4", small: "99", hasEuros: true },
+        ]),
+        "/boodschappen/zoet/snoep-en-koek": categoryPage([
+          { id: "901", name: "Drop", size: "200 gram", large: "1", small: "99", hasEuros: true },
+        ]),
+        [targetPath]: categoryPage([
+          { id: "902", name: `Dirk ${target.name}`, size: "500 gram", large: "2", small: "49", hasEuros: true },
+        ]),
+      },
+      async (site) => {
+        site.server.on("request", (request) => {
+          if (request.url) bezocht.push(request.url);
+        });
+        // Maar één categorie mag bezocht worden: die moet de juiste zijn.
+        return refreshDirkPrices({ maxCategories: 1 });
+      }
+    );
+
+    assert.ok(
+      bezocht.includes(targetPath),
+      `de relevante categorie hoort bezocht te zijn, bezocht: ${bezocht.join(", ")}`
+    );
+    assert.ok(result.productsStored > 0, "en dat levert een match op in plaats van 'niets dat paste'");
+  } finally {
+    await cleanupDirkProducts();
+  }
+});

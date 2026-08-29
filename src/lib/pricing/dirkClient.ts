@@ -5,6 +5,7 @@ import {
   parseDirkProducts,
 } from "@/domain/pricing/providers/dirkProvider";
 import { rankStoreProducts } from "@/domain/pricing/storeMatch";
+import { rankDirkCategories } from "@/domain/pricing/providers/dirkProvider";
 import type { ProviderProduct, StorePriceProvider } from "@/domain/pricing/types";
 
 /**
@@ -105,17 +106,42 @@ export interface DirkCrawlResult {
  * opmaak veranderd, en heeft nog vijftig keer proberen geen zin.
  */
 export async function crawlDirkCatalogue(
-  options?: { maxCategories?: number }
+  options?: {
+    maxCategories?: number;
+    /**
+     * De namen waar deze verversing voor bedoeld is (ingrediënten en de
+     * producten die wij daarvoor kopen). Bepaalt wélke categorieën eerst
+     * bezocht worden — zonder dit is de volgorde die van Dirks eigen menu, en
+     * dat staat volledig los van wat er op de lijst staat.
+     */
+    relevantTo?: string[];
+    /** Wanneer de crawl moet stoppen, ook als er nog categorieën over zijn. */
+    deadline?: number;
+  }
 ): Promise<DirkCrawlResult> {
   const correlationId = createCorrelationId();
-  const paths = (await fetchDirkCategoryPaths()).slice(0, options?.maxCategories ?? MAX_CATEGORIES);
+  // Eerst kiezen wélke categorieën, dan pas afkappen. Andersom (afkappen en
+  // dan pas kijken) leverde de eerste zes van de overzichtspagina op, en die
+  // hebben niets met de boodschappenlijst te maken.
+  const paths = rankDirkCategories(await fetchDirkCategoryPaths(), options?.relevantTo ?? []).slice(
+    0,
+    options?.maxCategories ?? MAX_CATEGORIES
+  );
 
   const byRef = new Map<string, ProviderProduct>();
   const categoriesFailed: string[] = [];
   let consecutiveFailures = 0;
   let categoriesVisited = 0;
 
+  let stoppedOnTime = false;
   for (const [index, path] of paths.entries()) {
+    // De crawl zelf begrenzen, niet alleen het matchen erna. Zonder deze
+    // controle kan het ophalen van de pagina's het hele tijdsbudget opeten en
+    // komt het matchen er niet eens aan toe.
+    if (options?.deadline !== undefined && Date.now() >= options.deadline) {
+      stoppedOnTime = true;
+      break;
+    }
     if (index > 0) await sleep(REQUEST_SPACING_MS);
     try {
       const html = await fetchPage(path);
@@ -146,8 +172,14 @@ export async function crawlDirkCatalogue(
   if (products.length === 0) {
     // Luid falen. De vorige prijzen blijven staan — die zijn oud, maar niet
     // verzonnen — en de vergelijking meldt dat Dirk vandaag ontbreekt.
+    //
+    // Wél met de juiste reden: op de klok gestopt is iets heel anders dan een
+    // scraper die niets meer leest, en dat verschil bepaalt of er iemand naar
+    // de code moet kijken of dat het gewoon een keer druk was.
     throw new DirkUnavailableError(
-      `Dirk-crawl leverde geen enkel product op (${categoriesVisited} pagina's bezocht, ${categoriesFailed.length} mislukt)`
+      stoppedOnTime
+        ? "Dirk-crawl gestopt bij het tijdslimiet voordat er iets was opgehaald"
+        : `Dirk-crawl leverde geen enkel product op (${categoriesVisited} pagina's bezocht, ${categoriesFailed.length} mislukt)`
     );
   }
 

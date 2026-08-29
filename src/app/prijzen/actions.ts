@@ -170,8 +170,15 @@ const REFRESH_PROVIDERS: ProductProvider[] = ["AH", "DIRK"];
  */
 const MANUAL_INGREDIENT_LIMIT = 15;
 
-/** En zoveel categoriepagina's bij Dirk. */
-const MANUAL_DIRK_CATEGORY_LIMIT = 6;
+/**
+ * En zoveel categoriepagina's bij Dirk.
+ *
+ * Ruimer dan de zes van vroeger, want ze worden nu gekozen op wat er op de
+ * lijst staat in plaats van op de volgorde van Dirks eigen menu — dan is elke
+ * extra pagina ook echt een kans op een match. Het tijdsbudget bewaakt de
+ * bovengrens, dus dit getal hoeft niet meer voorzichtig te zijn.
+ */
+const MANUAL_DIRK_CATEGORY_LIMIT = 14;
 
 /**
  * Hoeveel tijd de hele knop mag kosten, verdeeld over de winkels.
