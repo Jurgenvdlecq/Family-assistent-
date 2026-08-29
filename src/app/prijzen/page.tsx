@@ -8,6 +8,7 @@ import { EQUIVALENCE_LABELS, type EquivalenceLevel } from "@/domain/pricing/equi
 import { PROVIDER_LABELS } from "@/domain/pricing/types";
 import { describeProviderSource } from "@/domain/pricing/providers/capabilities";
 import { describeSplitAdvice } from "@/domain/pricing/splitAdvice";
+import { compareLineAcrossStores, comparisonColumns } from "@/domain/pricing/lineComparison";
 import type { ProductProvider } from "@/generated/prisma/enums";
 import type { StorePriceForIngredient } from "@/lib/pricing/storePrices";
 import NavBar from "@/components/NavBar";
@@ -73,6 +74,12 @@ export default async function PrijzenPage({
   const overview = await getBasketOverview(household.id, mealPlan.id);
   const { comparison, candidatesByIngredient, choicesByIngredient, lineMeta } = overview;
   const providers = COMPARISON_PROVIDERS;
+  // Picnic hoort als kolom naast de winkels te staan, niet als losse alinea
+  // eronder: de vraag is "wat kost dit hier, en daar" — dan wil je de bedragen
+  // naast elkaar zien.
+  const columns = comparisonColumns(providers);
+  // Een winkel waar we vandaag helemaal niets van weten krijgt geen detailblok
+  // per regel: vijftien keer "geen prijs bekend" voegt niets toe.
   const providersWithData = providers.filter((provider) =>
     comparison.lines.some((line) => line.stores.has(provider))
   );
@@ -108,78 +115,149 @@ export default async function PrijzenPage({
           </p>
         ) : (
           <>
-            <section className="mb-6 rounded-xl border border-line bg-surface p-4">
-              <p className="text-sm text-ink-muted">Jouw lijst zoals hij nu bij Picnic staat</p>
-              <p className="text-2xl font-semibold text-ink">{euro(comparison.referenceTotal)}</p>
-              <p className="mt-0.5 text-xs text-ink-faint">
-                {comparison.lines.length} {comparison.lines.length === 1 ? "regel" : "regels"}
-                {comparison.referenceLinesMissing > 0 &&
-                  ` · van ${comparison.referenceLinesMissing} ${
-                    comparison.referenceLinesMissing === 1 ? "regel weten we" : "regels weten we"
-                  } de prijs nog niet`}
-              </p>
+            {/* De drie winkels naast elkaar, zodat het verschil in één
+                oogopslag te zien is. De regels waarover elk bedrag gaat staan
+                er per winkel bij: AH en Dirk hebben niet allebei evenveel van
+                je lijst, en dan zijn twee kale totalen niet vergelijkbaar. */}
+            <section className="mb-6 overflow-x-auto rounded-xl border border-line bg-surface">
+              <table className="w-full min-w-[20rem] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-line text-left">
+                    <th className="px-3 py-2 font-medium text-ink-muted">Hele lijst</th>
+                    {columns.map((provider) => (
+                      <th key={provider} className="px-3 py-2 text-right font-medium text-ink">
+                        {PROVIDER_LABELS[provider]}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="tabular-nums">
+                  <tr className="border-b border-line">
+                    <td className="px-3 py-2 text-ink-muted">
+                      Hetzelfde of gelijkwaardig
+                    </td>
+                    {columns.map((provider) => {
+                      if (provider === "PICNIC") {
+                        return (
+                          <td key={provider} className="px-3 py-2 text-right text-base font-semibold text-ink">
+                            {euro(comparison.referenceTotal)}
+                          </td>
+                        );
+                      }
+                      const total = comparison.totals.get(provider);
+                      return (
+                        <td key={provider} className="px-3 py-2 text-right text-base font-semibold text-ink">
+                          {total && total.linesCompared > 0 ? euro(total.hardTotal) : "—"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  <tr className="border-b border-line text-xs text-ink-faint">
+                    <td className="px-3 py-2">Over hoeveel regels</td>
+                    {columns.map((provider) => {
+                      if (provider === "PICNIC") {
+                        return (
+                          <td key={provider} className="px-3 py-2 text-right">
+                            {comparison.lines.length} van de {comparison.lines.length}
+                          </td>
+                        );
+                      }
+                      const total = comparison.totals.get(provider);
+                      return (
+                        <td key={provider} className="px-3 py-2 text-right">
+                          {total ? `${total.linesCompared} van de ${comparison.lines.length}` : "—"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  {/* Het eerlijke vergelijkingspunt: wat Picnic kost over
+                      precies dezelfde regels als die winkel kon leveren. */}
+                  <tr className="border-b border-line text-xs text-ink-faint">
+                    <td className="px-3 py-2">Bij Picnic, dezelfde regels</td>
+                    {columns.map((provider) => {
+                      if (provider === "PICNIC") return <td key={provider} className="px-3 py-2" />;
+                      const total = comparison.totals.get(provider);
+                      if (!total || total.linesCompared === 0) {
+                        return (
+                          <td key={provider} className="px-3 py-2 text-right">
+                            —
+                          </td>
+                        );
+                      }
+                      const difference = describeDifference(
+                        total.hardTotal,
+                        total.referenceTotalForHardLines,
+                        total.linesCompared
+                      );
+                      return (
+                        <td key={provider} className="px-3 py-2 text-right">
+                          {euro(total.referenceTotalForHardLines)}
+                          {difference ? <span className="block text-ink-muted">{difference}</span> : null}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  <tr className="text-xs text-ink-faint">
+                    <td className="px-3 py-2">Met alternatieven erbij</td>
+                    {columns.map((provider) => {
+                      if (provider === "PICNIC") return <td key={provider} className="px-3 py-2" />;
+                      const total = comparison.totals.get(provider);
+                      return (
+                        <td key={provider} className="px-3 py-2 text-right">
+                          {total && total.linesWithAlternative > 0 ? euro(total.alternativeTotal) : "—"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tbody>
+              </table>
 
-              {providers.map((provider) => {
-                const total = comparison.totals.get(provider);
-                if (!total) return null;
-                const difference = describeDifference(
-                  total.hardTotal,
-                  total.referenceTotalForHardLines,
-                  total.linesCompared
-                );
-                return (
-                  <div key={provider} className="mt-4 border-t border-line pt-4">
-                    <p className="text-sm font-medium text-ink">Bij {PROVIDER_LABELS[provider]}</p>
-                    {describeProviderSource(provider) && (
-                      <p className="text-xs text-ink-faint">{describeProviderSource(provider)}</p>
-                    )}
-                    {total.linesCompared === 0 ? (
-                      <p className="mt-1 text-sm text-ink-muted">
-                        Nog geen enkele regel te vergelijken. Dat is geen €&nbsp;0 — het betekent dat we
-                        hier nog geen prijzen van hebben.
-                      </p>
-                    ) : (
-                      <>
-                        {/* Drie getallen, nooit één: hetzelfde-of-gelijkwaardig,
-                            inclusief alternatieven, en wat er niet te vergelijken viel. */}
-                        <p className="text-2xl font-semibold text-ink">{euro(total.hardTotal)}</p>
-                        <p className="text-xs text-ink-faint">
-                          voor {total.linesCompared} van de {comparison.lines.length} regels — bij Picnic{" "}
-                          {euro(total.referenceTotalForHardLines)} voor diezelfde regels
-                          {difference ? `, dus ${difference}` : ""}
+              <div className="space-y-1 border-t border-line px-3 py-3">
+                {providers.map((provider) => {
+                  const total = comparison.totals.get(provider);
+                  if (!total) return null;
+                  const source = describeProviderSource(provider);
+                  return (
+                    <div key={provider} className="text-xs text-ink-faint">
+                      {total.linesCompared === 0 ? (
+                        <p className="text-ink-muted">
+                          Van {PROVIDER_LABELS[provider]} hebben we nog geen prijzen. Dat is geen
+                          €&nbsp;0 — die winkel is hier gewoon nog niet te vergelijken.
                         </p>
-                        {total.linesWithAlternative > 0 && (
-                          <p className="mt-2 text-sm text-ink-muted">
-                            {euro(total.alternativeTotal)} als je ook {total.linesWithAlternative}{" "}
-                            {total.linesWithAlternative === 1 ? "ander soort product" : "andere soorten product"}{" "}
-                            meerekent — bij Picnic {euro(total.referenceTotalForAlternativeLines)} voor
-                            diezelfde regels. Dat is dan wel iets anders in huis.
+                      ) : (
+                        total.linesMissing > 0 && (
+                          <p className="flex items-start gap-1.5">
+                            <AlertTriangle size={13} className="mt-0.5 shrink-0 text-tag-amber-ink" />
+                            <span>
+                              {PROVIDER_LABELS[provider]}: {total.linesMissing}{" "}
+                              {total.linesMissing === 1 ? "regel telt" : "regels tellen"} niet mee, dus dit
+                              is geen prijs voor je hele lijst.
+                            </span>
                           </p>
-                        )}
-                      </>
-                    )}
-                    {total.linesMissing > 0 && (
-                      <p className="mt-2 flex items-start gap-1.5 text-sm text-ink-muted">
-                        <AlertTriangle size={15} className="mt-0.5 shrink-0 text-tag-amber-ink" />
-                        <span>
-                          {total.linesMissing} {total.linesMissing === 1 ? "regel telt" : "regels tellen"} niet
-                          mee. Het bedrag hierboven is dus geen prijs voor je hele lijst.
-                        </span>
-                      </p>
-                    )}
-                    {total.anyStale && total.oldestObservation && (
-                      <p className="mt-1 text-xs text-ink-faint">
-                        Oudste prijs van{" "}
-                        {total.oldestObservation.toLocaleDateString("nl-NL", {
-                          day: "numeric",
-                          month: "long",
-                        })}
-                        .
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
+                        )
+                      )}
+                      {source && <p>{PROVIDER_LABELS[provider]}: {source}.</p>}
+                      {total.anyStale && total.oldestObservation && (
+                        <p>
+                          {PROVIDER_LABELS[provider]}: oudste prijs van{" "}
+                          {total.oldestObservation.toLocaleDateString("nl-NL", {
+                            day: "numeric",
+                            month: "long",
+                          })}
+                          .
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+                {comparison.referenceLinesMissing > 0 && (
+                  <p className="text-xs text-ink-faint">
+                    Van {comparison.referenceLinesMissing}{" "}
+                    {comparison.referenceLinesMissing === 1 ? "regel" : "regels"} weten we de Picnic-prijs
+                    nog niet.
+                  </p>
+                )}
+              </div>
             </section>
 
             {/* Splitsingsadvies verschijnt alleen boven de drempel: een advies
@@ -250,16 +328,53 @@ export default async function PrijzenPage({
                         {formatQuantity(line.neededQuantity, line.unit)} nodig
                       </p>
                     </div>
-                    <p className="mt-0.5 text-xs text-ink-faint">
-                      Picnic:{" "}
-                      {line.referenceName
-                        ? `${line.referenceName}${
-                            line.referenceCost !== null
-                              ? ` · ${line.referencePackages}x · ${euro(line.referenceCost)}`
-                              : " · prijs onbekend"
-                          }`
-                        : "nog geen product gekozen"}
-                    </p>
+                    {/* De kern van dit scherm: dezelfde regel bij alle drie de
+                        winkels naast elkaar. De goedkoopste krijgt nadruk —
+                        maar alleen als hij ook echt vergelijkbaar is, want
+                        goedkoper door iets anders te kopen is geen besparing. */}
+                    <div className="mt-2 grid grid-cols-3 gap-2">
+                      {compareLineAcrossStores(line, providers).map((cell) => (
+                        <div
+                          key={cell.provider}
+                          data-store-cell={cell.provider}
+                          className={`rounded-lg border p-2 ${
+                            cell.cheapest ? "border-tag-green-ink/40 bg-tag-green-bg" : "border-line bg-surface-2"
+                          }`}
+                        >
+                          <p className="truncate text-[11px] font-medium text-ink-muted">
+                            {PROVIDER_LABELS[cell.provider]}
+                          </p>
+                          <p
+                            className={`tabular-nums text-sm font-semibold ${
+                              cell.cheapest ? "text-tag-green-ink" : "text-ink"
+                            }`}
+                          >
+                            {cell.cost !== null ? euro(cell.cost) : "—"}
+                          </p>
+                          {cell.cost !== null && cell.packagesToBuy !== null && (
+                            <p className="text-[11px] text-ink-faint">
+                              {cell.packagesToBuy}×{cell.packageSize ? ` ${cell.packageSize}` : ""}
+                            </p>
+                          )}
+                          {cell.note && <p className="text-[11px] text-ink-faint">{cell.note}</p>}
+                        </div>
+                      ))}
+                    </div>
+
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-xs font-medium text-accent">
+                        Welke producten, en aanpassen
+                      </summary>
+                      <p className="mt-2 text-xs text-ink-faint">
+                        Picnic:{" "}
+                        {line.referenceName
+                          ? `${line.referenceName}${
+                              line.referenceCost !== null
+                                ? ` · ${line.referencePackages}x · ${euro(line.referenceCost)}`
+                                : " · prijs onbekend"
+                            }`
+                          : "nog geen product gekozen"}
+                      </p>
 
                     {providersWithData.map((provider) => {
                       const store = line.stores.get(provider);
@@ -353,12 +468,14 @@ export default async function PrijzenPage({
                             </form>
                           )}
 
+                          {/* Bewust niet nog een uitklapniveau: wie "welke
+                              producten" opent, wil de alternatieven meteen
+                              zien in plaats van er nog een keer voor te
+                              klikken. */}
                           {candidates.length > 1 && (
-                            <details className="mt-2">
-                              <summary className="cursor-pointer text-xs font-medium text-accent">
-                                Ander product kiezen
-                              </summary>
-                              <div className="mt-2 space-y-1">
+                            <div className="mt-2 border-t border-line pt-2">
+                              <p className="text-xs font-medium text-ink-muted">Ander product kiezen</p>
+                              <div className="mt-1 space-y-1">
                                 {candidates.map((candidate) => (
                                   <StoreCandidateRow
                                     key={candidate.productId}
@@ -369,11 +486,12 @@ export default async function PrijzenPage({
                                   />
                                 ))}
                               </div>
-                            </details>
+                            </div>
                           )}
                         </div>
                       );
                     })}
+                    </details>
                   </div>
                 );
               })}
