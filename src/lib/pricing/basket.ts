@@ -7,6 +7,8 @@ import {
   type StoreCandidateInput,
 } from "@/domain/pricing/basketComparison";
 import { deriveQualityTier } from "@/domain/pricing/qualityTier";
+import { judgeDiscount, type PriceSample } from "@/domain/pricing/priceHistory";
+import { getPriceHistories } from "./observations";
 import { isUserChosenPackageCount } from "@/lib/shoppingList";
 import {
   getStoreCandidatesForIngredients,
@@ -34,9 +36,28 @@ export interface BasketOverview {
   /** Alle kandidaten per ingrediënt, zodat de gebruiker een ander product kan kiezen. */
   candidatesByIngredient: Map<string, StorePriceForIngredient[]>;
   /** De regels zelf, voor de tabel op het scherm. */
-  lineMeta: Map<string, { ingredientId: string; picnicProductName: string | null }>;
+  lineMeta: Map<string, { ingredientId: string; picnicProductName: string | null; isFixed: boolean }>;
+  /**
+   * Regels die deze week echt in de actie zijn — met het bedrag dat de actie
+   * scheelt. Alleen als de korting ook werkelijk iets oplevert bij het aantal
+   * dat je nodig hebt, en nooit bij een van-prijs die de geschiedenis
+   * tegenspreekt.
+   */
+  promoHighlights: PromoHighlight[];
   /** `null` betekent: er is deze week nog geen lijst om door te rekenen. */
   shoppingListId: string | null;
+}
+
+export interface PromoHighlight {
+  lineId: string;
+  ingredientName: string;
+  provider: ProductProvider;
+  promoLabel: string;
+  explanation: string | null;
+  /** Wat de actie scheelt bij het aantal verpakkingen van deze regel. */
+  saving: number;
+  /** Een vaste boodschap koop je elke week; daar telt een actie zwaarder. */
+  isFixed: boolean;
 }
 
 /** De winkels waar we vandaag inzicht in hebben. Picnic is de referentie, geen kolom. */
@@ -71,6 +92,7 @@ export async function getBasketOverview(
     choicesByIngredient: new Map(),
     candidatesByIngredient: new Map(),
     lineMeta: new Map(),
+    promoHighlights: [],
     shoppingListId: null,
   };
   if (!shoppingList || shoppingList.lines.length === 0) return empty;
@@ -117,8 +139,8 @@ export async function getBasketOverview(
   }
 
   const basketLines: BasketLineInput[] = [];
-  const candidatesByLine = new Map<string, StoreCandidateInput[]>();
-  const lineMeta = new Map<string, { ingredientId: string; picnicProductName: string | null }>();
+  const candidatesByLine = new Map<string, StorePriceForIngredient[]>();
+  const lineMeta = new Map<string, { ingredientId: string; picnicProductName: string | null; isFixed: boolean }>();
 
   for (const line of lines) {
     basketLines.push({
@@ -161,6 +183,7 @@ export async function getBasketOverview(
     lineMeta.set(line.id, {
       ingredientId: line.ingredientId,
       picnicProductName: line.product?.name ?? null,
+      isFixed: line.source === "FIXED",
     });
 
     const all = candidatesByIngredient.get(line.ingredientId) ?? [];
@@ -172,20 +195,99 @@ export async function getBasketOverview(
       const pinned = chosen?.get(candidate.provider);
       return pinned ? candidate.productId === pinned : true;
     });
-    candidatesByLine.set(line.id, effective.map(toStoreCandidate));
+    candidatesByLine.set(line.id, effective);
   }
 
+  // Alleen voor kandidaten met een van-prijs valt er iets te beoordelen; voor
+  // de rest hoeven we de geschiedenis niet op te halen.
+  const withWasPrice = [...new Set(
+    [...candidatesByLine.values()].flat().filter((candidate) => candidate.wasPrice !== null)
+      .map((candidate) => candidate.productId)
+  )];
+  const histories = await getPriceHistories(withWasPrice);
+
+  const storeCandidatesByLine = new Map<string, StoreCandidateInput[]>();
+  for (const [lineId, candidates] of candidatesByLine) {
+    storeCandidatesByLine.set(
+      lineId,
+      candidates.map((candidate) => toStoreCandidate(candidate, histories, now))
+    );
+  }
+
+  const comparison = compareBasket(basketLines, storeCandidatesByLine, providers, now);
+
   return {
-    comparison: compareBasket(basketLines, candidatesByLine, providers),
+    comparison,
     choicesByIngredient,
     candidatesByIngredient,
     lineMeta,
+    promoHighlights: collectPromoHighlights(comparison, lineMeta),
     shoppingListId: shoppingList.id,
   };
 }
 
-function toStoreCandidate(candidate: StorePriceForIngredient): StoreCandidateInput {
+/**
+ * Welke acties zijn het waard om te noemen?
+ *
+ * Alleen wat bij dít aantal verpakkingen echt geld scheelt. "1+1 gratis" bij
+ * één stuk staat er dus niet tussen, en een van-prijs die de geschiedenis
+ * tegenspreekt ook niet — anders wordt de attentie een reclamebalk in plaats
+ * van een hulpmiddel.
+ */
+function collectPromoHighlights(
+  comparison: BasketComparison,
+  lineMeta: Map<string, { isFixed: boolean }>
+): PromoHighlight[] {
+  const highlights: PromoHighlight[] = [];
+
+  for (const line of comparison.lines) {
+    for (const store of line.stores.values()) {
+      if (!store.promoLabel || store.fakeDiscount) continue;
+      if (store.cost === null || store.costWithoutPromo === null) continue;
+      const saving = Number((store.costWithoutPromo - store.cost).toFixed(2));
+      if (saving < 0.01) continue;
+
+      highlights.push({
+        lineId: line.lineId,
+        ingredientName: line.ingredientName,
+        provider: store.provider,
+        promoLabel: store.promoLabel,
+        explanation: store.promoExplanation,
+        saving,
+        isFixed: lineMeta.get(line.lineId)?.isFixed ?? false,
+      });
+    }
+  }
+
+  // Vaste boodschappen eerst: die koop je elke week, dus daar telt een actie
+  // zwaarder dan bij iets eenmaligs.
+  return highlights.sort((a, b) => {
+    if (a.isFixed !== b.isFixed) return a.isFixed ? -1 : 1;
+    return b.saving - a.saving;
+  });
+}
+
+/**
+ * Eén winkelproduct naar de vorm die de doorrekening gebruikt, inclusief het
+ * oordeel over de actie.
+ *
+ * Dat oordeel hoort hier en niet in het domein: het leunt op de
+ * prijsgeschiedenis uit de database. Wat het domein ermee doet — de korting
+ * niet als voordeel tonen — staat wél daar.
+ */
+function toStoreCandidate(
+  candidate: StorePriceForIngredient,
+  histories: Map<string, PriceSample[]>,
+  now: Date
+): StoreCandidateInput {
+  const verdict = judgeDiscount(
+    { price: candidate.price, wasPrice: candidate.wasPrice, observedAt: candidate.observedAt },
+    histories.get(candidate.productId) ?? [],
+    now
+  );
+
   return {
+    fakeDiscount: verdict.kind === "NEPKORTING",
     provider: candidate.provider,
     productId: candidate.productId,
     name: candidate.name,
@@ -197,6 +299,8 @@ function toStoreCandidate(candidate: StorePriceForIngredient): StoreCandidateInp
     gtin: candidate.gtin,
     price: candidate.price,
     promoLabel: candidate.promoLabel,
+    promoUntil: candidate.promoUntil,
+    wasPrice: candidate.wasPrice,
     observedAt: candidate.observedAt,
     stale: candidate.stale,
   };

@@ -1,6 +1,7 @@
 import type { ProductProvider, Unit } from "@/generated/prisma/enums";
 import { calculatePackageRequirement } from "@/lib/quantity/packages";
 import { compareEquivalence, countsAsHardMatch, type EquivalenceCandidate, type EquivalenceLevel } from "./equivalence";
+import { applyPromotion, parsePromoMechanism, promotionIsActive } from "./promotions";
 
 /**
  * Het mandje doorrekenen: wat kost deze boodschappenlijst bij winkel X?
@@ -52,6 +53,17 @@ export interface StoreCandidateInput extends EquivalenceCandidate {
    */
   packageUnit: Unit | null;
   promoLabel: string | null;
+  /** Tot wanneer de actie loopt; `null` als de winkel dat niet meegeeft. */
+  promoUntil: Date | null;
+  /** De van-prijs bij een actie. */
+  wasPrice: number | null;
+  /**
+   * Of die van-prijs volgens de prijsgeschiedenis nooit echt gerekend is.
+   * Wordt buiten dit domein bepaald (daar zit de geschiedenis), maar hoort
+   * wél op de regel: een korting die geen korting is, mag niet als voordeel
+   * op het scherm komen.
+   */
+  fakeDiscount?: boolean;
   observedAt: Date;
   stale: boolean;
 }
@@ -70,6 +82,12 @@ export interface BasketLineStoreResult {
   level: EquivalenceLevel;
   levelReason: string;
   promoLabel: string | null;
+  /** Wat de actie hier concreet doet: "3 halen, 2 betalen". */
+  promoExplanation: string | null;
+  /** Wat het zonder de actie gekost zou hebben; gelijk aan `cost` als er geen actie is. */
+  costWithoutPromo: number | null;
+  /** De van-prijs klopt niet met de prijsgeschiedenis. */
+  fakeDiscount: boolean;
   observedAt: Date;
   stale: boolean;
   /** Waarom deze regel niet meetelt, als dat zo is. */
@@ -188,7 +206,8 @@ function packagesForLine(
  */
 function priceLineAtStore(
   line: BasketLineInput,
-  candidate: StoreCandidateInput
+  candidate: StoreCandidateInput,
+  now: Date
 ): BasketLineStoreResult {
   const verdict = line.reference
     ? compareEquivalence(line.reference, candidate)
@@ -198,7 +217,17 @@ function priceLineAtStore(
 
   const packaging = packagesForLine(line, candidate.packageQuantity, candidate.packageUnit);
   const packagesToBuy = packaging.packagesToBuy;
-  const cost = packagesToBuy === null ? null : Number((packagesToBuy * candidate.price).toFixed(2));
+
+  // Een kortingslabel is geen prijs. "1+1 gratis" bij drie stuks is 33%
+  // korting, niet 50%, en bij één stuk helemaal geen. Alleen een mechanisme
+  // dat we zeker herkennen én dat nog loopt wordt toegepast; de rest laat de
+  // gewone prijs staan.
+  const mechanism = promotionIsActive(candidate.promoUntil, now)
+    ? parsePromoMechanism(candidate.promoLabel)
+    : null;
+  const outcome =
+    packagesToBuy === null ? null : applyPromotion(packagesToBuy, candidate.price, mechanism);
+  const cost = outcome?.cost ?? null;
 
   return {
     provider: candidate.provider,
@@ -211,6 +240,11 @@ function priceLineAtStore(
     level: verdict.level,
     levelReason: verdict.reason,
     promoLabel: candidate.promoLabel,
+    promoExplanation: outcome?.explanation ?? null,
+    costWithoutPromo: outcome?.costWithoutPromo ?? null,
+    // Een van-prijs die volgens de geschiedenis nooit gerekend is, mag niet
+    // als voordeel op het scherm komen.
+    fakeDiscount: candidate.fakeDiscount === true,
     observedAt: candidate.observedAt,
     stale: candidate.stale,
     missingReason:
@@ -233,7 +267,8 @@ function priceLineAtStore(
 export function compareBasket(
   lines: BasketLineInput[],
   candidatesByLine: Map<string, StoreCandidateInput[]>,
-  providers: ProductProvider[]
+  providers: ProductProvider[],
+  now: Date = new Date()
 ): BasketComparison {
   const results: BasketLineResult[] = [];
   const totals = new Map<ProductProvider, BasketStoreTotal>(
@@ -295,14 +330,14 @@ export function compareBasket(
       // liever een gelijkwaardig product dan een goedkoper alternatief, want
       // "goedkoper door iets anders te kopen" is geen besparing.
       const priced = forProvider
-        .map((candidate) => priceLineAtStore(line, candidate))
+        .map((candidate) => priceLineAtStore(line, candidate, now))
         .filter((result) => result.cost !== null);
 
       if (priced.length === 0) {
         total.linesMissing += 1;
         // Toch tonen: de gebruiker moet zien dát er iets gevonden is en
         // waarom het niet meetelt.
-        const first = priceLineAtStore(line, forProvider[0]);
+        const first = priceLineAtStore(line, forProvider[0], now);
         stores.set(provider, first);
         continue;
       }

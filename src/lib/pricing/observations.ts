@@ -3,6 +3,7 @@ import type { ObservationSource, ProductProvider } from "@/generated/prisma/enum
 import type { ProviderProduct } from "@/domain/pricing/types";
 import { deriveQualityTier } from "@/domain/pricing/qualityTier";
 import { parsePackContent, unitPriceFor } from "@/domain/pricing/unitPrice";
+import type { PriceSample } from "@/domain/pricing/priceHistory";
 
 /**
  * Prijswaarnemingen opslaan en teruglezen.
@@ -160,6 +161,42 @@ export async function getLatestPrices(productIds: string[]): Promise<Map<string,
     });
   }
   return latest;
+}
+
+/**
+ * Het prijsverloop per product, voor het beoordelen van een actie.
+ *
+ * Precies waarvoor `PriceObservation` een reeks is en geen veld: pas met een
+ * geschiedenis kun je zien of een van-prijs ooit echt gerekend werd. Bewust
+ * begrensd in de tijd — wat twee jaar geleden gold zegt niets over vandaag —
+ * en in aantal, zodat één product met dagelijkse waarnemingen de query niet
+ * laat ontsporen.
+ */
+export async function getPriceHistories(
+  productIds: string[],
+  sinceDays = 60
+): Promise<Map<string, PriceSample[]>> {
+  const result = new Map<string, PriceSample[]>();
+  if (productIds.length === 0) return result;
+
+  const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+  const observations = await prisma.priceObservation.findMany({
+    where: { productId: { in: productIds }, observedAt: { gte: since } },
+    orderBy: { observedAt: "desc" },
+    select: { productId: true, price: true, wasPrice: true, observedAt: true },
+    take: 2000,
+  });
+
+  for (const observation of observations) {
+    const list = result.get(observation.productId) ?? [];
+    list.push({
+      price: Number(observation.price),
+      wasPrice: observation.wasPrice === null ? null : Number(observation.wasPrice),
+      observedAt: observation.observedAt,
+    });
+    result.set(observation.productId, list);
+  }
+  return result;
 }
 
 /**
