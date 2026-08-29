@@ -104,3 +104,46 @@ test("alleen identiek en gelijkwaardig tellen in het harde bedrag", () => {
   assert.equal(countsAsHardMatch("ALTERNATIEF"), false);
   assert.equal(countsAsHardMatch("NIET_VERGELIJKBAAR"), false);
 });
+
+test("cupjes zijn geen pot: dezelfde hoeveelheid, een andere verpakkingsvorm", () => {
+  // Gebruikersmelding: bij appelmoes stond onze pot naast een doosje cupjes.
+  const verdict = compareEquivalence(
+    { name: "Appelmoes", brand: null, packageSize: "720 g", qualityTier: "STANDAARD", gtin: null },
+    { name: "AH Appelmoes", brand: "AH", packageSize: "4 x 100 g", qualityTier: "STANDAARD", gtin: null }
+  );
+  assert.equal(verdict.level, "ALTERNATIEF");
+  assert.equal(verdict.reason, "losse porties in plaats van één verpakking");
+  assert.equal(countsAsHardMatch(verdict.level), false, "telt dus niet mee in het harde bedrag");
+});
+
+test("twee potten van verschillende grootte blijven wél gelijkwaardig", () => {
+  // De vorm is hetzelfde; alleen de inhoud verschilt, en dáár is de
+  // verpakkingsberekening voor.
+  const verdict = compareEquivalence(
+    { name: "Appelmoes", brand: null, packageSize: "720 g", qualityTier: "STANDAARD", gtin: null },
+    { name: "AH Appelmoes", brand: "AH", packageSize: "360 g", qualityTier: "STANDAARD", gtin: null }
+  );
+  assert.equal(verdict.level, "GELIJKWAARDIG");
+});
+
+test("een ander product van hetzelfde merk is geen gelijkwaardige keuze", () => {
+  // Het ingrediënt heet hier alleen naar het merk ("Alpro"), dus lexicaal
+  // matcht élk Alpro-artikel. Onze eigen productnaam is specifieker, en
+  // daartegen valt koffiemelk door de mand.
+  const verdict = compareEquivalence(
+    { name: "Alpro mild & creamy", brand: null, packageSize: "750 g", qualityTier: "STANDAARD", gtin: null },
+    { name: "Alpro Barista koffiemelk", brand: "Alpro", packageSize: "750 g", qualityTier: "STANDAARD", gtin: null }
+  );
+  assert.equal(verdict.level, "ALTERNATIEF");
+  assert.equal(verdict.reason, "een ander product dan wat jullie normaal kopen");
+});
+
+test("een ander merk van hetzelfde product blijft gewoon gelijkwaardig", () => {
+  // De grens ligt bewust op de helft: het merk is meestal één van de woorden,
+  // en een ander merk hoort geen beletsel te zijn.
+  const verdict = compareEquivalence(
+    { name: "Campina magere yoghurt", brand: "Campina", packageSize: "500 g", qualityTier: "STANDAARD", gtin: null },
+    { name: "AH magere yoghurt", brand: "AH", packageSize: "500 g", qualityTier: "STANDAARD", gtin: null }
+  );
+  assert.equal(verdict.level, "GELIJKWAARDIG");
+});

@@ -1,5 +1,7 @@
 import type { QualityTier } from "@/generated/prisma/enums";
 import { comparablePreservation, derivePreservation, sameQualityTier } from "./qualityTier";
+import { derivePackageForm, describeFormShift } from "./packageForm";
+import { contentWords, wordCoverage } from "./storeMatch";
 
 /**
  * Hoe zeker weten we dat dit hetzelfde product is?
@@ -90,6 +92,32 @@ export function compareEquivalence(
       level: "ALTERNATIEF",
       reason: describePreservationShift(referencePreservation, candidatePreservation),
     };
+  }
+
+  // Zelfde soort product, andere verpakkingsvorm: onze pot appelmoes van 720
+  // gram tegenover een doosje van vier cupjes. Als hoeveelheid klopt dat
+  // allebei en rekent de simulatie er vrolijk mee, maar je koopt iets anders.
+  const referenceForm = derivePackageForm(reference.packageSize, reference.name);
+  const candidateForm = derivePackageForm(candidate.packageSize, candidate.name);
+  if (referenceForm !== null && candidateForm !== null && referenceForm !== candidateForm) {
+    return { level: "ALTERNATIEF", reason: describeFormShift(candidateForm) };
+  }
+
+  // Is dit überhaupt hetzelfde product als wat wij normaal kopen?
+  //
+  // De naam van óns product zegt meer dan de ingrediëntnaam. Het ingrediënt
+  // heet soms alleen naar het merk — "Alpro" — en dan matcht elk Alpro-artikel
+  // even goed. Onze eigen productnaam is specifieker ("Alpro mild & creamy"),
+  // en daartegen valt "Alpro Barista koffiemelk" meteen door de mand: van drie
+  // betekenisdragende woorden komt er één terug.
+  //
+  // De grens ligt op de helft, en bewust niet hoger: een ander merk hoort geen
+  // beletsel te zijn (dat is expliciet zo gevraagd), en het merk is meestal
+  // één van de woorden. "Campina magere yoghurt" tegenover "AH magere yoghurt"
+  // houdt zo twee van de drie woorden over en blijft gelijkwaardig.
+  const referenceWords = contentWords(reference.name);
+  if (referenceWords.length > 0 && wordCoverage(referenceWords, contentWords(candidate.name)) < 0.5) {
+    return { level: "ALTERNATIEF", reason: "een ander product dan wat jullie normaal kopen" };
   }
 
   const referenceBrand = normalizedBrand(reference.brand);
