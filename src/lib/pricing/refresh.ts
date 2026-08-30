@@ -61,6 +61,19 @@ function searchTermFor(ingredient: PricedIngredient): string | null {
 }
 
 /**
+ * Vastleggen dat een zelf ingetypte zoekterm niets bruikbaars opleverde.
+ *
+ * Alleen voor een term die iemand écht heeft ingetypt: valt de app terug op
+ * haar eigen zoekwoord, dan is dat huishoudelijk werk waar niemand iets van
+ * hoeft te weten. Maar wie een term intikt heeft een verwachting, en die
+ * verdient antwoord — ook als het antwoord "die term leverde hier niets op" is.
+ */
+function noteUnusedSearchTerm(ingredient: PricedIngredient, result: RefreshResult): void {
+  const typed = ingredient.searchTerm?.trim();
+  if (typed) result.unusedSearchTerms.push(`${ingredient.name}: "${typed}"`);
+}
+
+/**
  * Waarop we de gevonden producten beoordelen.
  *
  * Dit moet meebewegen met `searchTermFor`, en dat is niet vanzelfsprekend:
@@ -266,6 +279,16 @@ export interface RefreshResult {
    * weten of er iemand naar de code moet kijken.
    */
   searchFailures: string[];
+  /**
+   * Zelf ingetypte zoektermen die niets bruikbaars opleverden.
+   *
+   * De verversing valt dan terug op haar eigen zoekwoord, en dat is het juiste
+   * gedrag — een matige uitslag is beter dan een lege. Maar op het scherm zag
+   * je daar niets van: je had "beschuit naturel" ingetypt, kreeg daarna nog
+   * steeds de vezelrijke variant te zien, en kon alleen maar raden of de app
+   * je term genegeerd had of dat de winkel 'm niet kende.
+   */
+  unusedSearchTerms: string[];
   /** Bij een storing: hoeveel ingrediënten er niet meer geprobeerd zijn. */
   abortedAfter: number | null;
 }
@@ -300,6 +323,7 @@ export async function refreshStorePrices(
     itemsSeen: null,
     errors: [],
     searchFailures: [],
+    unusedSearchTerms: [],
     abortedAfter: null,
   };
 
@@ -340,6 +364,7 @@ export async function refreshStorePrices(
       // hoort, en dan zou een controle op "leeg" nooit aanslaan en zouden we
       // met lege handen staan terwijl het product er gewoon ligt.
       if (matches.length === 0 && ownTerm !== null && ownTerm !== fallbackTerm) {
+        noteUnusedSearchTerm(ingredient, result);
         await sleep(REQUEST_SPACING_MS);
         const broader = await provider.search(fallbackTerm, { limit: SEARCH_RESULT_LIMIT });
         found = [...found, ...broader];
@@ -512,6 +537,7 @@ async function refreshDirkViaSearch(
       // Zelfde terugval als bij Albert Heijn: pas breder zoeken als de
       // specifieke zoekopdracht niets bruikbaars oplevert.
       if (matches.length === 0 && ownTerm !== null && ownTerm !== fallbackTerm) {
+        noteUnusedSearchTerm(ingredient, result);
         await sleep(REQUEST_SPACING_MS);
         const broader = await searchWithoutFailing(fallbackTerm, ingredient.name, result);
         found = [...found, ...broader];
@@ -589,6 +615,7 @@ export async function refreshDirkPrices(
     itemsSeen: null,
     errors: [],
     searchFailures: [],
+    unusedSearchTerms: [],
     abortedAfter: null,
   };
 

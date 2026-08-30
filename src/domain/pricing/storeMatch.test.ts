@@ -314,3 +314,53 @@ test("toelating: een ingrediëntnaam die alleen een merk is, mag niets extra toe
   );
   assert.deepEqual(namen, ["Alpro Mild & creamy zonder suikers"]);
 });
+
+/**
+ * Gebruikersmelding met schermafbeelding: bij het ingrediënt "Magere Melk"
+ * stond bij Dirk "Campina Magere kwark naturel", met het label
+ * "gelijkwaardig — zelfde soort product". Een kwark is geen melk.
+ *
+ * De oorzaak is meetbaar. Ons eigen product heet "Picnic magere melk"; na het
+ * wegstrepen van de winkelnaam blijven daar twee woorden van over. De
+ * toelating vroeg de helft van die woorden, en de helft van twee is één —
+ * "magere" volstond dus. Wat er niet werd gecontroleerd is of het wóórd dat
+ * zegt wát het is ook terugkomt.
+ */
+test("toelating: een product dat de soort niet deelt komt er niet in, ook al klopt de helft", () => {
+  const kandidaten = [
+    product("Campina Magere kwark naturel"),
+    product("Campina Magere kwark banaan"),
+    product("1 de Beste Magere melk 1 liter"),
+    product("Campina Magere melk 1 l"),
+  ];
+  const namen = rankStoreProducts("Magere Melk", kandidaten, 8, { name: "Picnic magere melk" }).map(
+    (match) => match.product.name
+  );
+
+  assert.deepEqual(namen.toSorted(), ["1 de Beste Magere melk 1 liter", "Campina Magere melk 1 l"]);
+});
+
+test("toelating: een merk dat wegvalt is geen beletsel — de soort blijft hetzelfde", () => {
+  // De tegenhanger, en de reden dat het geen kale meerderheidsregel kan zijn.
+  // Ons product heet "Testproduct: Aardappelen"; de winkel verkoopt gewoon
+  // "Aardappelen". Ook hier klopt de helft, en hier is het wél hetzelfde
+  // product — want het woord dat de soort noemt komt terug.
+  const namen = rankStoreProducts("Aardappelen", [product("Aardappelen")], 8, {
+    name: "Testproduct: Aardappelen",
+  }).map((match) => match.product.name);
+
+  assert.deepEqual(namen, ["Aardappelen"]);
+});
+
+test("toelating: een verpakkingswoord telt niet als de soort", () => {
+  // Ons product heet "Page toiletpapier 9 rollen". Het láátste woord is
+  // "rollen", maar dat zegt hoe het verpakt is en niet wat het is — een winkel
+  // die hetzelfde in stuks aanbiedt verkoopt nog steeds toiletpapier. Zonder
+  // die uitzondering zou "rollen" het woord zijn dat moet kloppen, en dan valt
+  // dit product af.
+  const namen = rankStoreProducts("Toiletpapier", [product("Page Toiletpapier 8 stuks")], 8, {
+    name: "Page toiletpapier 9 rollen",
+  }).map((match) => match.product.name);
+
+  assert.deepEqual(namen, ["Page Toiletpapier 8 stuks"]);
+});
