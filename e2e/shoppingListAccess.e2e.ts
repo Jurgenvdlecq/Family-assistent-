@@ -482,7 +482,13 @@ test("addManualProduct weigert een shoppingListId van een ander huishouden", { t
         await eigenFormulier.getByRole("button", { name: "Opslaan" }).click();
         // Wachten op de dóórverwijzing, niet op "de pagina is geladen": die
         // laatste is meteen waar en dan lees je de database te vroeg.
-        await pageA.waitForURL(/zoekterm-opgeslagen/, { timeout: 20_000 });
+        //
+        // Opslaan haalt tegenwoordig meteen op wat de term bij de winkels
+        // oplevert. In deze omgeving is er geen netwerk naar Albert Heijn of
+        // Dirk, dus dat levert niets op en wordt het "zoekterm-leeg" — beide
+        // uitkomsten zijn goed, het gaat hier om de schrijfactie. Ruimer
+        // wachten, want dat ophalen zit er nu tussen.
+        await pageA.waitForURL(/zoekterm-(gebruikt|leeg)/, { timeout: 40_000 });
 
         const eigen = await prisma.ingredient.findUniqueOrThrow({ where: { id: eigenId } });
         assert.equal(

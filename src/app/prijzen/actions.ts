@@ -8,7 +8,7 @@ import type { ProductProvider } from "@/generated/prisma/enums";
 import { refreshDirkPrices, refreshStorePrices, type RefreshResult } from "@/lib/pricing/refresh";
 import { ahPriceProvider } from "@/lib/pricing/ahClient";
 import { finishRefreshRun, hasRunningRefresh, startRefreshRuns } from "@/lib/pricing/refreshRuns";
-import { errorMessage } from "@/lib/logger";
+import { errorMessage, logEvent } from "@/lib/logger";
 import { getCurrentWeekStart } from "@/lib/week";
 import { shareOfRemainingTime } from "@/domain/pricing/timeBudget";
 
@@ -118,8 +118,81 @@ export async function setIngredientSearchTerm(formData: FormData) {
 
   revalidatePath("/prijzen");
   const anchor = encodeURIComponent(lineId);
-  const status = raw ? "zoekterm-opgeslagen" : "zoekterm-gewist";
-  redirect(`/prijzen?focus=${anchor}&status=${status}#regel-${anchor}`);
+  if (!raw) redirect(`/prijzen?focus=${anchor}&status=zoekterm-gewist#regel-${anchor}`);
+
+  // En meteen ophalen wat die term oplevert. Zonder dit is opslaan een knop
+  // waar niets zichtbaars van gebeurt: de term werkt pas bij de eerstvolgende
+  // verversing, dus je moest zelf onthouden dat je daarna nóg een knop moest
+  // zoeken. Eén regel bij twee winkels is een paar seconden — dat is het waard
+  // om op te wachten, de hele lijst niet.
+  const found = await fetchOneIngredientNow(ingredientId, household.id);
+  redirect(
+    `/prijzen?focus=${anchor}&status=${found ? "zoekterm-gebruikt" : "zoekterm-leeg"}#regel-${anchor}`
+  );
+}
+
+/**
+ * Hoeveel tijd het meteen-ophalen na het opslaan van een zoekterm mag kosten.
+ *
+ * Ruim onder wat de pagina zichzelf toestaat: dit gebeurt terwijl de gebruiker
+ * naar een knop kijkt die "Bezig…" zegt. Eén ingrediënt bij twee winkels is
+ * normaal een paar seconden; deze grens is er voor de keer dat een winkel
+ * traag is, zodat de knop hoe dan ook terugkomt.
+ */
+const TYPED_TERM_FETCH_BUDGET_MS = 20_000;
+
+/**
+ * Eén ingrediënt nu ophalen bij beide winkels; `true` als er iets bewaard is.
+ *
+ * Bewust géén `PriceRefreshRun`: dit is geen verversing van de lijst, en het
+ * zou het statusblok vullen met "2 producten bijgewerkt" naast de echte
+ * rondes. Een storing bij de ene winkel mag de andere niet meeslepen, dus
+ * elke winkel apart in een try.
+ */
+async function fetchOneIngredientNow(ingredientId: string, householdId: string): Promise<boolean> {
+  const weekStart = getCurrentWeekStart();
+  const overallDeadline = Date.now() + TYPED_TERM_FETCH_BUDGET_MS;
+  let stored = 0;
+
+  for (const [index, provider] of REFRESH_PROVIDERS.entries()) {
+    const deadline = shareOfRemainingTime(
+      overallDeadline,
+      REFRESH_PROVIDERS.length - index,
+      Date.now()
+    );
+    try {
+      const result =
+        provider === "AH"
+          ? await refreshStorePrices(ahPriceProvider, {
+              onlyIngredientId: ingredientId,
+              withExtras: false,
+              prioritiseHouseholdId: householdId,
+              weekStart,
+              deadline,
+            })
+          : await refreshDirkPrices({
+              onlyIngredientId: ingredientId,
+              prioritiseHouseholdId: householdId,
+              weekStart,
+              deadline,
+            });
+      stored += result.productsStored;
+    } catch (error) {
+      // Onbereikbaar telt als "niets gevonden": de melding op het scherm gaat
+      // over de zoekterm, en de volgende volledige verversing meldt de storing
+      // wél met reden.
+      logEvent({
+        level: "warn",
+        area: "pricing",
+        message: "Meteen ophalen na een ingetypte zoekterm mislukte",
+        meta: { provider, ingredientId, error: errorMessage(error) },
+      });
+    }
+  }
+
+  revalidatePath("/prijzen");
+  revalidatePath("/boodschappen");
+  return stored > 0;
 }
 
 /** De correctie weer loslaten: vanaf nu kiest de app zelf weer. */

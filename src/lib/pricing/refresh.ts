@@ -116,6 +116,15 @@ export interface PricedIngredientOptions {
    * worden: wanneer iets voor het laatst is bijgewerkt weten we al.
    */
   staleFirstFor?: ProductProvider;
+  /**
+   * Alleen dit ene ingrediënt.
+   *
+   * Voor de knop "opslaan" bij een zelf ingetypte zoekterm: die haalt meteen
+   * op wat die term oplevert, zodat je niet eerst iets opslaat, dan een tweede
+   * knop moet vinden en pas daarna ziet of het werkte. Eén regel is snel
+   * genoeg om op te wachten; de hele lijst niet.
+   */
+  onlyIngredientId?: string;
 }
 
 /**
@@ -152,6 +161,7 @@ export async function getPricedIngredients(options?: PricedIngredientOptions) {
 
   const found = await prisma.ingredient.findMany({
     where: {
+      ...(options?.onlyIngredientId ? { id: options.onlyIngredientId } : {}),
       OR: [
         { recipeIngredients: { some: {} } },
         { fixedGroceries: { some: {} } },
@@ -310,6 +320,7 @@ export async function refreshStorePrices(
       prioritiseHouseholdId: options?.prioritiseHouseholdId,
       weekStart: options?.weekStart,
       staleFirstFor: provider.provider,
+      onlyIngredientId: options?.onlyIngredientId,
     })
   ).slice(0, options?.limitIngredients ?? Infinity);
   const result: RefreshResult = {
@@ -605,6 +616,7 @@ export async function refreshDirkPrices(
       prioritiseHouseholdId: options?.prioritiseHouseholdId,
       weekStart: options?.weekStart,
       staleFirstFor: "DIRK",
+      onlyIngredientId: options?.onlyIngredientId,
     })
   ).slice(0, options?.limitIngredients ?? Infinity);
   const result: RefreshResult = {
