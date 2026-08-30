@@ -35,8 +35,9 @@ export const dynamic = "force-dynamic";
 const STATUS_MESSAGES: Record<string, string> = {
   "keuze-opgeslagen": "Onthouden. Vanaf nu rekent de vergelijking met dit product.",
   "keuze-gewist": "Keuze losgelaten. De app kiest hier weer zelf.",
-  "zoekterm-opgeslagen":
-    "Zoekterm opgeslagen. Bij de eerstvolgende verversing zoeken de winkels hierop.",
+  "zoekterm-gebruikt": "Zoekterm opgeslagen en meteen gebruikt. Hieronder staat wat de winkels erbij vonden.",
+  "zoekterm-leeg":
+    "Zoekterm opgeslagen, maar geen van beide winkels vond hier iets op. Probeer een ander woord — precies zoals het bij de winkel heet.",
   "zoekterm-gewist": "Zoekterm gewist. De app bepaalt hier weer zelf waarop ze zoekt.",
   ververst: "Klaar. Hieronder staat per winkel wat het opleverde.",
   "verversen-mislukt": "Er is niets opgehaald. Hieronder staat per winkel waarom.",
@@ -49,7 +50,7 @@ const STATUS_MESSAGES: Record<string, string> = {
  * Een groene "klaar"-balk boven een scherm waar nul producten zijn opgehaald,
  * is precies de schijn die deze app niet hoort te wekken.
  */
-const WARNING_STATUSES = new Set(["verversen-mislukt", "verversing-loopt-al"]);
+const WARNING_STATUSES = new Set(["verversen-mislukt", "verversing-loopt-al", "zoekterm-leeg"]);
 
 // Een handmatige verversing doet echte aanvragen naar de winkels. Dat mag
 // even duren, maar niet eindeloos — Vercel breekt een te lange aanroep af.
@@ -623,8 +624,8 @@ export default async function PrijzenPage({
                             er nú staat. Pas de volgende verversing gaat er
                             werkelijk mee gezocht worden. */}
                         <p className="mt-1.5 text-[11px] text-ink-faint">
-                          Werkt vanaf de eerstvolgende verversing — de prijzen hierboven veranderen
-                          er niet meteen door. De zoekterm hoort bij het ingrediënt zelf, dus hij
+                          Opslaan haalt meteen op wat deze term bij beide winkels oplevert, dus dat
+                          duurt een paar tellen. De zoekterm hoort bij het ingrediënt zelf, dus hij
                           geldt voor iedereen die dit op de lijst heeft staan.
                         </p>
                       </form>

@@ -539,3 +539,33 @@ test("winkelprijzen: een eenheidsprijs in een andere eenheid dan het ingrediënt
     await cleanupAhProducts();
   }
 });
+
+/**
+ * De knop "opslaan" bij een zelf ingetypte zoekterm haalt meteen op wat die
+ * term oplevert — anders sla je iets op, gebeurt er niets zichtbaars, en moet
+ * je zelf onthouden dat er daarna nóg een knop bestaat. Daarvoor moet de
+ * verversing één ingrediënt kunnen doen in plaats van de hele lijst.
+ */
+test("verversing: één ingrediënt tegelijk ophalen pakt alleen dát ingrediënt", async () => {
+  const alle = await getPricedIngredients();
+  assert.ok(alle.length > 1, "de testdatabase hoort meerdere ingrediënten te hebben");
+  const doel = alle[0];
+
+  const enkel = await getPricedIngredients({ onlyIngredientId: doel.id });
+  assert.equal(enkel.length, 1);
+  assert.equal(enkel[0].id, doel.id);
+});
+
+test("verversing: een ingrediënt dat nergens gebruikt wordt komt ook los niet mee", async () => {
+  // De afbakening "alleen wat in een recept of vaste boodschap zit" blijft
+  // gelden: één ingrediënt kunnen aanwijzen mag geen sluiproute worden om
+  // prijzen op te halen voor iets wat we nooit kopen.
+  const los = await prisma.ingredient.create({
+    data: { name: `Ongebruikt ${Date.now()}`, unit: "GRAM", category: "OTHER" },
+  });
+  try {
+    assert.deepEqual(await getPricedIngredients({ onlyIngredientId: los.id }), []);
+  } finally {
+    await prisma.ingredient.delete({ where: { id: los.id } });
+  }
+});
