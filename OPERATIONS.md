@@ -66,6 +66,27 @@ migratie; los oppakken als het ooit hindert.
 
 ## Testen
 
+### Draai bij twijfel tegen een vérse database
+
+De dev-database hier loopt vol met restanten van eerdere testruns; de CI
+draait tegen een lege database met alleen de seed. Dat verschil is niet
+theoretisch — het heeft nu twee keer een groene sandbox naast een rode CI
+opgeleverd, en de tweede keer zat er een echte fout onder (de matcher wees op
+een verse database het seed-product "Aardappelen (vastkokend)" af, hier niet,
+omdat de dev-database er een ander Picnic-product bij had staan).
+
+Reproduceren zonder de dev-database aan te raken — geen `migrate reset` nodig:
+
+```
+sudo -u postgres psql -c "DROP DATABASE IF EXISTS fa_ci;" -c "CREATE DATABASE fa_ci OWNER postgres;"
+export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/fa_ci"
+npx prisma migrate deploy && npm run db:seed && npm test
+```
+
+Doe dit vóór het mergen zodra een wijziging **de matcher, de prijslaag of
+seed-afhankelijke fixtures** raakt. Voor een wijziging die daar niets mee te
+maken heeft is het overbodig.
+
 - `npm test` draait `tsx --test $(find src -name '*.test.ts')` — bewust geen
   extern testframework (Node's ingebouwde `node:test` + `node:assert/strict`).
 - Zowel pure unit tests als integratietests tegen een **echte lokale

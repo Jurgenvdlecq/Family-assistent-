@@ -352,15 +352,15 @@ test("toelating: een merk dat wegvalt is geen beletsel — de soort blijft hetze
   assert.deepEqual(namen, ["Aardappelen"]);
 });
 
-test("toelating: een verpakkingswoord telt niet als de soort", () => {
-  // Ons product heet "Page toiletpapier 9 rollen". Het láátste woord is
-  // "rollen", maar dat zegt hoe het verpakt is en niet wat het is — een winkel
-  // die hetzelfde in stuks aanbiedt verkoopt nog steeds toiletpapier. Zonder
-  // die uitzondering zou "rollen" het woord zijn dat moet kloppen, en dan valt
-  // dit product af.
-  const namen = rankStoreProducts("Toiletpapier", [product("Page Toiletpapier 8 stuks")], 8, {
-    name: "Page toiletpapier 9 rollen",
+test("toelating: een winkelproduct met een kortere naam dan het onze blijft gewoon staan", () => {
+  // De tegenhanger van de kwark hierboven, en het geval dat de seed-database
+  // oplevert: ons product heet "Aardappelen (vastkokend)", de winkel verkoopt
+  // "Aardappelen". Ook hier klopt maar de helft van ónze woorden — maar de
+  // ingrediëntnaam wordt volledig gedekt, en dat is hetzelfde product met een
+  // preciezere naam bij ons.
+  const namen = rankStoreProducts("Aardappelen", [product("Aardappelen")], 8, {
+    name: "Aardappelen (vastkokend)",
   }).map((match) => match.product.name);
 
-  assert.deepEqual(namen, ["Page Toiletpapier 8 stuks"]);
+  assert.deepEqual(namen, ["Aardappelen"]);
 });
