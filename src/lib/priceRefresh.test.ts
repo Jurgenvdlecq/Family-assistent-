@@ -424,8 +424,14 @@ test("verversing: valt ook terug als de specifieke zoekopdracht wél iets terugg
         asked.push(term);
         // De specifieke zoekopdracht levert wél resultaten op, maar niets dat
         // bij dit ingrediënt hoort. De bredere levert het juiste product.
+        //
+        // "Speciaal" staat er bewust bij, en dat is geen detail: ons eigen
+        // product heet zo, en de toelating eist dat het woord dat zegt wát het
+        // is terugkomt. Heette dit product "gewoon", dan zou het terecht
+        // afvallen — een andere variant is een ander product — en dan test dit
+        // nog maar de helft van wat het moet testen.
         return term === storeSearchTerm(ingredient.name)
-          ? [fakeProduct(`AH ${ingredient.name} gewoon`, 1.99)]
+          ? [fakeProduct(`AH ${ingredient.name} speciaal`, 1.99)]
           : [fakeProduct("AH Iets heel anders", 9.99)];
       }),
       { limitIngredients: 200 }

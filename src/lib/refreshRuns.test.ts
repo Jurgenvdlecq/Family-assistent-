@@ -30,6 +30,7 @@ function result(overrides: Partial<RefreshResult> = {}): RefreshResult {
     itemsSeen: 30,
     errors: [],
     searchFailures: [],
+    unusedSearchTerms: [],
     abortedAfter: null,
     ...overrides,
   };
@@ -248,6 +249,32 @@ test("verversingen: zonder andere fouten staan de mislukte zoekopdrachten er all
     const run = (await getLastRefreshRuns(["DIRK"])).get("DIRK")!;
     assert.match(run.error!, /^1 zoekopdracht kwam niet aan/, "enkelvoud bij één");
     assert.match(run.error!, /niet "niet gevonden"/, "en het scherm zegt waaróm dat verschil telt");
+  } finally {
+    await cleanup();
+  }
+});
+
+test("verversingen: een ingetypte zoekterm die niets oplevert wordt gemeld", async () => {
+  // Gebruikersmelding: "Beschuit naturel" ingetypt, en daarna nog steeds de
+  // vezelrijke variant op het scherm. De terugval op het gewone zoekwoord is
+  // het juiste gedrag, maar zonder melding kun je alleen maar raden of je term
+  // genegeerd is of dat de winkel 'm niet kent.
+  try {
+    const ids = await startRefreshRuns(["DIRK"], "MANUAL");
+    await finishRefreshRun(
+      ids.get("DIRK")!,
+      result({
+        provider: "DIRK",
+        productsStored: 40,
+        errors: [],
+        searchFailures: [],
+        unusedSearchTerms: ['Beschuit: "beschuit naturel"'],
+      })
+    );
+
+    const run = (await getLastRefreshRuns(["DIRK"])).get("DIRK")!;
+    assert.match(run.error!, /je zoekterm bij Beschuit/);
+    assert.match(run.error!, /teruggevallen op de gewone zoekwoorden/);
   } finally {
     await cleanup();
   }

@@ -101,6 +101,18 @@ function describeWhatWentWrong(result: RefreshResult): string | null {
     );
   }
 
+  // Een ingetypte zoekterm die niets opleverde is geen fout, maar wel iets wat
+  // je wilt weten: je hebt 'm zelf ingevuld en zag er vervolgens niets van
+  // terug. Zonder deze melding kun je alleen maar raden of de app je term
+  // negeerde of dat de winkel 'm gewoon niet kent.
+  const unused = result.unusedSearchTerms.length;
+  if (unused > 0) {
+    parts.push(
+      `${unused === 1 ? "je zoekterm bij" : `${unused} van je zoektermen leverden niets op, o.a. bij`} ` +
+        `${result.unusedSearchTerms[0]} leverde hier niets op — er is teruggevallen op de gewone zoekwoorden`
+    );
+  }
+
   return parts.length > 0 ? parts.join("; ").slice(0, MAX_ERROR_LENGTH) : null;
 }
 

@@ -88,9 +88,12 @@ export const STORE_MATCH_THRESHOLD = 0.6;
  * Hoeveel van ons eigen product een kandidaat minstens moet dekken.
  *
  * Dezelfde grens die het equivalentiemodel gebruikt om iets "een ander
- * product" te noemen. Wat daar niet doorheen komt hoort niet als vergelijking
- * op het scherm: bewust op de helft en niet hoger, want het merk is meestal
- * één van de woorden en een ander merk mag geen beletsel zijn.
+ * product" te noemen. Bewust op de helft en niet hoger, want het merk is
+ * meestal één van de woorden en een ander merk mag geen beletsel zijn: ons
+ * "Testproduct: Aardappelen" en de "Aardappelen" van de winkel delen precies
+ * de helft, en dat is wél hetzelfde product.
+ *
+ * Op zichzelf is die grens te grof — zie `coversWhatItIs` hieronder.
  */
 export const REFERENCE_MATCH_THRESHOLD = 0.5;
 
@@ -179,6 +182,68 @@ export function storeSearchTerm(ingredientName: string): string {
  */
 export function scoreStoreProductForIngredient(ingredientName: string, productName: string): number {
   return wordCoverage(contentWords(ingredientName), contentWords(productName));
+}
+
+/**
+ * Woorden die zeggen hoe iets verpakt is, niet wát het is.
+ *
+ * Nodig om het laatste betekenisdragende woord van een productnaam te vinden:
+ * bij "Page toiletpapier 9 rollen" is dat "toiletpapier" en niet "rollen".
+ */
+const PACKAGING_WORDS = new Set([
+  "rol",
+  "rollen",
+  "zak",
+  "zakken",
+  "zakje",
+  "zakjes",
+  "pak",
+  "pakken",
+  "fles",
+  "flessen",
+  "blik",
+  "blikken",
+  "doos",
+  "dozen",
+  "plak",
+  "plakken",
+  "sneetje",
+  "sneetjes",
+  "doekje",
+  "doekjes",
+  "tablet",
+  "tabletten",
+  "capsule",
+  "capsules",
+  "wasbeurt",
+  "wasbeurten",
+]);
+
+/**
+ * Dekt deze kandidaat het woord dat zegt wát ons product is?
+ *
+ * In een Nederlandse productnaam staat de soort achteraan: "magere **melk**",
+ * "Alpro mild & **creamy**", "Testproduct: **Aardappelen**". Wat ervóór staat
+ * is een merk of een eigenschap, en dat mag best verschillen — daar is de
+ * halve-woorden-grens voor.
+ *
+ * Maar de helft alleen is te grof. Bij een naam van twee woorden ís de helft
+ * precies één woord, en dan haalde "Campina Magere kwark" de toelating bij het
+ * ingrediënt magere melk: "magere" klopte, "melk" niet. Een kwark is geen melk.
+ * Andersom deelt "Aardappelen" van de winkel óók maar de helft met ons
+ * "Testproduct: Aardappelen" — en dat is wél hetzelfde product. Het verschil
+ * zit niet in hoeveel woorden er overeenkomen maar in wélk woord ontbreekt.
+ *
+ * Verpakkingswoorden tellen niet als soort: bij "9 rollen" gaat het nog steeds
+ * om toiletpapier, en een winkel die het in stuks aanbiedt verkoopt hetzelfde.
+ */
+function coversWhatItIs(referenceWords: string[], productWords: string[]): boolean {
+  const meaningful = referenceWords.filter((word) => !PACKAGING_WORDS.has(word));
+  const head = meaningful[meaningful.length - 1];
+  // Geen bruikbaar hoofdwoord (alleen verpakkingswoorden, of een lege naam):
+  // dan valt er niets extra's te eisen.
+  if (head === undefined) return true;
+  return wordCoverage([head], productWords) === 1;
 }
 
 export interface StoreMatchResult {
@@ -288,14 +353,16 @@ export function rankStoreProducts(
       // twee eerdere reparaties vangen het al; deze derde kostte alleen nog
       // maar goede producten.
       //
-      // Behalve waar de ingrediëntnaam niets toevoegt (zie hierboven): dan is
-      // een treffer daarop geen aanwijzing en blijft ons eigen product de
-      // enige maatstaf.
-      if (ingredientAddsNothing) return match.referenceScore >= REFERENCE_MATCH_THRESHOLD;
+      const looksLikeOurs = match.referenceScore >= REFERENCE_MATCH_THRESHOLD;
 
-      return (
-        match.score >= STORE_MATCH_THRESHOLD || match.referenceScore >= REFERENCE_MATCH_THRESHOLD
-      );
+      // Waar de ingrediëntnaam niets toevoegt (zie hierboven) is ons eigen
+      // product de enige maatstaf, en dan is "de helft van de woorden" te
+      // grof: dan moet óók het woord kloppen dat zegt wát het is.
+      if (ingredientAddsNothing) {
+        return looksLikeOurs && coversWhatItIs(referenceWords, contentWords(match.product.name));
+      }
+
+      return match.score >= STORE_MATCH_THRESHOLD || looksLikeOurs;
     })
     .sort(
       (a, b) =>
