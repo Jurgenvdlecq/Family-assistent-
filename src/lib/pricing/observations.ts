@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import type { ObservationSource, ProductProvider } from "@/generated/prisma/enums";
+import { Prisma } from "@/generated/prisma/client";
+import type { ObservationSource, ProductProvider, PromoType, Unit } from "@/generated/prisma/enums";
 import type { ProviderProduct } from "@/domain/pricing/types";
 import { deriveQualityTier } from "@/domain/pricing/qualityTier";
 import { parsePackContent, unitPriceFor } from "@/domain/pricing/unitPrice";
@@ -178,30 +179,61 @@ export interface LatestPrice {
  * Bewust niet per product apart opvragen: een vergelijking gaat over een hele
  * boodschappenlijst, en dat zou tientallen queries per paginabezoek worden.
  */
+/** Eén rij zoals Postgres 'm teruggeeft — kolomnamen, niet veldnamen. */
+interface LatestPriceRow {
+  product_id: string;
+  provider: ProductProvider;
+  price: string | number;
+  was_price: string | number | null;
+  unit_price: string | number | null;
+  unit_price_unit: Unit | null;
+  promo_type: PromoType;
+  promo_label: string | null;
+  promo_until: Date | null;
+  observed_at: Date;
+  source: ObservationSource;
+}
+
 export async function getLatestPrices(productIds: string[]): Promise<Map<string, LatestPrice>> {
   if (productIds.length === 0) return new Map();
 
-  const observations = await prisma.priceObservation.findMany({
-    where: { productId: { in: productIds } },
-    orderBy: { observedAt: "desc" },
-    include: { product: { select: { provider: true } } },
-  });
+  // `DISTINCT ON` in plaats van "alles ophalen en in JavaScript de nieuwste
+  // uitzoeken". Dat laatste stond hier, en het werkte prima zolang er weinig
+  // waarnemingen waren — maar elke verversing schrijft er per product één bij.
+  // Deze query haalde dus élke prijs op die ooit is vastgelegd, elke keer dat
+  // de prijzenpagina werd getoond, en werd daarmee met de dag trager. De
+  // functie hieronder waarschuwt daar in haar eigen comment nog voor ("zodat
+  // één product met dagelijkse waarnemingen de query niet laat ontsporen") —
+  // die begrenzing ontbrak hier gewoon.
+  //
+  // Met de bestaande index op (product_id, observed_at) leest Postgres nu per
+  // product alleen de bovenste rij. Bewust ruwe SQL: dit is precies het soort
+  // query waar `DISTINCT ON` voor bestaat en waar de Prisma-client geen
+  // equivalent voor heeft.
+  const rows = await prisma.$queryRaw<LatestPriceRow[]>`
+    SELECT DISTINCT ON (o.product_id)
+      o.product_id, p.provider, o.price, o.was_price, o.unit_price, o.unit_price_unit,
+      o.promo_type, o.promo_label, o.promo_until, o.observed_at, o.source
+    FROM price_observations o
+    JOIN products p ON p.id = o.product_id
+    WHERE o.product_id IN (${Prisma.join(productIds)})
+    ORDER BY o.product_id, o.observed_at DESC
+  `;
 
   const latest = new Map<string, LatestPrice>();
-  for (const observation of observations) {
-    if (latest.has(observation.productId)) continue;
-    latest.set(observation.productId, {
-      productId: observation.productId,
-      provider: observation.product.provider,
-      price: Number(observation.price),
-      wasPrice: observation.wasPrice === null ? null : Number(observation.wasPrice),
-      unitPrice: observation.unitPrice === null ? null : Number(observation.unitPrice),
-      unitPriceUnit: observation.unitPriceUnit,
-      promoType: observation.promoType,
-      promoLabel: observation.promoLabel,
-      promoUntil: observation.promoUntil,
-      observedAt: observation.observedAt,
-      source: observation.source,
+  for (const row of rows) {
+    latest.set(row.product_id, {
+      productId: row.product_id,
+      provider: row.provider,
+      price: Number(row.price),
+      wasPrice: row.was_price === null ? null : Number(row.was_price),
+      unitPrice: row.unit_price === null ? null : Number(row.unit_price),
+      unitPriceUnit: row.unit_price_unit,
+      promoType: row.promo_type,
+      promoLabel: row.promo_label,
+      promoUntil: row.promo_until,
+      observedAt: row.observed_at,
+      source: row.source,
     });
   }
   return latest;

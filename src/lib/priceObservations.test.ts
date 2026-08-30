@@ -258,3 +258,71 @@ test("prijswaarnemingen: een reeks producten van één ingrediënt gaat in één
     await cleanup(stored.map((row) => row.id));
   }
 });
+
+/**
+ * De prijzenpagina vraagt de laatste prijs voor tientallen producten tegelijk.
+ * Sinds die query met `DISTINCT ON` werkt in plaats van "alles ophalen en in
+ * JavaScript uitzoeken", is dit de plek waar een fout in de ruwe SQL zichtbaar
+ * wordt: één rij per product, en per product de nieuwste.
+ */
+test("prijswaarneming: meerdere producten tegelijk leveren elk hun eigen nieuwste prijs", async () => {
+  const ingredient = await prisma.ingredient.findUniqueOrThrow({ where: { name: "Melk" } });
+  const refA = `ah-multi-a-${Math.random().toString(36).slice(2)}`;
+  const refB = `ah-multi-b-${Math.random().toString(36).slice(2)}`;
+
+  const eerste = await recordObservedProduct({
+    product: ahProduct({ externalRef: refA, price: 1.0 }),
+    ingredientId: ingredient.id,
+    source: "API",
+    observedAt: new Date("2026-08-01T08:00:00Z"),
+  });
+  await recordObservedProduct({
+    product: ahProduct({ externalRef: refA, price: 1.5 }),
+    ingredientId: ingredient.id,
+    source: "API",
+    observedAt: new Date("2026-08-20T08:00:00Z"),
+  });
+  const tweede = await recordObservedProduct({
+    product: ahProduct({ externalRef: refB, price: 2.0 }),
+    ingredientId: ingredient.id,
+    source: "API",
+    observedAt: new Date("2026-08-10T08:00:00Z"),
+  });
+  await recordObservedProduct({
+    product: ahProduct({ externalRef: refB, price: 2.5 }),
+    ingredientId: ingredient.id,
+    source: "API",
+    observedAt: new Date("2026-08-25T08:00:00Z"),
+  });
+
+  try {
+    const latest = await getLatestPrices([eerste.id, tweede.id]);
+    assert.equal(latest.size, 2, "één rij per product, niet één per waarneming");
+    assert.equal(latest.get(eerste.id)?.price, 1.5);
+    assert.equal(latest.get(tweede.id)?.price, 2.5);
+    // De winkel komt uit het gekoppelde product; die join hoort mee te komen.
+    assert.equal(latest.get(eerste.id)?.provider, "AH");
+  } finally {
+    await cleanup([eerste.id, tweede.id]);
+  }
+});
+
+test("prijswaarneming: een product zonder waarneming komt er niet in voor", async () => {
+  // Geen prijs is iets anders dan een prijs van nul — de vergelijking rekent
+  // zo'n product terecht niet mee.
+  const ingredient = await prisma.ingredient.findUniqueOrThrow({ where: { name: "Melk" } });
+  const zonder = await prisma.product.create({
+    data: {
+      name: "AH Zonder waarneming",
+      provider: "AH",
+      externalRef: `ah-leeg-${Math.random().toString(36).slice(2)}`,
+      ingredientId: ingredient.id,
+    },
+  });
+  try {
+    const latest = await getLatestPrices([zonder.id]);
+    assert.equal(latest.size, 0);
+  } finally {
+    await prisma.product.delete({ where: { id: zonder.id } });
+  }
+});
