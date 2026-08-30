@@ -184,68 +184,6 @@ export function scoreStoreProductForIngredient(ingredientName: string, productNa
   return wordCoverage(contentWords(ingredientName), contentWords(productName));
 }
 
-/**
- * Woorden die zeggen hoe iets verpakt is, niet wát het is.
- *
- * Nodig om het laatste betekenisdragende woord van een productnaam te vinden:
- * bij "Page toiletpapier 9 rollen" is dat "toiletpapier" en niet "rollen".
- */
-const PACKAGING_WORDS = new Set([
-  "rol",
-  "rollen",
-  "zak",
-  "zakken",
-  "zakje",
-  "zakjes",
-  "pak",
-  "pakken",
-  "fles",
-  "flessen",
-  "blik",
-  "blikken",
-  "doos",
-  "dozen",
-  "plak",
-  "plakken",
-  "sneetje",
-  "sneetjes",
-  "doekje",
-  "doekjes",
-  "tablet",
-  "tabletten",
-  "capsule",
-  "capsules",
-  "wasbeurt",
-  "wasbeurten",
-]);
-
-/**
- * Dekt deze kandidaat het woord dat zegt wát ons product is?
- *
- * In een Nederlandse productnaam staat de soort achteraan: "magere **melk**",
- * "Alpro mild & **creamy**", "Testproduct: **Aardappelen**". Wat ervóór staat
- * is een merk of een eigenschap, en dat mag best verschillen — daar is de
- * halve-woorden-grens voor.
- *
- * Maar de helft alleen is te grof. Bij een naam van twee woorden ís de helft
- * precies één woord, en dan haalde "Campina Magere kwark" de toelating bij het
- * ingrediënt magere melk: "magere" klopte, "melk" niet. Een kwark is geen melk.
- * Andersom deelt "Aardappelen" van de winkel óók maar de helft met ons
- * "Testproduct: Aardappelen" — en dat is wél hetzelfde product. Het verschil
- * zit niet in hoeveel woorden er overeenkomen maar in wélk woord ontbreekt.
- *
- * Verpakkingswoorden tellen niet als soort: bij "9 rollen" gaat het nog steeds
- * om toiletpapier, en een winkel die het in stuks aanbiedt verkoopt hetzelfde.
- */
-function coversWhatItIs(referenceWords: string[], productWords: string[]): boolean {
-  const meaningful = referenceWords.filter((word) => !PACKAGING_WORDS.has(word));
-  const head = meaningful[meaningful.length - 1];
-  // Geen bruikbaar hoofdwoord (alleen verpakkingswoorden, of een lege naam):
-  // dan valt er niets extra's te eisen.
-  if (head === undefined) return true;
-  return wordCoverage([head], productWords) === 1;
-}
-
 export interface StoreMatchResult {
   product: ProviderProduct;
   score: number;
@@ -353,16 +291,25 @@ export function rankStoreProducts(
       // twee eerdere reparaties vangen het al; deze derde kostte alleen nog
       // maar goede producten.
       //
+      const matchesIngredient = match.score >= STORE_MATCH_THRESHOLD;
       const looksLikeOurs = match.referenceScore >= REFERENCE_MATCH_THRESHOLD;
 
-      // Waar de ingrediëntnaam niets toevoegt (zie hierboven) is ons eigen
-      // product de enige maatstaf, en dan is "de helft van de woorden" te
-      // grof: dan moet óók het woord kloppen dat zegt wát het is.
-      if (ingredientAddsNothing) {
-        return looksLikeOurs && coversWhatItIs(referenceWords, contentWords(match.product.name));
-      }
+      // Waar de ingrediëntnaam niets toevoegt aan onze eigen productnaam (zie
+      // hierboven) moeten ze het allebéí eens zijn. "De helft van onze
+      // woorden" is daar op zichzelf te grof: bij "Picnic magere melk" blijven
+      // er twee woorden over, de helft daarvan is precies één, en zo haalde
+      // "Campina Magere kwark" de toelating bij het ingrediënt magere melk —
+      // alleen op het woord "magere".
+      //
+      // De ingrediëntnaam is in dit geval juist de scherpste maatstaf die er
+      // is: hij ís onze productnaam, min de woorden die niets zeggen. "Magere
+      // Melk" tegenover die kwark levert ook maar 0,50 op, en dat haalt de
+      // drempel niet. Terwijl de winkel-"Aardappelen" naast ons "Aardappelen
+      // (vastkokend)" gewoon 1,00 scoort — dus die blijft, en dat hoort ook:
+      // dat is hetzelfde product met een preciezere naam bij ons.
+      if (ingredientAddsNothing) return matchesIngredient && looksLikeOurs;
 
-      return match.score >= STORE_MATCH_THRESHOLD || looksLikeOurs;
+      return matchesIngredient || looksLikeOurs;
     })
     .sort(
       (a, b) =>
