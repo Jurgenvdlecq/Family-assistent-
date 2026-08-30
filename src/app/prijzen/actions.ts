@@ -10,6 +10,7 @@ import { ahPriceProvider } from "@/lib/pricing/ahClient";
 import { finishRefreshRun, hasRunningRefresh, startRefreshRuns } from "@/lib/pricing/refreshRuns";
 import { errorMessage } from "@/lib/logger";
 import { getCurrentWeekStart } from "@/lib/week";
+import { shareOfRemainingTime } from "@/domain/pricing/timeBudget";
 
 const PROVIDERS: ProductProvider[] = ["AH", "DIRK"];
 
@@ -173,19 +174,20 @@ export async function refreshPricesNow() {
   const runIds = await startRefreshRuns(REFRESH_PROVIDERS, "MANUAL");
   const results: RefreshResult[] = [];
 
-  // Elke winkel krijgt een eigen deel van de tijd, en samen blijven ze ruim
-  // onder wat de hostingpartij toestaat. Zonder deze begrenzing kapt Vercel
-  // de aanroep af, krijgt de browser nooit antwoord en blijft de knop op
-  // "bezig met ophalen" staan — precies wat er in productie gebeurde.
-  const budgetPerProvider = Math.floor(MANUAL_TIME_BUDGET_MS / REFRESH_PROVIDERS.length);
+  // Eén vast eindpunt voor de hele knop, ruim onder wat de hostingpartij
+  // toestaat. Zonder deze begrenzing kapt Vercel de aanroep af, krijgt de
+  // browser nooit antwoord en blijft de knop op "bezig met ophalen" staan —
+  // precies wat er in productie gebeurde.
+  const overallDeadline = Date.now() + MANUAL_TIME_BUDGET_MS;
 
   // Elke winkel apart afhandelen: een storing bij de één mag de ander niet
   // meeslepen — dan zie je van geen van beide wat er aan de hand is.
-  for (const provider of REFRESH_PROVIDERS) {
-    // De winkels gaan één voor één, dus elke winkel telt haar deel vanaf nu.
-    // Is de vorige sneller klaar dan haar deel, dan schuift die winst niet
-    // door — dat zou de laatste winkel over het totaal heen kunnen tillen.
-    const deadline = Date.now() + budgetPerProvider;
+  for (const [index, provider] of REFRESH_PROVIDERS.entries()) {
+    const deadline = shareOfRemainingTime(
+      overallDeadline,
+      REFRESH_PROVIDERS.length - index,
+      Date.now()
+    );
     let result: RefreshResult;
     try {
       result =
