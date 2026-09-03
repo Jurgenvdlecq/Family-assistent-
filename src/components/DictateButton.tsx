@@ -93,7 +93,13 @@ const NEVER_CHANGES = () => () => {};
 const supportedNow = () => speechRecognitionConstructor() !== null;
 const supportedOnServer = () => false;
 
-export default function DictateButton({ targetId }: { targetId: string }) {
+export default function DictateButton({
+  targetId,
+  spokenFlagId,
+}: {
+  targetId: string;
+  spokenFlagId?: string;
+}) {
   const supported = useSyncExternalStore(NEVER_CHANGES, supportedNow, supportedOnServer);
   const [listening, setListening] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -118,6 +124,21 @@ export default function DictateButton({ targetId }: { targetId: string }) {
     // Zodat React en de browser meekrijgen dat dit veld veranderd is.
     field.dispatchEvent(new Event("input", { bubbles: true }));
     field.focus();
+    markAsSpoken();
+  }
+
+  /**
+   * Vertellen dat deze tekst gesproken is.
+   *
+   * Wie praat zegt geen komma's: "melk brood hagelslag" komt er als één zin
+   * uit. De app mag daar zelf regels van maken, maar alléén hier — iemand die
+   * "drinkyoghurt framboos" intikt bedoelt één product, en dat mag niet uit
+   * elkaar getrokken worden. Dit veldje is dat onderscheid.
+   */
+  function markAsSpoken() {
+    if (!spokenFlagId) return;
+    const flag = document.getElementById(spokenFlagId) as HTMLInputElement | null;
+    if (flag) flag.value = "1";
   }
 
   function stop() {
@@ -179,8 +200,8 @@ export default function DictateButton({ targetId }: { targetId: string }) {
       </button>
       {listening && (
         <p className="text-[11px] text-ink-muted">
-          Noem ze een voor een, met een korte stilte ertussen. Alles komt hierboven te staan; je
-          zoekt zelf pas als het klopt.
+          Noem gerust je hele lijstje achter elkaar — de app knipt het zelf in losse producten.
+          Alles komt hierboven te staan; je zoekt zelf pas als het klopt.
         </p>
       )}
       {problem && <p className="text-[11px] text-tag-amber-ink">{problem}</p>}

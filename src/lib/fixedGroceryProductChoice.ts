@@ -36,7 +36,7 @@ export interface ParsedBulkFixedGroceryLine {
   multiplier: number;
 }
 
-const COUNT_WORDS = new Set([
+export const COUNT_WORDS = new Set([
   "pak",
   "pakken",
   "fles",
@@ -86,7 +86,7 @@ const COUNT_WORDS = new Set([
  * cijfer van. Zonder deze tabel belandde "drie" gewoon in de zoekterm en zocht
  * de app bij Picnic op "drie pakken melk".
  */
-const SPOKEN_NUMBERS = new Map<string, number>([
+export const SPOKEN_NUMBERS = new Map<string, number>([
   ["een", 1],
   ["één", 1],
   ["twee", 2],
@@ -111,7 +111,7 @@ const SPOKEN_NUMBERS = new Map<string, number>([
  * die nooit een product zijn — "melk" en "brood" staan hier vanzelfsprekend
  * niet tussen.
  */
-const LEAD_IN_WORDS = new Set([
+export const LEAD_IN_WORDS = new Set([
   "doe",
   "maar",
   "ik",
@@ -130,7 +130,7 @@ const LEAD_IN_WORDS = new Set([
 ]);
 
 /** En hoe je zo'n zin afsluit. */
-const TRAILING_WORDS = new Set(["nodig", "kopen", "hebben", "graag"]);
+export const TRAILING_WORDS = new Set(["nodig", "kopen", "hebben", "graag"]);
 
 function stripSpokenFiller(words: string[]): string[] {
   let start = 0;

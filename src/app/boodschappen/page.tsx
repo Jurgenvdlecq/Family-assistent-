@@ -45,6 +45,7 @@ import { PicnicClient, PicnicAuthError } from "@/lib/picnic/client";
 import { logEvent, errorMessage } from "@/lib/logger";
 import type { PicnicSearchResultItem } from "@/lib/picnic/searchResults";
 import { inferFixedProductOrderQuantity, parseBulkFixedGroceryInput, titleCaseSearchTerm } from "@/lib/fixedGroceryProductChoice";
+import { knownNameIndex, prepareSpokenText } from "@/lib/spokenList";
 import { getTrustedPreferences } from "@/domain/product-matching/repository";
 import NavBar from "@/components/NavBar";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
@@ -597,6 +598,23 @@ type QuickOrderPreviewLine = {
  * Onbekende/twijfelachtige ingrediënten krijgen gewoon de bestaande
  * zoekresultaten-picker, net als bij vaste boodschappen.
  */
+/**
+ * Een ingesproken zin alsnog in losse regels krijgen.
+ *
+ * Wie zijn lijstje inspreekt zegt geen komma's: "melk brood hagelslag" komt er
+ * als één zin uit, en daar vond de app niets bij. Raden waar de grenzen liggen
+ * kan misgaan, dus gebeurt het alléén bij tekst die van de microfoon komt —
+ * wie "drinkyoghurt framboos" intikt bedoelt één product en houdt dat ook.
+ *
+ * De ingrediëntnamen die er al zijn geven het beste houvast over welke woorden
+ * bij elkaar horen; die halen we er dus bij.
+ */
+async function splitDictatedText(text: string, spoken: boolean): Promise<string> {
+  if (!spoken || !text.trim()) return text;
+  const names = await prisma.ingredient.findMany({ select: { name: true }, take: 2000 });
+  return prepareSpokenText(text, knownNameIndex(names.map((row) => row.name)));
+}
+
 async function searchQuickOrderPreview(
   householdId: string,
   token: string | null,
@@ -766,6 +784,8 @@ export default async function BoodschappenPage({
     inventory?: string;
     manualQ?: string;
     quickOrderRaw?: string;
+    /** "1" wanneer het snelle lijstje is ingesproken in plaats van ingetikt. */
+    gesproken?: string;
     status?: string;
   }>;
 }) {
@@ -775,7 +795,14 @@ export default async function BoodschappenPage({
   const manualSearchQuery = String(params.manualQ ?? "").trim();
   const quickOrderRawFocus = String(params.quickOrderRaw ?? "").trim();
   const bulkFixedText = String(params.bulkFixed ?? "").trim();
-  const quickOrderText = String(params.quickOrder ?? "").trim();
+  // Ingesproken tekst wordt hier meteen in regels geknipt, en vanaf dat moment
+  // is die geknipte tekst overal de tekst: hij staat in het invoerveld, gaat
+  // mee in de formulieren, en de regels die je toevoegt verdwijnen er weer uit.
+  // Alleen zo blijft "wat je ziet" hetzelfde als "waar de app mee rekent".
+  const quickOrderText = await splitDictatedText(
+    String(params.quickOrder ?? "").trim(),
+    String(params.gesproken ?? "") === "1"
+  );
   const focusedFixedLineId = String(params.fixedLine ?? "").trim();
   const fixedReplaceLineId = String(params.fixedReplaceLineId ?? "").trim();
   const focusedLineId = String(params.focusLine ?? "").trim();
@@ -1381,10 +1408,13 @@ export default async function BoodschappenPage({
               placeholder={"bananen — of meerdere: rijst, sperziebonen, appelmoes"}
               className="min-h-20 min-w-0 resize-y rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
             />
+            {/* Ingesproken tekst mag de app zelf in regels knippen; ingetikte
+                tekst niet. Dit veld is het enige verschil tussen die twee. */}
+            <input type="hidden" name="gesproken" id="quick-order-spoken" defaultValue="" />
             {/* Verschijnt alleen als de browser spraakherkenning heeft. Zo niet,
                 dan staat de microfoon van het toetsenbord er nog gewoon — die
                 werkt in ditzelfde veld. */}
-            <DictateButton targetId="quick-order-input" />
+            <DictateButton targetId="quick-order-input" spokenFlagId="quick-order-spoken" />
             <button
               type="submit"
               className="w-fit rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
