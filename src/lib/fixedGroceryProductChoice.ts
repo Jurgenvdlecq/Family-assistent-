@@ -43,8 +43,29 @@ const COUNT_WORDS = new Set([
   "flessen",
   "doos",
   "dozen",
+  "doosje",
+  "doosjes",
   "zak",
   "zakken",
+  "zakje",
+  "zakjes",
+  "pot",
+  "potten",
+  "potje",
+  "potjes",
+  "bakje",
+  "bakjes",
+  "blik",
+  "blikken",
+  "rol",
+  "rollen",
+  "bos",
+  "bosje",
+  "bosjes",
+  "krop",
+  "kroppen",
+  "tros",
+  "trossen",
   "stuk",
   "stuks",
   "gram",
@@ -57,29 +78,104 @@ const COUNT_WORDS = new Set([
   "x",
 ]);
 
+/**
+ * Telwoorden zoals je ze uitspreekt.
+ *
+ * Wie zijn lijstje intikt schrijft "3 pakken melk"; wie hem inspreekt zegt
+ * "drie pakken melk", en de dicteerfunctie van de telefoon maakt daar geen
+ * cijfer van. Zonder deze tabel belandde "drie" gewoon in de zoekterm en zocht
+ * de app bij Picnic op "drie pakken melk".
+ */
+const SPOKEN_NUMBERS = new Map<string, number>([
+  ["een", 1],
+  ["één", 1],
+  ["twee", 2],
+  ["drie", 3],
+  ["vier", 4],
+  ["vijf", 5],
+  ["zes", 6],
+  ["zeven", 7],
+  ["acht", 8],
+  ["negen", 9],
+  ["tien", 10],
+  ["elf", 11],
+  ["twaalf", 12],
+]);
+
+/**
+ * Woorden waarmee een mens een lijstje inleidt, en die niets over het product
+ * zeggen.
+ *
+ * "Doe maar twee zakken sperziebonen" is precies hoe je het zegt en precies
+ * niet hoe je het zoekt. Alleen aan het begín weggehaald, en alleen woorden
+ * die nooit een product zijn — "melk" en "brood" staan hier vanzelfsprekend
+ * niet tussen.
+ */
+const LEAD_IN_WORDS = new Set([
+  "doe",
+  "maar",
+  "ik",
+  "wil",
+  "we",
+  "hebben",
+  "moeten",
+  "nog",
+  "graag",
+  "ook",
+  "verder",
+  "dan",
+  "en",
+  "even",
+  "wat",
+]);
+
+/** En hoe je zo'n zin afsluit. */
+const TRAILING_WORDS = new Set(["nodig", "kopen", "hebben", "graag"]);
+
+function stripSpokenFiller(words: string[]): string[] {
+  let start = 0;
+  while (start < words.length && LEAD_IN_WORDS.has(words[start].toLowerCase())) start += 1;
+
+  let end = words.length;
+  while (end > start && TRAILING_WORDS.has(words[end - 1].toLowerCase())) end -= 1;
+
+  // Alles was vulling: dan is er geen product genoemd en houden we de
+  // oorspronkelijke woorden — liever een matige zoekopdracht dan een lege.
+  return start >= end ? words : words.slice(start, end);
+}
+
 export function parseBulkFixedGroceryInput(input: string): ParsedBulkFixedGroceryLine[] {
-  return input
-    .split(/\n|,|;/)
-    .map((line) => line.trim().replace(/\s+/g, " "))
-    .filter(Boolean)
-    .map((raw) => {
-      const match = raw.match(/^(\d+(?:[,.]\d+)?)\s*(.*)$/);
-      if (!match) return { raw, searchTerm: raw, multiplier: 1 };
+  return (
+    input
+      // Ook op "en" splitsen, als heel woord. Ingesproken lijstjes hebben geen
+      // regeleindes: "melk, brood en drie pakken hagelslag" is één zin, en
+      // zonder deze splitsing zocht de app op die hele staart als één product.
+      .split(/\n|,|;|\s+en\s+/i)
+      .map((line) => line.trim().replace(/\s+/g, " "))
+      .filter(Boolean)
+      .map((raw) => {
+        const words = stripSpokenFiller(raw.split(" "));
+        if (words.length === 0) return { raw, searchTerm: raw, multiplier: 1 };
 
-      const multiplier = Number(match[1].replace(",", "."));
-      const rest = match[2].trim();
-      if (!Number.isFinite(multiplier) || multiplier <= 0 || !rest) {
-        return { raw, searchTerm: raw, multiplier: 1 };
-      }
+        const first = words[0].toLowerCase();
+        const spoken = SPOKEN_NUMBERS.get(first);
+        const digits = first.match(/^(\d+(?:[,.]\d+)?)$/);
+        const multiplier = spoken ?? (digits ? Number(digits[1].replace(",", ".")) : null);
 
-      const parts = rest.split(" ");
-      const searchTerm = COUNT_WORDS.has(parts[0]?.toLowerCase()) ? parts.slice(1).join(" ") : rest;
-      return {
-        raw,
-        searchTerm: searchTerm || rest,
-        multiplier,
-      };
-    });
+        // Geen aantal genoemd: dan is de hele regel de zoekterm.
+        if (multiplier === null || !Number.isFinite(multiplier) || multiplier <= 0) {
+          return { raw, searchTerm: words.join(" "), multiplier: 1 };
+        }
+
+        const rest = words.slice(1);
+        if (rest.length === 0) return { raw, searchTerm: raw, multiplier: 1 };
+
+        // "2 pakken melk" -> het verpakkingswoord hoort niet in de zoekopdracht.
+        const withoutUnit = COUNT_WORDS.has(rest[0].toLowerCase()) ? rest.slice(1) : rest;
+        const searchTerm = (withoutUnit.length > 0 ? withoutUnit : rest).join(" ");
+        return { raw, searchTerm, multiplier };
+      })
+  );
 }
 
 export function removeBulkFixedGroceryLine(input: string, rawLineToRemove: string) {

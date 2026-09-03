@@ -48,6 +48,7 @@ import { inferFixedProductOrderQuantity, parseBulkFixedGroceryInput, titleCaseSe
 import { getTrustedPreferences } from "@/domain/product-matching/repository";
 import NavBar from "@/components/NavBar";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
+import DictateButton from "@/components/DictateButton";
 import PicnicTransfer from "./PicnicTransfer";
 import AddToPicnicCart from "./AddToPicnicCart";
 import DeliverySlotsSection, { DeliverySlotsPlaceholder } from "./DeliverySlotsSection";
@@ -1367,15 +1368,23 @@ export default async function BoodschappenPage({
             </form>
           )}
           <h2 className="mb-1 text-sm font-semibold text-ink">Nog iets nodig?</h2>
-          <p className="mb-3 text-xs text-ink-muted">Eén product of een rijtje met komma&rsquo;s — allebei goed. Voor deze week alleen.</p>
+          <p className="mb-3 text-xs text-ink-muted">
+            Intikken of inspreken — allebei goed. Eén product of een rijtje met komma&rsquo;s. Voor
+            deze week alleen.
+          </p>
           <form action="/boodschappen#quick-order" className="grid gap-2">
             <textarea
+              id="quick-order-input"
               name="quickOrder"
               defaultValue={quickOrderText}
               rows={3}
               placeholder={"bananen — of meerdere: rijst, sperziebonen, appelmoes"}
               className="min-h-20 min-w-0 resize-y rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-accent"
             />
+            {/* Verschijnt alleen als de browser spraakherkenning heeft. Zo niet,
+                dan staat de microfoon van het toetsenbord er nog gewoon — die
+                werkt in ditzelfde veld. */}
+            <DictateButton targetId="quick-order-input" />
             <button
               type="submit"
               className="w-fit rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
