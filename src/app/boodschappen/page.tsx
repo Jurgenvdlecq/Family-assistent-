@@ -46,6 +46,8 @@ import { logEvent, errorMessage } from "@/lib/logger";
 import type { PicnicSearchResultItem } from "@/lib/picnic/searchResults";
 import { inferFixedProductOrderQuantity, parseBulkFixedGroceryInput, titleCaseSearchTerm } from "@/lib/fixedGroceryProductChoice";
 import { knownNameIndex, prepareSpokenText } from "@/lib/spokenList";
+import { replaceBulkFixedGroceryLine } from "@/lib/fixedGroceryProductChoice";
+import { findDishesForLines } from "@/lib/dishSuggestions";
 import { getTrustedPreferences } from "@/domain/product-matching/repository";
 import NavBar from "@/components/NavBar";
 import PendingSubmitButton from "@/components/PendingSubmitButton";
@@ -1018,6 +1020,10 @@ export default async function BoodschappenPage({
     fixedSearch.error ?? manualSearch.error ?? bulkSearch.error ?? quickSearch.error ?? null;
   const quickOrderAutoLines = quickOrderPreviewLines.filter((line) => line.trustedChoice);
   const quickOrderPickLines = quickOrderPreviewLines.filter((line) => !line.trustedChoice);
+  // "We eten pasta pesto": een regel kan ook een gerecht zijn. Dat wordt naast
+  // de gewone productresultaten aangeboden, nooit in plaats daarvan — je zou
+  // ook gewoon een pot pesto kunnen bedoelen.
+  const quickOrderDishes = await findDishesForLines(household.id, quickOrderPickLines);
   const inventoryAttentionItems = inventoryChecklist.filter((item) => item.needsAttention);
   const inventoryConfirmedItems = inventoryChecklist.filter((item) => !item.needsAttention);
   const focusedInventoryIsConfirmed = inventoryConfirmedItems.some(
@@ -1480,6 +1486,39 @@ export default async function BoodschappenPage({
               {quickOrderPickLines.map((line, lineIndex) => (
                 <div key={`${line.raw}-${lineIndex}`} className="rounded-lg border border-line bg-surface-2 p-3">
                   <p className="mb-2 text-sm font-semibold text-ink">{line.raw}</p>
+                  {quickOrderDishes.has(line.raw) && (
+                    <div className="mb-3 rounded-lg border border-accent/30 bg-accent-soft p-3">
+                      <p className="text-sm font-medium text-ink">
+                        {quickOrderDishes.get(line.raw)!.dishTitle} is een gerecht dat de app kent.
+                      </p>
+                      <p className="mt-1 text-xs text-ink-muted">
+                        {quickOrderDishes.get(line.raw)!.ingredientNames.join(", ")}
+                        {quickOrderDishes.get(line.raw)!.skippedNames.length > 0 && (
+                          <>
+                            {" "}
+                            — voorraadbasics overgeslagen (
+                            {quickOrderDishes.get(line.raw)!.skippedNames.join(", ")})
+                          </>
+                        )}
+                      </p>
+                      <Link
+                        href={`/boodschappen?${new URLSearchParams({
+                          quickOrder: replaceBulkFixedGroceryLine(
+                            quickOrderText,
+                            line.raw,
+                            quickOrderDishes.get(line.raw)!.ingredientNames
+                          ),
+                        }).toString()}#quick-order`}
+                        className="mt-2 inline-block rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent/90"
+                      >
+                        Zet de ingrediënten in het lijstje
+                      </Link>
+                      <p className="mt-2 text-[11px] text-ink-faint">
+                        Ze komen als losse regels in het tekstvak te staan — elk één verpakking, en je
+                        past ze aan voordat je iets toevoegt.
+                      </p>
+                    </div>
+                  )}
                   {line.results.length === 0 ? (
                     <p className="mb-2 text-sm text-ink-muted">
                       Geen Picnic-product gevonden. Probeer een andere zoekterm.

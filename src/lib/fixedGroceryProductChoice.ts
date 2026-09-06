@@ -127,6 +127,16 @@ export const LEAD_IN_WORDS = new Set([
   "en",
   "even",
   "wat",
+  // Zo begin je een zin over eten: "we eten pasta pesto", "vanavond maken we
+  // lasagne". Geen van deze woorden is ooit een product, en ze staan alleen
+  // aan het begin in de weg — bij het zoeken naar een product én bij het
+  // herkennen van een gerecht (zie `dishLookup`).
+  "eten",
+  "maken",
+  "koken",
+  "vanavond",
+  "morgen",
+  "gaan",
 ]);
 
 /** En hoe je zo'n zin afsluit. */
@@ -176,6 +186,32 @@ export function parseBulkFixedGroceryInput(input: string): ParsedBulkFixedGrocer
         return { raw, searchTerm, multiplier };
       })
   );
+}
+
+/**
+ * Eén regel vervangen door een aantal andere.
+ *
+ * Gebruikt om een herkend gerecht te vervangen door zijn ingrediënten: de
+ * regel "pasta pesto" wordt "pasta, pesto, parmezaanse kaas, ...". Bewust een
+ * tekstbewerking en geen aparte lijst naast de tekst — dan blijft het tekstvak
+ * de enige waarheid, ziet de gebruiker precies wat er gebeurd is, en werkt al
+ * het bestaande werk eromheen (zoeken, toevoegen, wegstrepen) ongewijzigd.
+ *
+ * Staat de regel er niet (meer) in, dan verandert er niets.
+ */
+export function replaceBulkFixedGroceryLine(input: string, rawLineToReplace: string, replacements: string[]) {
+  const normalizedRawLine = rawLineToReplace.trim().replace(/\s+/g, " ");
+  const cleanReplacements = replacements.map((value) => value.trim().replace(/\s+/g, " ")).filter(Boolean);
+  let replaced = false;
+  return parseBulkFixedGroceryInput(input)
+    .flatMap((line) => {
+      if (!replaced && line.raw === normalizedRawLine) {
+        replaced = true;
+        return cleanReplacements;
+      }
+      return [line.raw];
+    })
+    .join("\n");
 }
 
 export function removeBulkFixedGroceryLine(input: string, rawLineToRemove: string) {

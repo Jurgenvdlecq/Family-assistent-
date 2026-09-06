@@ -4,6 +4,7 @@ import {
   inferFixedProductOrderQuantity,
   parseBulkFixedGroceryInput,
   removeBulkFixedGroceryLine,
+  replaceBulkFixedGroceryLine,
 } from "./fixedGroceryProductChoice";
 
 test("parseBulkFixedGroceryInput splitst regels en komma's", () => {
@@ -94,5 +95,31 @@ test("getikte lijstjes blijven werken zoals ze werkten", () => {
       (r) => `${r.multiplier}x ${r.searchTerm}`
     ),
     ["2x magere melk", "1x drinkyoghurt framboos", "1x bananen"]
+  );
+});
+
+test("replaceBulkFixedGroceryLine zet een gerecht om in zijn ingrediënten", () => {
+  assert.equal(
+    replaceBulkFixedGroceryLine("melk, pasta pesto, bananen", "pasta pesto", [
+      "Pasta",
+      "Pesto",
+      "Parmezaanse kaas",
+    ]),
+    "melk\nPasta\nPesto\nParmezaanse kaas\nbananen"
+  );
+});
+
+test("replaceBulkFixedGroceryLine laat de tekst met rust als de regel er niet in staat", () => {
+  assert.equal(replaceBulkFixedGroceryLine("melk, bananen", "pasta pesto", ["Pasta"]), "melk\nbananen");
+});
+
+test("replaceBulkFixedGroceryLine vervangt alleen de eerste treffer", () => {
+  assert.equal(replaceBulkFixedGroceryLine("melk, melk", "melk", ["Halfvolle melk"]), "Halfvolle melk\nmelk");
+});
+
+test("aanloopwoorden over eten belanden niet in de zoekterm", () => {
+  assert.deepEqual(
+    parseBulkFixedGroceryInput("vanavond eten we lasagne").map((line) => line.searchTerm),
+    ["lasagne"]
   );
 });
